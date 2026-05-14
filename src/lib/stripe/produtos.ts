@@ -1,0 +1,84 @@
+export const PLANOS = [
+  {
+    id: 'free',
+    nome: 'Aventureiro',
+    preco: 0,
+    periodo: '',
+    descricao: 'Comece sua jornada',
+    recursos: [
+      '1 campanha',
+      'Tracker de batalha básico',
+      'Bestiário completo',
+      'Dados virtuais',
+    ],
+    limitacoes: [
+      'Sem Assistente IA',
+      'Sem upload de aventura',
+      'Sem diário avançado',
+    ],
+    cor: 'dd-border',
+    destaque: false,
+  },
+  {
+    id: 'solo',
+    nome: 'DM Solo',
+    preco: 1900,
+    periodo: '/mês',
+    descricao: 'Para o DM que joga com seu grupo',
+    stripe_price_id: process.env.NEXT_PUBLIC_STRIPE_PRICE_SOLO,
+    recursos: [
+      '3 campanhas',
+      'Assistente IA ilimitado',
+      'Upload e processamento de aventura',
+      'Diário de campanha completo',
+      'Dados virtuais avançados',
+      'Log de batalha exportável',
+      'Fichas de personagem digitais',
+    ],
+    limitacoes: [],
+    cor: 'dd-purple',
+    destaque: false,
+  },
+  {
+    id: 'mesa_pro',
+    nome: 'Mesa Pro',
+    preco: 5900,
+    periodo: '/mês',
+    descricao: 'Para DMs profissionais',
+    stripe_price_id: process.env.NEXT_PUBLIC_STRIPE_PRICE_MESA_PRO,
+    recursos: [
+      'Campanhas ilimitadas',
+      'Tudo do DM Solo',
+      'Múltiplas mesas simultâneas',
+      'Exportação PDF completa',
+      'Suporte prioritário',
+      'Acesso antecipado a novos recursos',
+    ],
+    limitacoes: [],
+    cor: 'dd-gold',
+    destaque: true,
+  },
+  {
+    id: 'guild_master',
+    nome: 'Guild Master',
+    preco: 12900,
+    periodo: '/mês',
+    descricao: 'Para grupos e organizações',
+    stripe_price_id: process.env.NEXT_PUBLIC_STRIPE_PRICE_GUILD_MASTER,
+    recursos: [
+      'Até 5 DMs',
+      'Painel compartilhado',
+      'Tudo do Mesa Pro',
+      'Gerenciamento de equipe',
+      'Suporte dedicado',
+    ],
+    limitacoes: [],
+    cor: 'dd-gold2',
+    destaque: false,
+  },
+]
+
+export function formatarPreco(centavos: number): string {
+  if (centavos === 0) return 'Grátis'
+  return `R$ ${(centavos / 100).toFixed(2).replace('.', ',')}`
+}
