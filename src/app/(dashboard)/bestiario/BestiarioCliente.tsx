@@ -144,11 +144,14 @@ export function BestiarioCliente() {
                   selecionado?.id === m.id ? 'bg-[var(--surface)]' : 'hover:bg-[var(--bg3)]'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-[var(--text)] text-sm font-crimson">{m.name_pt}</span>
-                  <span className="text-[var(--gold)] text-xs font-cinzel">CR {m.challenge_rating}</span>
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-cinzel font-semibold text-sm text-[var(--dd-text)] leading-tight truncate">
+                    {m.name_pt}
+                  </span>
+                  <span className="text-xs text-[var(--dd-text2)] truncate">
+                    {m.type_pt} · CR {m.challenge_rating}
+                  </span>
                 </div>
-                <p className="text-[var(--text3)] text-[10px]">{m.type_pt} · PV {m.hit_points} · CA {m.armor_class}</p>
               </button>
             ))
           )}
@@ -176,8 +179,8 @@ export function BestiarioCliente() {
           <div className="max-w-3xl">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h2 className="font-cinzel text-[var(--gold)] text-2xl font-bold">{selecionado.name_pt}</h2>
-                <p className="text-[var(--border)] text-sm italic">{selecionado.name_en}</p>
+                <h2 className="font-cinzel text-[var(--gold)] text-2xl font-bold leading-tight">{selecionado.name_pt}</h2>
+                <p className="text-sm text-[var(--dd-text2)] italic mt-0.5">{selecionado.name_en}</p>
                 <p className="text-[var(--text2)] text-sm mt-1">
                   {[selecionado.size_pt, selecionado.type_pt, selecionado.alignment_pt].filter(Boolean).join(' · ')}
                 </p>
