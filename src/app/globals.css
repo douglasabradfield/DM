@@ -1,25 +1,25 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 :root {
-  --dd-black: #0d0a0e;
-  --dd-dark: #150f18;
-  --dd-darker: #1e1525;
-  --dd-surface: #261a2e;
-  --dd-surface2: #2f2040;
-  --dd-border: #4a3060;
-  --dd-border2: #6b4890;
-  --dd-purple: #9b59b6;
-  --dd-purple2: #c39bd3;
-  --dd-gold: #d4a843;
-  --dd-gold2: #f0c060;
-  --dd-red: #c0392b;
-  --dd-red2: #e74c3c;
-  --dd-green: #1a6b3a;
-  --dd-green2: #27ae60;
-  --dd-text: #e8dff0;
-  --dd-text2: #b8a8cc;
-  --dd-text3: #8870a8;
+  --dd-black:    #0a0810;
+  --dd-dark:     #120d1a;
+  --dd-darker:   #1a1228;
+  --dd-surface:  #221830;
+  --dd-surface2: #2e2040;
+  --dd-border:   #3d2860;
+  --dd-border2:  #5a3d88;
+  --dd-purple:   #8b45cc;
+  --dd-purple2:  #b06ee8;
+  --dd-gold:     #e8a020;
+  --dd-gold2:    #ffc845;
+  --dd-red:      #c0392b;
+  --dd-red2:     #e74c3c;
+  --dd-green:    #1e7a42;
+  --dd-green2:   #2ecc71;
+  --dd-text:     #f0eaf8;
+  --dd-text2:    #c4a8e0;
+  --dd-text3:    #8860b8;
 
   /* Atalhos para var() nos componentes — herdam de --dd-* e reagem ao .tema-medieval */
   --bg: var(--dd-black);
@@ -63,6 +63,8 @@
   --color-dd-text3: var(--dd-text3);
   --font-cinzel: 'Cinzel', serif;
   --font-crimson: 'Crimson Pro', serif;
+  --font-inter: 'Inter', system-ui, sans-serif;
+  --font-garamond: 'EB Garamond', serif;
 }
 
 * {
@@ -89,14 +91,29 @@
 body {
   background: var(--dd-black);
   color: var(--dd-text);
-  font-family: 'Crimson Pro', serif;
-  font-size: 15px;
-  line-height: 1.6;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
   min-height: 100vh;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Cinzel', serif;
+}
+
+/* Textos narrativos, descrições de itens e lore */
+.texto-lore, .lore, .descricao-item {
+  font-family: 'EB Garamond', serif;
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.75;
+}
+
+/* Stats, atributos e valores numéricos */
+.stat-valor, .badge-numero, .numero-rpg {
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
 /* Textura de fundo */
@@ -200,24 +217,66 @@ body::before {
 
 /* Tema Medieval (pergaminho) */
 .tema-medieval {
-  --dd-black: #f2ebe0;
-  --dd-dark: #ede3d0;
-  --dd-darker: #e5d9c3;
-  --dd-surface: #ddd0b8;
-  --dd-surface2: #d4c8a8;
-  --dd-border: #c4a882;
-  --dd-border2: #a08060;
-  --dd-purple: #7a3b2e;
-  --dd-purple2: #9b4e3a;
-  --dd-gold: #8b6914;
-  --dd-gold2: #a07820;
-  --dd-red: #6b1010;
-  --dd-red2: #8b2020;
-  --dd-green: #1a4010;
-  --dd-green2: #2d5a1b;
-  --dd-text: #2c1810;
-  --dd-text2: #4a2f20;
-  --dd-text3: #7a5a40;
+  --dd-black:    #f5edd8;
+  --dd-dark:     #ede3c5;
+  --dd-darker:   #e3d5ad;
+  --dd-surface:  #d8c898;
+  --dd-surface2: #ccba80;
+  --dd-border:   #b09060;
+  --dd-border2:  #8a6840;
+  --dd-purple:   #6a3a8a;
+  --dd-purple2:  #8a55aa;
+  --dd-gold:     #a07818;
+  --dd-gold2:    #c89820;
+  --dd-red:      #8b1818;
+  --dd-red2:     #aa2828;
+  --dd-green:    #1a4818;
+  --dd-green2:   #286828;
+  --dd-text:     #1e0e08;
+  --dd-text2:    #3a2010;
+  --dd-text3:    #6a4828;
+}
+
+.tema-dragao {
+  --dd-black:    #0e0808;
+  --dd-dark:     #180c0c;
+  --dd-darker:   #221010;
+  --dd-surface:  #2e1414;
+  --dd-surface2: #3a1818;
+  --dd-border:   #5a2a18;
+  --dd-border2:  #8a4028;
+  --dd-purple:   #cc4a1a;
+  --dd-purple2:  #e8722a;
+  --dd-gold:     #c8860a;
+  --dd-gold2:    #e8a818;
+  --dd-red:      #8b1a1a;
+  --dd-red2:     #c02828;
+  --dd-green:    #1a5020;
+  --dd-green2:   #28803a;
+  --dd-text:     #f8f0e8;
+  --dd-text2:    #d4a888;
+  --dd-text3:    #a06840;
+}
+
+.tema-elfico {
+  --dd-black:    #f0f4f8;
+  --dd-dark:     #e4ecf2;
+  --dd-darker:   #d4e0ec;
+  --dd-surface:  #c4d4e4;
+  --dd-surface2: #b0c4d8;
+  --dd-border:   #8aacca;
+  --dd-border2:  #6a90b0;
+  --dd-purple:   #2a8a6a;
+  --dd-purple2:  #3aaa88;
+  --dd-gold:     #5a8a3a;
+  --dd-gold2:    #78aa50;
+  --dd-red:      #aa3030;
+  --dd-red2:     #c84040;
+  --dd-green:    #2a6a3a;
+  --dd-green2:   #3a8a50;
+  --dd-text:     #182830;
+  --dd-text2:    #304858;
+  --dd-text3:    #507080;
 }
 
 /* Tooltip */
