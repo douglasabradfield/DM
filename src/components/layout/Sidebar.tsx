@@ -10,7 +10,7 @@ import type { Campanha } from '@/types/database'
 import {
   Swords, Users, BookOpen, Wand2, Package,
   Map, BookMarked, Bot, Settings, Shield,
-  ChevronRight, Skull, ChevronDown, Plus, X, ImageIcon, Compass,
+  ChevronRight, Skull, ChevronDown, Plus, X, ImageIcon, Compass, ShieldCheck,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -28,7 +28,7 @@ const itensNav = [
   { href: '/configuracoes', icone: Settings,    label: 'Configurações', cor: '#95a5a6' },
 ]
 
-export function Sidebar() {
+export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
   const pathname = usePathname()
   const { campanhaAtiva, campanhas, setCampanhaAtiva, setCampanhas } = useCampanha()
   const [dropdownAberto, setDropdownAberto] = useState(false)
@@ -170,6 +170,30 @@ export function Sidebar() {
               </Link>
             )
           })}
+          {isAdmin && (() => {
+            const ativo = pathname === '/admin' || pathname.startsWith('/admin/')
+            const cor = '#d4a843'
+            return (
+              <Link
+                href="/admin"
+                onClick={() => setDropdownAberto(false)}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2 rounded text-base font-crimson transition-all duration-150',
+                  ativo
+                    ? 'bg-[var(--surface)] text-[var(--text)] border-l-2'
+                    : 'text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--bg3)]'
+                )}
+                style={{ borderLeftColor: ativo ? cor : 'transparent' }}
+              >
+                <ShieldCheck
+                  className="w-4 h-4 flex-shrink-0"
+                  style={{ color: ativo ? cor : undefined }}
+                />
+                <span>Admin</span>
+                {ativo && <ChevronRight className="w-3 h-3 ml-auto text-[var(--border)]" />}
+              </Link>
+            )
+          })()}
         </nav>
 
         {/* Rodapé */}
