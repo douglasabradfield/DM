@@ -39,9 +39,9 @@ export function Header({ titulo, usuario }: HeaderProps) {
   return (
     <header className="h-12 bg-[var(--bg2)] border-b border-[var(--border)] flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
-        <h2 className="font-cinzel text-[var(--gold)] font-semibold text-sm">{titulo}</h2>
+        <h2 className="font-cinzel text-[var(--gold)] font-semibold text-sm truncate max-w-[120px] sm:max-w-none">{titulo}</h2>
         {campanhaAtiva && (
-          <span className="text-[var(--border)] text-xs">
+          <span className="hidden sm:inline text-[var(--border)] text-xs">
             ✦ {campanhaAtiva.nome}
           </span>
         )}

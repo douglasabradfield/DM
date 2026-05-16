@@ -1,4 +1,4 @@
-import { Sidebar } from '@/components/layout/Sidebar'
+import { Sidebar, BottomNav } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
@@ -35,10 +35,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
           titulo="Dungeon Desk"
           usuario={profile ? { nome: profile.nome, email: profile.email } : { nome: null, email: user.email ?? '' }}
         />
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-auto pb-16 md:pb-0">
           {children}
         </main>
       </div>
+      <BottomNav isAdmin={profile?.is_admin === true} />
     </div>
   )
 }

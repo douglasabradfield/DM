@@ -92,7 +92,7 @@ export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
 
   return (
     <>
-      <aside className="w-56 bg-[var(--bg2)] border-r border-[var(--border)] flex flex-col min-h-screen">
+      <aside className="hidden md:flex w-56 bg-[var(--bg2)] border-r border-[var(--border)] flex-col min-h-screen">
         {/* Logo */}
         <div className="p-4 border-b border-[var(--border)]">
           <div className="flex items-center gap-2">
@@ -248,5 +248,43 @@ export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
         </div>
       )}
     </>
+  )
+}
+
+export function BottomNav({ isAdmin }: { isAdmin?: boolean }) {
+  const pathname = usePathname()
+
+  const itensPrincipais = [
+    { href: '/batalha',     icone: Swords,  label: 'Batalha'  },
+    { href: '/personagens', icone: Users,   label: 'Persona.' },
+    { href: '/bestiario',   icone: Skull,   label: 'Bestia.'  },
+    { href: '/magias',      icone: Wand2,   label: 'Magias'   },
+    { href: '/aventura',    icone: Map,     label: 'Aventura' },
+  ]
+
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50
+                    bg-[var(--bg2)] border-t border-[var(--border)]
+                    flex items-center justify-around px-2 py-1 safe-area-pb">
+      {itensPrincipais.map(item => {
+        const ativo = pathname === item.href || pathname.startsWith(item.href + '/')
+        const Icone = item.icone
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={cn(
+              'flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg transition-colors min-w-0',
+              ativo
+                ? 'text-[var(--dd-gold)]'
+                : 'text-[var(--dd-text3)] hover:text-[var(--dd-text2)]'
+            )}
+          >
+            <Icone size={20} />
+            <span className="text-[10px] font-medium truncate">{item.label}</span>
+          </Link>
+        )
+      })}
+    </nav>
   )
 }

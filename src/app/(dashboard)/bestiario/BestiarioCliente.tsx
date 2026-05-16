@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Monster } from '@/types/dnd'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { useBatalha } from '@/store/batalha'
-import { calcularModificadorAtributo, formatarModificador } from '@/lib/utils'
+import { calcularModificadorAtributo, formatarModificador, cn } from '@/lib/utils'
 import { Search, Swords } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
@@ -19,6 +19,7 @@ export function BestiarioCliente() {
   const [selecionado, setSelecionado] = useState<Monster | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false)
+  const [visao, setVisao] = useState<'lista' | 'detalhe'>('lista')
   const [busca, setBusca] = useState('')
   const [filtroCR, setFiltroCR] = useState('')
   const { adicionarCombatente } = useBatalha()
@@ -52,6 +53,7 @@ export function BestiarioCliente() {
     const { data } = await supabase.from('monsters').select('*').eq('id', stub.id).single()
     setSelecionado(data as Monster)
     setCarregandoDetalhe(false)
+    setVisao('detalhe')
   }
 
   const filtrados = useMemo(() => lista.filter(m => {
@@ -110,9 +112,13 @@ export function BestiarioCliente() {
   ] : []
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full overflow-hidden">
       {/* Lista */}
-      <div className="w-80 border-r border-[var(--border)] flex flex-col">
+      <div className={cn(
+        "flex flex-col border-r border-[var(--bg3)] overflow-y-auto",
+        "w-full md:w-80",
+        visao === 'detalhe' ? "hidden md:flex" : "flex"
+      )}>
         <div className="p-3 border-b border-[var(--border)]">
           <div className="relative mb-2">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
@@ -163,7 +169,18 @@ export function BestiarioCliente() {
       </div>
 
       {/* Detalhes */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className={cn(
+        "overflow-y-auto p-4 md:p-6 bg-[var(--bg)]",
+        "w-full md:flex-1",
+        visao === 'lista' ? "hidden md:block" : "block"
+      )}>
+        <button
+          onClick={() => setVisao('lista')}
+          className="md:hidden flex items-center gap-2 text-sm text-[var(--dd-text2)]
+                     hover:text-[var(--dd-text)] mb-4 transition-colors"
+        >
+          ← Voltar ao Bestiário
+        </button>
         {carregandoDetalhe ? (
           <div className="h-full flex items-center justify-center">
             <p className="text-[var(--text3)] font-cinzel animate-pulse">Carregando detalhes...</p>

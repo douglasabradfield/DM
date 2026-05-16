@@ -289,3 +289,19 @@ body::before {
   color: var(--dd-text);
   box-shadow: 0 4px 20px rgba(0,0,0,0.5);
 }
+
+/* Safe area para bottom nav no iOS */
+.safe-area-pb {
+  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+}
+
+/* Esconder scrollbar no mobile */
+@media (max-width: 768px) {
+  * { scrollbar-width: none; }
+  *::-webkit-scrollbar { display: none; }
+}
+
+/* Tap targets mínimos de 44px no mobile */
+@media (max-width: 768px) {
+  button, [role="button"] { min-height: 44px; }
+}
