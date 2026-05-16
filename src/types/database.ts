@@ -29,6 +29,7 @@ export interface Campanha {
   sistema: string
   ativa: boolean
   criado_em: string
+  resumo_final?: string | null
 }
 
 export interface Aventura {

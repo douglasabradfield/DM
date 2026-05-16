@@ -1,0 +1,262 @@
+'use client'
+
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { createClient } from '@/lib/supabase/client'
+import { useCampanha } from '@/store/campanha'
+import { X, Upload, Search, Trash2, ExternalLink } from 'lucide-react'
+import toast from 'react-hot-toast'
+
+interface ImagemGaleria {
+  id: string
+  campanha_id: string
+  titulo: string
+  url: string
+  tipo: 'imagem' | 'mapa'
+  criado_em: string
+}
+
+interface GaleriaImagensProps {
+  tipo: 'imagem' | 'mapa'
+}
+
+export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
+  const { campanhaAtiva } = useCampanha()
+  const [imagens, setImagens] = useState<ImagemGaleria[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [busca, setBusca] = useState('')
+  const [selecionada, setSelecionada] = useState<ImagemGaleria | null>(null)
+  const [modalAdicionar, setModalAdicionar] = useState(false)
+  const [titulo, setTitulo] = useState('')
+  const [url, setUrl] = useState('')
+  const [salvando, setSalvando] = useState(false)
+
+  useEffect(() => {
+    if (!campanhaAtiva?.id) { setCarregando(false); return }
+    carregar()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campanhaAtiva?.id])
+
+  async function carregar() {
+    if (!campanhaAtiva?.id) return
+    setCarregando(true)
+    try {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('imagens')
+        .select('*')
+        .eq('campanha_id', campanhaAtiva.id)
+        .eq('tipo', tipo)
+        .order('criado_em', { ascending: false })
+      setImagens((data ?? []) as ImagemGaleria[])
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  async function adicionar() {
+    if (!titulo.trim() || !url.trim() || !campanhaAtiva?.id) return
+    setSalvando(true)
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('imagens')
+        .insert({ campanha_id: campanhaAtiva.id, titulo: titulo.trim(), url: url.trim(), tipo })
+        .select()
+        .single()
+      if (error) throw error
+      setImagens(prev => [data as ImagemGaleria, ...prev])
+      setTitulo('')
+      setUrl('')
+      setModalAdicionar(false)
+      toast.success(`${tipo === 'mapa' ? 'Mapa' : 'Imagem'} adicionada!`)
+    } catch {
+      toast.error('Erro ao adicionar')
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function remover(id: string) {
+    if (!confirm('Remover esta imagem?')) return
+    const supabase = createClient()
+    await supabase.from('imagens').delete().eq('id', id)
+    setImagens(prev => prev.filter(i => i.id !== id))
+    if (selecionada?.id === id) setSelecionada(null)
+    toast.success('Removida')
+  }
+
+  const filtradas = imagens.filter(i =>
+    !busca || i.titulo.toLowerCase().includes(busca.toLowerCase())
+  )
+
+  const labelTipo = tipo === 'mapa' ? 'Mapa' : 'Imagem'
+
+  if (!campanhaAtiva) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-[var(--border)] font-cinzel text-lg">Selecione uma campanha na barra lateral</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full">
+      {/* Lista lateral */}
+      <div className="w-72 border-r border-[var(--border)] flex flex-col">
+        <div className="p-3 border-b border-[var(--border)] space-y-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
+            <input
+              type="text"
+              value={busca}
+              onChange={e => setBusca(e.target.value)}
+              placeholder={`Buscar ${labelTipo.toLowerCase()}...`}
+              className="w-full input-dd pl-7 text-sm"
+            />
+          </div>
+          <button
+            onClick={() => setModalAdicionar(true)}
+            className="w-full py-1.5 bg-[var(--accent)] hover:opacity-90 text-[var(--bg)] rounded font-cinzel text-xs transition-colors flex items-center justify-center gap-1"
+          >
+            <Upload className="w-3 h-3" /> Adicionar {labelTipo}
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {carregando ? (
+            <p className="p-4 text-center text-[var(--text3)] text-sm animate-pulse">Carregando...</p>
+          ) : filtradas.length === 0 ? (
+            <p className="p-4 text-center text-[var(--border)] text-sm font-crimson">
+              {imagens.length === 0 ? `Nenhum${tipo === 'mapa' ? '' : 'a'} ${labelTipo.toLowerCase()} adicionad${tipo === 'mapa' ? 'o' : 'a'}` : 'Nenhum resultado'}
+            </p>
+          ) : (
+            filtradas.map(img => (
+              <button
+                key={img.id}
+                onClick={() => setSelecionada(img)}
+                className={`w-full text-left p-2 border-b border-[var(--bg3)] hover:bg-[var(--bg3)] transition-colors ${selecionada?.id === img.id ? 'bg-[var(--surface)]' : ''}`}
+              >
+                <div className="flex gap-2 items-start">
+                  {/* Miniatura */}
+                  <div className="w-12 h-12 bg-[var(--bg3)] rounded overflow-hidden flex-shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={img.url}
+                      alt={img.titulo}
+                      className="w-full h-full object-cover"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[var(--text)] text-sm font-crimson truncate">{img.titulo}</p>
+                    <p className="text-[var(--text3)] text-[10px]">
+                      {new Date(img.criado_em).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+
+        <div className="p-2 border-t border-[var(--border)] text-center">
+          <p className="text-[var(--text3)] text-xs font-cinzel">{filtradas.length} de {imagens.length}</p>
+        </div>
+      </div>
+
+      {/* Visualizador */}
+      <div className="flex-1 overflow-auto flex flex-col items-center justify-center p-4 bg-[var(--bg)]">
+        {!selecionada ? (
+          <div className="text-center">
+            <p className="font-cinzel text-[var(--border)] text-xl mb-2">Selecione um{tipo === 'mapa' ? '' : 'a'} {labelTipo.toLowerCase()}</p>
+            <p className="text-[var(--border)] text-sm font-crimson">Clique em um item da lista para visualizar</p>
+          </div>
+        ) : (
+          <div className="max-w-4xl w-full">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-cinzel text-[var(--gold)] text-xl font-bold">{selecionada.titulo}</h2>
+              <div className="flex gap-2">
+                <a
+                  href={selecionada.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-3 py-1.5 border border-[var(--border)] text-[var(--text2)] rounded text-xs hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3" /> Abrir original
+                </a>
+                <button
+                  onClick={() => remover(selecionada.id)}
+                  className="flex items-center gap-1 px-3 py-1.5 border border-[var(--red2)] text-[var(--red2)] rounded text-xs hover:bg-[var(--red2)]/10 transition-colors"
+                >
+                  <Trash2 className="w-3 h-3" /> Remover
+                </button>
+              </div>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={selecionada.url}
+              alt={selecionada.titulo}
+              className="w-full rounded-lg border border-[var(--border)] shadow-xl object-contain max-h-[70vh]"
+              onError={e => { (e.target as HTMLImageElement).alt = 'Erro ao carregar imagem' }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Modal adicionar */}
+      {modalAdicionar && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70" onClick={() => setModalAdicionar(false)}>
+          <div className="bg-[var(--bg2)] border border-[var(--gold)] rounded-xl p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-cinzel text-[var(--gold)] text-lg font-bold">+ Adicionar {labelTipo}</h3>
+              <button onClick={() => setModalAdicionar(false)} className="text-[var(--border)] hover:text-[var(--text)]">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Título</label>
+                <input
+                  type="text"
+                  value={titulo}
+                  onChange={e => setTitulo(e.target.value)}
+                  placeholder={`Nome d${tipo === 'mapa' ? 'o mapa' : 'a imagem'}...`}
+                  className="input-dd w-full"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">URL da Imagem</label>
+                <input
+                  type="url"
+                  value={url}
+                  onChange={e => setUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="input-dd w-full"
+                />
+              </div>
+              {url && (
+                <div className="mt-2 rounded overflow-hidden border border-[var(--border)] h-32">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt="preview" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setModalAdicionar(false)} className="flex-1 py-2 border border-[var(--border)] rounded text-[var(--text2)] text-sm">Cancelar</button>
+              <button
+                onClick={adicionar}
+                disabled={!titulo.trim() || !url.trim() || salvando}
+                className="flex-1 py-2 bg-[var(--accent)] hover:opacity-90 text-[var(--bg)] rounded font-cinzel text-sm disabled:opacity-50"
+              >
+                {salvando ? 'Salvando...' : 'Adicionar'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  )
+}

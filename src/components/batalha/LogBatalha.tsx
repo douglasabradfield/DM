@@ -12,6 +12,7 @@ const iconesTipo = {
   magia:      '✨',
   iniciativa: '🎯',
   nota:       '📝',
+  sistema:    '⚙️',
 }
 
 export function LogBatalha() {

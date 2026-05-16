@@ -32,6 +32,8 @@ export interface Combatente {
   notas: string
   dados_monstro: DadosMonstroSimples | null
   ordem: number
+  vantagem?: 'vantagem' | 'desvantagem' | null
+  inspiracao?: number
   // estado local (não salvo)
   dano_input: number
   dano_tipo: TipoDano
@@ -51,6 +53,8 @@ export interface DadosMonstroSimples {
   inteligencia: number
   sabedoria: number
   carisma: number
+  xp?: number
+  slug?: string
 }
 
 export interface Batalha {
@@ -74,7 +78,7 @@ export interface EntradaLog {
   id: string
   rodada: number
   turno: number
-  tipo: 'dano' | 'cura' | 'condicao' | 'morte' | 'magia' | 'iniciativa' | 'nota'
+  tipo: 'dano' | 'cura' | 'condicao' | 'morte' | 'magia' | 'iniciativa' | 'nota' | 'sistema'
   origem: string
   alvo: string
   valor: number | null

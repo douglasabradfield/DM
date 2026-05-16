@@ -20,6 +20,26 @@
   --dd-text: #e8dff0;
   --dd-text2: #b8a8cc;
   --dd-text3: #8870a8;
+
+  /* Atalhos para var() nos componentes — herdam de --dd-* e reagem ao .tema-medieval */
+  --bg: var(--dd-black);
+  --bg2: var(--dd-dark);
+  --bg3: var(--dd-darker);
+  --surface: var(--dd-surface);
+  --surface2: var(--dd-surface2);
+  --border: var(--dd-border);
+  --border2: var(--dd-border2);
+  --accent: var(--dd-purple);
+  --accent2: var(--dd-purple2);
+  --gold: var(--dd-gold);
+  --gold2: var(--dd-gold2);
+  --red: var(--dd-red);
+  --red2: var(--dd-red2);
+  --green: var(--dd-green);
+  --green2: var(--dd-green2);
+  --text: var(--dd-text);
+  --text2: var(--dd-text2);
+  --text3: var(--dd-text3);
 }
 
 @theme inline {
@@ -49,6 +69,7 @@
   box-sizing: border-box;
   scrollbar-width: thin;
   scrollbar-color: var(--dd-border) var(--dd-darker);
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
 *::-webkit-scrollbar {
@@ -69,6 +90,8 @@ body {
   background: var(--dd-black);
   color: var(--dd-text);
   font-family: 'Crimson Pro', serif;
+  font-size: 15px;
+  line-height: 1.6;
   min-height: 100vh;
 }
 
@@ -163,15 +186,38 @@ body::before {
   border: 1px solid var(--dd-border);
   color: var(--dd-text);
   border-radius: 4px;
-  padding: 4px 8px;
+  padding: 6px 10px;
   font-family: 'Crimson Pro', serif;
   font-size: 14px;
+  min-height: 2rem;
   transition: border-color 0.2s;
 }
 
 .input-dd:focus {
   outline: none;
   border-color: var(--dd-gold);
+}
+
+/* Tema Medieval (pergaminho) */
+.tema-medieval {
+  --dd-black: #f2ebe0;
+  --dd-dark: #ede3d0;
+  --dd-darker: #e5d9c3;
+  --dd-surface: #ddd0b8;
+  --dd-surface2: #d4c8a8;
+  --dd-border: #c4a882;
+  --dd-border2: #a08060;
+  --dd-purple: #7a3b2e;
+  --dd-purple2: #9b4e3a;
+  --dd-gold: #8b6914;
+  --dd-gold2: #a07820;
+  --dd-red: #6b1010;
+  --dd-red2: #8b2020;
+  --dd-green: #1a4010;
+  --dd-green2: #2d5a1b;
+  --dd-text: #2c1810;
+  --dd-text2: #4a2f20;
+  --dd-text3: #7a5a40;
 }
 
 /* Tooltip */

@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
-import { DivisorOrnamentado } from '@/components/ui/DivisorOrnamentado'
+import { EditorComMencoes } from '@/components/diario/EditorComMencoes'
+import { TextoComMencoes } from '@/components/diario/TextoComMencoes'
 import { useBatalha } from '@/store/batalha'
+import { useCampanha } from '@/store/campanha'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { BookMarked, Plus, Trash2, Sword, Shield, ScrollText, Star, Map } from 'lucide-react'
@@ -49,52 +51,51 @@ export default function DiarioPage() {
   const [conteudo, setConteudo] = useState('')
   const [filtroTipo, setFiltroTipo] = useState<TipoEntrada | ''>('')
   const { log } = useBatalha()
+  const { campanhaAtiva } = useCampanha()
 
-  useEffect(() => { carregar() }, [])
-
-  async function carregar() {
+  const carregar = useCallback(async () => {
+    if (!campanhaAtiva) { setCarregando(false); return }
     setCarregando(true)
     try {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: campanhas } = await supabase.from('campanhas').select('id').eq('dm_id', user.id).limit(1)
-      if (!campanhas?.[0]) { setCarregando(false); return }
-
-      let query = supabase.from('diario_entradas').select('*').eq('campanha_id', campanhas[0].id)
+      let query = supabase.from('diario_entradas').select('*').eq('campanha_id', campanhaAtiva.id)
       if (filtroTipo) query = query.eq('tipo', filtroTipo)
       const { data } = await query.order('criado_em', { ascending: false })
       setEntradas((data ?? []) as EntradaDiario[])
     } finally {
       setCarregando(false)
     }
-  }
+  }, [campanhaAtiva, filtroTipo])
+
+  useEffect(() => { carregar() }, [carregar])
 
   async function criar(e: React.FormEvent) {
     e.preventDefault()
+    console.log('campanhaAtiva:', campanhaAtiva)
+    if (!campanhaAtiva?.id) { toast.error('Selecione uma campanha ativa primeiro'); return }
+    if (!conteudo.trim()) { toast.error('Preencha o conteúdo da entrada'); return }
     try {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: campanhas } = await supabase.from('campanhas').select('id').eq('dm_id', user.id).limit(1)
-      if (!campanhas?.[0]) { toast.error('Sem campanha ativa'); return }
-
       const { error } = await supabase.from('diario_entradas').insert({
-        campanha_id: campanhas[0].id,
+        campanha_id: campanhaAtiva.id,
+        sessao_id: null,
         tipo,
-        titulo: titulo || null,
-        conteudo,
+        titulo: titulo.trim() || null,
+        conteudo: conteudo.trim(),
         tags: [],
       })
-      if (error) throw error
+      if (error) {
+        console.error('Erro ao criar entrada:', error)
+        toast.error(`Erro: ${error.message}`)
+        return
+      }
       toast.success('Entrada criada!')
       setCriando(false)
       setTitulo('')
       setConteudo('')
       carregar()
-    } catch {
+    } catch (err) {
+      console.error('Exceção ao criar entrada:', err)
       toast.error('Erro ao criar entrada')
     }
   }
@@ -112,17 +113,12 @@ export default function DiarioPage() {
 
   async function exportarLogBatalha() {
     if (log.length === 0) { toast.error('Nenhum log para exportar'); return }
+    if (!campanhaAtiva) { toast.error('Nenhuma campanha ativa selecionada'); return }
     try {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: campanhas } = await supabase.from('campanhas').select('id').eq('dm_id', user.id).limit(1)
-      if (!campanhas?.[0]) return
-
       const resumo = log.map(e => `R${e.rodada}: ${e.descricao}`).join('\n')
       await supabase.from('diario_entradas').insert({
-        campanha_id: campanhas[0].id,
+        campanha_id: campanhaAtiva.id,
         tipo: 'batalha',
         titulo: `Log de Batalha — ${new Date().toLocaleDateString('pt-BR')}`,
         conteudo: resumo,
@@ -141,8 +137,8 @@ export default function DiarioPage() {
     <div className="p-4">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="font-cinzel text-[#d4a843] text-lg font-bold">Diário de Campanha</h2>
-          <p className="text-[#8870a8] text-sm font-crimson">{entradas.length} entradas registradas</p>
+          <h2 className="font-cinzel text-[var(--gold)] text-lg font-bold">Diário de Campanha</h2>
+          <p className="text-[var(--text3)] text-sm font-crimson">{entradas.length} entradas registradas</p>
         </div>
         <div className="flex gap-2">
           {log.length > 0 && (
@@ -160,7 +156,7 @@ export default function DiarioPage() {
       <div className="flex gap-2 mb-4">
         <button
           onClick={() => setFiltroTipo('')}
-          className={`px-3 py-1 text-xs font-cinzel rounded border transition-colors ${filtroTipo === '' ? 'bg-[#261a2e] border-[#d4a843] text-[#d4a843]' : 'border-[#4a3060] text-[#8870a8]'}`}
+          className={`px-3 py-1 text-xs font-cinzel rounded border transition-colors ${filtroTipo === '' ? 'bg-[var(--surface)] border-[#d4a843] text-[var(--gold)]' : 'border-[var(--border)] text-[var(--text3)]'}`}
         >
           Todos
         </button>
@@ -168,7 +164,7 @@ export default function DiarioPage() {
           <button
             key={t}
             onClick={() => setFiltroTipo(t)}
-            className={`px-3 py-1 text-xs font-cinzel rounded border transition-colors capitalize ${filtroTipo === t ? 'bg-[#261a2e] border-[#d4a843] text-[#d4a843]' : 'border-[#4a3060] text-[#8870a8]'}`}
+            className={`px-3 py-1 text-xs font-cinzel rounded border transition-colors capitalize ${filtroTipo === t ? 'bg-[var(--surface)] border-[#d4a843] text-[var(--gold)]' : 'border-[var(--border)] text-[var(--text3)]'}`}
           >
             {t === 'npc' ? 'NPC' : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
@@ -189,7 +185,14 @@ export default function DiarioPage() {
               </select>
               <input type="text" value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Título (opcional)" className="flex-1 input-dd text-sm" />
             </div>
-            <textarea value={conteudo} onChange={e => setConteudo(e.target.value)} placeholder="Conteúdo da entrada..." rows={5} className="w-full input-dd text-sm resize-y" required />
+            <EditorComMencoes
+              value={conteudo}
+              onChange={setConteudo}
+              rows={5}
+              placeholder="Conteúdo da entrada... Use @Nome para mencionar personagens"
+              className="w-full input-dd text-sm resize-y"
+              campanhaId={campanhaAtiva?.id ?? null}
+            />
             <div className="flex gap-2">
               <BotaoRunico type="submit" variante="ouro" tamanho="sm">Salvar</BotaoRunico>
               <BotaoRunico type="button" variante="fantasma" tamanho="sm" onClick={() => setCriando(false)}>Cancelar</BotaoRunico>
@@ -202,14 +205,14 @@ export default function DiarioPage() {
       {carregando ? (
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-24 bg-[#150f18] border border-[#4a3060] rounded animate-pulse" />
+            <div key={i} className="h-24 bg-[var(--bg2)] border border-[var(--border)] rounded animate-pulse" />
           ))}
         </div>
       ) : filtradas.length === 0 ? (
         <div className="text-center py-12">
-          <BookMarked className="w-12 h-12 text-[#4a3060] mx-auto mb-3" />
-          <p className="font-cinzel text-[#4a3060] text-lg mb-2">Nenhuma entrada</p>
-          <p className="text-[#4a3060] text-sm font-crimson">Registre eventos importantes da campanha</p>
+          <BookMarked className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
+          <p className="font-cinzel text-[var(--border)] text-lg mb-2">Nenhuma entrada</p>
+          <p className="text-[var(--border)] text-sm font-crimson">Registre eventos importantes da campanha</p>
         </div>
       ) : (
         <div className="space-y-3 max-w-3xl">
@@ -221,18 +224,18 @@ export default function DiarioPage() {
                   {entrada.titulo && (
                     <span className="font-cinzel text-sm" style={{ color: COR_TIPO[entrada.tipo] }}>{entrada.titulo}</span>
                   )}
-                  <span className="text-[#4a3060] text-xs capitalize">{entrada.tipo}</span>
+                  <span className="text-[var(--border)] text-xs capitalize">{entrada.tipo}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[#4a3060] text-xs">
+                  <span className="text-[var(--border)] text-xs">
                     {format(new Date(entrada.criado_em), "d 'de' MMM, HH:mm", { locale: ptBR })}
                   </span>
-                  <button onClick={() => excluir(entrada.id)} className="text-[#4a3060] hover:text-[#e74c3c] transition-colors">
+                  <button onClick={() => excluir(entrada.id)} className="text-[var(--border)] hover:text-[var(--red2)] transition-colors">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
-              <p className="text-[#b8a8cc] font-crimson text-sm whitespace-pre-wrap">{entrada.conteudo}</p>
+              <TextoComMencoes texto={entrada.conteudo} className="text-[var(--text2)] font-crimson text-sm whitespace-pre-wrap" />
             </PainelGrimorio>
           ))}
         </div>

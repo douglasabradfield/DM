@@ -1,34 +1,147 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { useCampanha } from '@/store/campanha'
 import type { Personagem } from '@/types/dnd'
-import { MiniCard } from '@/components/personagem/MiniCard'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
-import { Plus, RefreshCw } from 'lucide-react'
+import { Plus, RefreshCw, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 
+type FiltroTipo = 'todos' | 'jogador' | 'npc' | 'monstro'
+type Ordenacao = 'nome' | 'nivel' | 'xp' | 'ca' | 'pv'
+
+function estiloTipo(tipo: string | null) {
+  switch (tipo) {
+    case 'npc':     return {
+      borda: 'border-[var(--green2)]',
+      header: 'bg-[var(--green2)]/10',
+      texto: 'text-[var(--green2)]',
+      tag: 'border-[var(--green2)] text-[var(--green2)]',
+    }
+    case 'monstro': return {
+      borda: 'border-[var(--red2)]',
+      header: 'bg-[var(--red2)]/10',
+      texto: 'text-[var(--red2)]',
+      tag: 'border-[var(--red2)] text-[var(--red2)]',
+    }
+    default: return {
+      borda: 'border-[var(--gold)]',
+      header: 'bg-[var(--gold)]/10',
+      texto: 'text-[var(--gold)]',
+      tag: 'border-[var(--gold)] text-[var(--gold)]',
+    }
+  }
+}
+
+function CardPersonagem({ p }: { p: Personagem }) {
+  const estilo = estiloTipo(p.tipo_personagem)
+  const pct = p.pv_maximo > 0 ? (p.pv_atual / p.pv_maximo) * 100 : 0
+  const corPV = pct > 50 ? 'var(--green2)' : pct > 25 ? '#f59e0b' : 'var(--red2)'
+
+  return (
+    <Link href={`/personagens/${p.id}`}>
+      <div className={`bg-[var(--surface)] border-2 rounded-xl overflow-hidden hover:opacity-90 transition-all cursor-pointer ${estilo.borda}`}>
+        <div className={`${estilo.header} px-4 py-3 flex items-start justify-between`}>
+          <div className="min-w-0 flex-1">
+            <h3 className={`font-cinzel font-bold text-base leading-tight truncate ${estilo.texto}`}>
+              {p.nome}
+            </h3>
+            {p.classe && (
+              <p className="text-[var(--text2)] text-sm mt-0.5">
+                {p.raca ? `${p.raca} · ` : ''}{p.classe} Nv{p.nivel || 1}
+              </p>
+            )}
+            <p className="text-[var(--text3)] text-xs mt-0.5">{p.jogador_nome}</p>
+          </div>
+          <div className="text-right ml-3 flex-shrink-0">
+            <p className="text-[var(--text3)] text-xs font-cinzel">CA</p>
+            <p className={`font-cinzel font-bold text-xl leading-none ${estilo.texto}`}>{p.ca || 10}</p>
+          </div>
+        </div>
+
+        <div className="px-4 py-3">
+          <div className="mb-3">
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-[var(--text3)] font-cinzel">PV</span>
+              <span className="font-bold" style={{ color: corPV }}>
+                {p.pv_atual}/{p.pv_maximo}
+              </span>
+            </div>
+            <div className="h-2 bg-[var(--bg3)] rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: `${Math.max(0, Math.min(100, pct))}%`, backgroundColor: corPV }}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-6 gap-1 text-center">
+            {[
+              { label: 'FOR', val: p.forca },
+              { label: 'DES', val: p.destreza },
+              { label: 'CON', val: p.constituicao },
+              { label: 'INT', val: p.inteligencia },
+              { label: 'SAB', val: p.sabedoria },
+              { label: 'CAR', val: p.carisma },
+            ].map(({ label, val }) => {
+              const mod = Math.floor(((val || 10) - 10) / 2)
+              return (
+                <div key={label} className="bg-[var(--bg3)] rounded p-1">
+                  <p className="text-[var(--text3)] text-[9px] font-cinzel">{label}</p>
+                  <p className="text-[var(--text)] text-sm font-bold">{val || 10}</p>
+                  <p className="text-[var(--text2)] text-[10px]">{mod >= 0 ? `+${mod}` : mod}</p>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="mt-2">
+            <span className={`text-[10px] px-2 py-0.5 border rounded font-cinzel ${estilo.tag}`}>
+              {p.tipo_personagem === 'monstro' ? '👹 Monstro' :
+               p.tipo_personagem === 'npc' ? '🧙 NPC' : '👤 Jogador'}
+            </span>
+          </div>
+        </div>
+      </div>
+    </Link>
+  )
+}
+
 export default function PersonagensPage() {
+  const { campanhaAtiva } = useCampanha()
   const [personagens, setPersonagens] = useState<Personagem[]>([])
   const [carregando, setCarregando] = useState(true)
   const [criando, setCriando] = useState(false)
   const [nomeNovo, setNomeNovo] = useState('')
   const [jogadorNovo, setJogadorNovo] = useState('')
+  const [tipoNovo, setTipoNovo] = useState<'jogador' | 'npc' | 'monstro'>('jogador')
+  const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
+  const [ordenacao, setOrdenacao] = useState<Ordenacao>('nome')
 
-  useEffect(() => { carregar() }, [])
+  useEffect(() => {
+    if (!campanhaAtiva?.id) {
+      setPersonagens([])
+      setCarregando(false)
+      return
+    }
+    carregar()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campanhaAtiva?.id])
 
   async function carregar() {
+    if (!campanhaAtiva?.id) return
     setCarregando(true)
     try {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: campanhas } = await supabase.from('campanhas').select('id').eq('dm_id', user.id).limit(1)
-      if (!campanhas?.[0]) { setCarregando(false); return }
-
-      const { data } = await supabase.from('personagens').select('*').eq('campanha_id', campanhas[0].id).eq('ativo', true)
+      const { data } = await supabase
+        .from('personagens')
+        .select('*')
+        .eq('campanha_id', campanhaAtiva.id)
+        .eq('ativo', true)
+        .order('nome')
       setPersonagens((data ?? []) as Personagem[])
     } finally {
       setCarregando(false)
@@ -37,23 +150,14 @@ export default function PersonagensPage() {
 
   async function criarPersonagem(e: React.FormEvent) {
     e.preventDefault()
+    if (!campanhaAtiva?.id) { toast.error('Selecione uma campanha primeiro'); return }
     try {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: campanhas } = await supabase.from('campanhas').select('id').eq('dm_id', user.id).limit(1)
-      let campanhaId = campanhas?.[0]?.id
-
-      if (!campanhaId) {
-        const { data: nova } = await supabase.from('campanhas').insert({ dm_id: user.id, nome: 'Minha Campanha' }).select().single()
-        campanhaId = nova?.id
-      }
-
       const { error } = await supabase.from('personagens').insert({
-        campanha_id: campanhaId,
+        campanha_id: campanhaAtiva.id,
         nome: nomeNovo,
         jogador_nome: jogadorNovo || 'Jogador',
+        tipo_personagem: tipoNovo,
         nivel: 1,
         forca: 10, destreza: 10, constituicao: 10,
         inteligencia: 10, sabedoria: 10, carisma: 10,
@@ -77,12 +181,48 @@ export default function PersonagensPage() {
     }
   }
 
+  const filtrados = personagens.filter(p => {
+    if (filtroTipo === 'todos') return true
+    return (p.tipo_personagem || 'jogador') === filtroTipo
+  })
+
+  const ordenados = [...filtrados].sort((a, b) => {
+    switch (ordenacao) {
+      case 'nivel': return ((b.nivel || 1) - (a.nivel || 1))
+      case 'xp': return ((b.pontos_experiencia || 0) - (a.pontos_experiencia || 0))
+      case 'ca': return ((b.ca || 10) - (a.ca || 10))
+      case 'pv': return ((b.pv_maximo || 10) - (a.pv_maximo || 10))
+      default: return a.nome.localeCompare(b.nome, 'pt-BR')
+    }
+  })
+
+  const labelFiltro: Record<FiltroTipo, string> = {
+    todos: 'Todos',
+    jogador: '👤 Jogadores',
+    npc: '🧙 NPCs',
+    monstro: '👹 Monstros',
+  }
+
+  if (!campanhaAtiva) {
+    return (
+      <div className="h-full flex items-center justify-center p-8">
+        <div className="text-center">
+          <Users className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
+          <p className="font-cinzel text-[var(--text3)] text-xl mb-2">Nenhuma campanha selecionada</p>
+          <p className="text-[var(--text3)] text-sm font-crimson">
+            Selecione uma campanha no menu lateral para ver os personagens
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="p-4">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="font-cinzel text-[#d4a843] text-lg font-bold">Personagens</h2>
-          <p className="text-[#8870a8] text-sm font-crimson">{personagens.length} personagens na campanha ativa</p>
+          <h2 className="font-cinzel text-[var(--gold)] text-xl font-bold">Personagens</h2>
+          <p className="text-[var(--text3)] text-sm font-crimson">{ordenados.length} de {personagens.length} personagens · {campanhaAtiva.nome}</p>
         </div>
         <div className="flex gap-2">
           <BotaoRunico variante="secundario" tamanho="sm" onClick={carregar}>
@@ -94,16 +234,54 @@ export default function PersonagensPage() {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2 mb-4 items-center">
+        <div className="flex gap-1">
+          {(['todos', 'jogador', 'npc', 'monstro'] as FiltroTipo[]).map(tipo => (
+            <button
+              key={tipo}
+              onClick={() => setFiltroTipo(tipo)}
+              className={`px-2 py-1 rounded text-xs font-cinzel transition-colors ${
+                filtroTipo === tipo
+                  ? 'bg-[var(--accent)] text-[var(--bg)]'
+                  : 'bg-[var(--surface)] text-[var(--text3)] hover:bg-[var(--surface2)]'
+              }`}
+            >
+              {labelFiltro[tipo]}
+            </button>
+          ))}
+        </div>
+        <div className="flex-1" />
+        <select
+          value={ordenacao}
+          onChange={e => setOrdenacao(e.target.value as Ordenacao)}
+          className="input-dd text-xs py-1"
+        >
+          <option value="nome">Nome A-Z</option>
+          <option value="nivel">Nível ↓</option>
+          <option value="xp">Experiência ↓</option>
+          <option value="ca">CA ↓</option>
+          <option value="pv">PV ↓</option>
+        </select>
+      </div>
+
       {criando && (
         <PainelGrimorio titulo="Novo Personagem" ornamentado className="mb-4 max-w-md">
           <form onSubmit={criarPersonagem} className="space-y-3">
             <div>
-              <label className="text-[#8870a8] text-xs font-cinzel uppercase">Nome do Personagem</label>
-              <input type="text" value={nomeNovo} onChange={e => setNomeNovo(e.target.value)} className="w-full input-dd" placeholder="Gandalf" required />
+              <label className="text-[var(--text3)] text-xs font-cinzel uppercase">Tipo</label>
+              <select value={tipoNovo} onChange={e => setTipoNovo(e.target.value as typeof tipoNovo)} className="w-full input-dd mt-1">
+                <option value="jogador">👤 Jogador</option>
+                <option value="npc">🧙 NPC</option>
+                <option value="monstro">👹 Monstro</option>
+              </select>
             </div>
             <div>
-              <label className="text-[#8870a8] text-xs font-cinzel uppercase">Nome do Jogador</label>
-              <input type="text" value={jogadorNovo} onChange={e => setJogadorNovo(e.target.value)} className="w-full input-dd" placeholder="João" />
+              <label className="text-[var(--text3)] text-xs font-cinzel uppercase">Nome do Personagem</label>
+              <input type="text" value={nomeNovo} onChange={e => setNomeNovo(e.target.value)} className="w-full input-dd mt-1" placeholder="Gandalf" required />
+            </div>
+            <div>
+              <label className="text-[var(--text3)] text-xs font-cinzel uppercase">Nome do Jogador</label>
+              <input type="text" value={jogadorNovo} onChange={e => setJogadorNovo(e.target.value)} className="w-full input-dd mt-1" placeholder="João" />
             </div>
             <div className="flex gap-2">
               <BotaoRunico type="submit" variante="ouro" tamanho="sm">Criar</BotaoRunico>
@@ -114,22 +292,24 @@ export default function PersonagensPage() {
       )}
 
       {carregando ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-36 bg-[#150f18] border border-[#4a3060] rounded animate-pulse" />
+            <div key={i} className="h-52 bg-[var(--bg2)] border border-[var(--border)] rounded-xl animate-pulse" />
           ))}
         </div>
-      ) : personagens.length === 0 ? (
+      ) : ordenados.length === 0 ? (
         <div className="text-center py-12">
-          <p className="font-cinzel text-[#4a3060] text-lg mb-2">Nenhum aventureiro</p>
-          <p className="text-[#4a3060] text-sm font-crimson mb-4">Crie o primeiro personagem da campanha</p>
+          <p className="font-cinzel text-[var(--border)] text-lg mb-2">
+            {filtroTipo !== 'todos' ? `Nenhum ${labelFiltro[filtroTipo]}` : 'Nenhum aventureiro'}
+          </p>
+          <p className="text-[var(--border)] text-sm font-crimson mb-4">Crie o primeiro personagem da campanha</p>
           <BotaoRunico variante="ouro" onClick={() => setCriando(true)}>
             <Plus className="w-4 h-4" /> Criar Personagem
           </BotaoRunico>
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-          {personagens.map(p => <MiniCard key={p.id} personagem={p} />)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+          {ordenados.map(p => <CardPersonagem key={p.id} p={p} />)}
         </div>
       )}
     </div>

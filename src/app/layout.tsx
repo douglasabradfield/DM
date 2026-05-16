@@ -9,7 +9,13 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        {/* Aplicar tema antes do primeiro paint para evitar flash */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function(){try{var t=localStorage.getItem('dd-tema');if(t==='medieval')document.documentElement.classList.add('tema-medieval')}catch(e){}})()
+        ` }} />
+      </head>
       <body className="antialiased">
         <ProvedorSessao>
           {children}

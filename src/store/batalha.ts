@@ -3,6 +3,7 @@ import { immer } from 'zustand/middleware/immer'
 import type { Combatente, EntradaLog, TipoCondicao } from '@/types/batalha'
 import type { TipoDano } from '@/types/dnd'
 import { aplicarResistencias } from '@/lib/dados-dnd/tipos-dano'
+import { createClient } from '@/lib/supabase/client'
 
 function gerarId(): string {
   return Math.random().toString(36).substr(2, 9)
@@ -15,10 +16,20 @@ interface EstadoBatalhaStore {
   turnoAtual: number
   ativa: boolean
   batalhaId: string | null
+  xpGanhoNaBatalha: number
+
+  // Sessão / persistência
+  sessaoId: string | null
+  nomeBatalha: string
+  statusBatalha: 'inativa' | 'ativa' | 'pausada' | 'concluida'
+  iniciadaEm: Date | null
 
   // Ações de gerenciamento
-  iniciarBatalha: () => void
-  encerrarBatalha: () => void
+  iniciarBatalha: (nome: string, campanhaId: string) => Promise<void>
+  encerrarBatalha: () => Promise<{ resumoIA: string }>
+  pausarBatalha: () => Promise<void>
+  retomarBatalha: () => Promise<void>
+  carregarBatalhaAtiva: (campanhaId: string) => Promise<void>
   resetarBatalha: () => void
 
   // Combatentes
@@ -57,6 +68,18 @@ interface EstadoBatalhaStore {
   // Presença
   toggleAusencia: (id: string) => void
   toggleMorto: (id: string) => void
+
+  // Reordenação manual
+  reordenarCombatentes: (idAtivo: string, idSobre: string) => void
+
+  // Vantagem / Desvantagem
+  setVantagem: (id: string, valor: 'vantagem' | 'desvantagem' | null) => void
+
+  // Inspiração
+  usarInspiracao: (id: string) => void
+
+  // Sincronização com ficha
+  atualizarCombatentePorPersonagem: (personagemId: string, dados: Partial<Combatente>) => void
 }
 
 export const useBatalha = create<EstadoBatalhaStore>()(
@@ -67,17 +90,230 @@ export const useBatalha = create<EstadoBatalhaStore>()(
     turnoAtual: 0,
     ativa: false,
     batalhaId: null,
+    xpGanhoNaBatalha: 0,
+    sessaoId: null,
+    nomeBatalha: '',
+    statusBatalha: 'inativa',
+    iniciadaEm: null,
 
-    iniciarBatalha: () => set(state => {
-      state.ativa = true
-      state.batalhaId = gerarId()
-      state.rodadaAtual = 1
-      state.turnoAtual = 0
-    }),
+    iniciarBatalha: async (nome, campanhaId) => {
+      const supabase = createClient()
 
-    encerrarBatalha: () => set(state => {
-      state.ativa = false
-    }),
+      const { data: sessao, error } = await supabase
+        .from('sessoes')
+        .insert({
+          campanha_id: campanhaId,
+          titulo: nome,
+          status: 'ativa',
+          iniciada_em: new Date().toISOString(),
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      await supabase.from('diario_entradas').insert({
+        campanha_id: campanhaId,
+        sessao_id: sessao.id,
+        tipo: 'batalha',
+        titulo: nome,
+        conteudo: `Batalha iniciada em ${new Date().toLocaleString('pt-BR')}`,
+        tags: ['batalha'],
+      })
+
+      set(state => {
+        state.sessaoId = sessao.id
+        state.nomeBatalha = nome
+        state.statusBatalha = 'ativa'
+        state.ativa = true
+        state.batalhaId = gerarId()
+        state.rodadaAtual = 1
+        state.turnoAtual = 0
+        state.iniciadaEm = new Date()
+        state.log.push({
+          id: gerarId(),
+          rodada: 0,
+          turno: 0,
+          tipo: 'sistema',
+          origem: 'Sistema',
+          alvo: 'Batalha',
+          valor: null,
+          tipo_dano: null,
+          descricao: `⚔️ Batalha "${nome}" iniciada`,
+          criado_em: new Date().toISOString(),
+        })
+      })
+    },
+
+    encerrarBatalha: async () => {
+      const { sessaoId, combatentes, log, rodadaAtual, nomeBatalha } = get()
+
+      set(state => {
+        state.ativa = false
+        state.statusBatalha = 'concluida'
+      })
+
+      if (!sessaoId) return { resumoIA: '' }
+
+      const supabase = createClient()
+
+      const mortos = combatentes.filter(c => c.morto || c.pv_atual <= 0)
+      const totalDano = log.filter(l => l.tipo === 'dano').reduce((acc, l) => acc + (l.valor || 0), 0)
+      const totalCura = log.filter(l => l.tipo === 'cura').reduce((acc, l) => acc + (l.valor || 0), 0)
+
+      const narrativaLog = log
+        .filter(l => l.tipo !== 'sistema')
+        .map(l => `[Rodada ${l.rodada}] ${l.descricao}`)
+        .join('\n')
+
+      let resumoIA = ''
+      try {
+        const resp = await fetch('/api/ia/resumo-batalha', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nomeBatalha,
+            rodadas: rodadaAtual,
+            totalDano,
+            totalCura,
+            mortos: mortos.map(c => c.nome),
+            combatentes: combatentes.map(c => ({
+              nome: c.nome, tipo: c.tipo, pvFinal: c.pv_atual, pvMax: c.pv_maximo,
+            })),
+            log: narrativaLog.slice(0, 3000),
+          }),
+        })
+        const data = await resp.json()
+        resumoIA = data.resumo || ''
+      } catch (e) {
+        console.error('Erro ao gerar resumo IA:', e)
+      }
+
+      const tabelaTecnica = [
+        '## 📊 Resumo Técnico',
+        '',
+        '| Combatente | Tipo | PV Final | PV Máx | Status |',
+        '|------------|------|----------|--------|--------|',
+        ...combatentes.map(c =>
+          `| ${c.nome} | ${c.tipo} | ${c.pv_atual} | ${c.pv_maximo} | ${c.morto ? '💀 Morto' : '✅ Vivo'} |`
+        ),
+        '',
+        `**Total de rodadas:** ${rodadaAtual}`,
+        `**Dano total causado:** ${totalDano}`,
+        `**Cura total:** ${totalCura}`,
+        `**Baixas:** ${mortos.length} (${mortos.map(m => m.nome).join(', ') || 'nenhuma'})`,
+      ].join('\n')
+
+      const logNarrativo = log
+        .filter(l => l.tipo !== 'sistema')
+        .map(l => `**[R${l.rodada}]** ${l.descricao}`)
+        .join('\n')
+
+      const conteudoFinal = [
+        resumoIA ? `## 📜 Narrativa da Batalha\n\n${resumoIA}` : '',
+        `## 📋 Log de Ações\n\n${logNarrativo || '_Nenhuma ação registrada_'}`,
+        tabelaTecnica,
+      ].filter(Boolean).join('\n\n')
+
+      await supabase.from('sessoes').update({
+        status: 'concluida',
+        concluida_em: new Date().toISOString(),
+        total_rodadas: rodadaAtual,
+        resumo_ia: resumoIA,
+        batalha_estado: null,
+      }).eq('id', sessaoId)
+
+      await supabase.from('diario_entradas')
+        .update({
+          conteudo: conteudoFinal,
+          titulo: `⚔️ ${nomeBatalha} — ${rodadaAtual} rodada${rodadaAtual !== 1 ? 's' : ''}`,
+        })
+        .eq('sessao_id', sessaoId)
+        .eq('tipo', 'batalha')
+
+      return { resumoIA }
+    },
+
+    pausarBatalha: async () => {
+      const { sessaoId, combatentes, log, rodadaAtual, turnoAtual } = get()
+      if (!sessaoId) return
+
+      const supabase = createClient()
+
+      await supabase.from('sessoes').update({
+        status: 'pausada',
+        pausada_em: new Date().toISOString(),
+        batalha_estado: { combatentes, log, rodadaAtual, turnoAtual },
+      }).eq('id', sessaoId)
+
+      set(state => {
+        state.ativa = false
+        state.statusBatalha = 'pausada'
+      })
+    },
+
+    retomarBatalha: async () => {
+      const { sessaoId } = get()
+      if (!sessaoId) return
+
+      const supabase = createClient()
+
+      await supabase.from('sessoes').update({
+        status: 'ativa',
+        pausada_em: null,
+      }).eq('id', sessaoId)
+
+      set(state => {
+        state.ativa = true
+        state.statusBatalha = 'ativa'
+        state.log.push({
+          id: gerarId(),
+          rodada: state.rodadaAtual,
+          turno: state.turnoAtual,
+          tipo: 'sistema',
+          origem: 'Sistema',
+          alvo: 'Batalha',
+          valor: null,
+          tipo_dano: null,
+          descricao: '▶ Batalha retomada',
+          criado_em: new Date().toISOString(),
+        })
+      })
+    },
+
+    carregarBatalhaAtiva: async (campanhaId) => {
+      const supabase = createClient()
+
+      const { data: sessao } = await supabase
+        .from('sessoes')
+        .select('*')
+        .eq('campanha_id', campanhaId)
+        .in('status', ['ativa', 'pausada'])
+        .order('iniciada_em', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (!sessao || !sessao.batalha_estado) return
+
+      const estado = sessao.batalha_estado as {
+        combatentes: Combatente[]
+        log: EntradaLog[]
+        rodadaAtual: number
+        turnoAtual: number
+      }
+
+      set(state => {
+        state.sessaoId = sessao.id
+        state.nomeBatalha = sessao.titulo || 'Batalha'
+        state.statusBatalha = sessao.status as 'ativa' | 'pausada'
+        state.ativa = sessao.status === 'ativa'
+        state.combatentes = estado.combatentes || []
+        state.log = estado.log || []
+        state.rodadaAtual = estado.rodadaAtual || 1
+        state.turnoAtual = estado.turnoAtual || 0
+        state.iniciadaEm = new Date(sessao.iniciada_em)
+      })
+    },
 
     resetarBatalha: () => set(state => {
       state.combatentes = []
@@ -86,6 +322,11 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       state.turnoAtual = 0
       state.ativa = false
       state.batalhaId = null
+      state.xpGanhoNaBatalha = 0
+      state.sessaoId = null
+      state.nomeBatalha = ''
+      state.statusBatalha = 'inativa'
+      state.iniciadaEm = null
     }),
 
     adicionarCombatente: (c) => set(state => {
@@ -140,7 +381,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       const c = state.combatentes.find(c => c.id === id)
       if (!c) return
 
-      const { danoFinal } = aplicarResistencias(dano, tipo, c.resistencias, c.imunidades, c.vulnerabilidades)
+      const { danoFinal, modificador } = aplicarResistencias(dano, tipo, c.resistencias, c.imunidades, c.vulnerabilidades)
 
       const pvAntes = c.pv_atual
       if (c.pv_temporarios > 0) {
@@ -157,6 +398,9 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
       if (pvAntes > 0 && c.pv_atual === 0) {
         c.morto = false // Inconsciente, não necessariamente morto
+        if (c.tipo === 'monstro' && c.dados_monstro?.xp) {
+          state.xpGanhoNaBatalha += c.dados_monstro.xp
+        }
         state.log.push({
           id: gerarId(),
           rodada: state.rodadaAtual,
@@ -180,7 +424,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         alvo: c.nome,
         valor: danoFinal,
         tipo_dano: tipo,
-        descricao: `${c.nome} sofreu ${danoFinal} de dano ${tipo}`,
+        descricao: `${c.nome} sofreu ${danoFinal} de dano ${tipo}${modificador ? ` (${modificador}: ${dano}→${danoFinal})` : ''}`,
         criado_em: new Date().toISOString(),
       })
 
@@ -262,6 +506,20 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         c.dano_total = 0
         c.cura_total = 0
         c.dano_input = 0
+        c.pv_atual = c.pv_maximo
+        c.morto = false
+      })
+      state.log.push({
+        id: gerarId(),
+        rodada: state.rodadaAtual,
+        turno: state.turnoAtual,
+        tipo: 'sistema',
+        origem: 'DM',
+        alvo: 'Todos',
+        valor: null,
+        tipo_dano: null,
+        descricao: 'Contadores zerados — PV restaurados ao máximo e mortos revividos',
+        criado_em: new Date().toISOString(),
       })
     }),
 
@@ -360,6 +618,87 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       if (c) {
         c.morto = !c.morto
         if (c.morto) c.pv_atual = 0
+      }
+    }),
+
+    reordenarCombatentes: (idAtivo, idSobre) => set(state => {
+      const indexAtivo = state.combatentes.findIndex(c => c.id === idAtivo)
+      const indexSobre = state.combatentes.findIndex(c => c.id === idSobre)
+      if (indexAtivo === -1 || indexSobre === -1) return
+      const [removido] = state.combatentes.splice(indexAtivo, 1)
+      state.combatentes.splice(indexSobre, 0, removido)
+      state.combatentes.forEach((c, i) => { c.ordem = i })
+      state.log.push({
+        id: gerarId(),
+        rodada: state.rodadaAtual,
+        turno: state.turnoAtual,
+        tipo: 'iniciativa',
+        origem: 'DM',
+        alvo: removido.nome,
+        valor: null,
+        tipo_dano: null,
+        descricao: 'Ordem de iniciativa ajustada manualmente',
+        criado_em: new Date().toISOString(),
+      })
+    }),
+
+    setVantagem: (id, valor) => set(state => {
+      const c = state.combatentes.find(c => c.id === id)
+      if (!c) return
+      c.vantagem = valor
+      state.log.push({
+        id: gerarId(),
+        rodada: state.rodadaAtual,
+        turno: state.turnoAtual,
+        tipo: 'sistema',
+        origem: 'DM',
+        alvo: c.nome,
+        valor: null,
+        tipo_dano: null,
+        descricao: `${c.nome}: ${
+          valor === 'vantagem' ? '▲ Vantagem ativada' :
+          valor === 'desvantagem' ? '▼ Desvantagem ativada' :
+          'Vantagem/Desvantagem removida'
+        }`,
+        criado_em: new Date().toISOString(),
+      })
+    }),
+
+    atualizarCombatentePorPersonagem: (personagemId, dados) => set(state => {
+      const c = state.combatentes.find(c => c.personagem_id === personagemId)
+      if (c) Object.assign(c, dados)
+    }),
+
+    usarInspiracao: (id) => set(state => {
+      const c = state.combatentes.find(c => c.id === id)
+      if (!c || !c.inspiracao || c.inspiracao <= 0) return
+
+      const novaInspiracao = c.inspiracao - 1
+      const pid = c.personagem_id
+      const nome = c.nome
+
+      c.inspiracao = novaInspiracao
+      state.log.push({
+        id: gerarId(),
+        rodada: state.rodadaAtual,
+        turno: state.turnoAtual,
+        tipo: 'sistema',
+        origem: 'DM',
+        alvo: nome,
+        valor: null,
+        tipo_dano: null,
+        descricao: `${nome} usou 1 inspiração heroica (restam ${novaInspiracao})`,
+        criado_em: new Date().toISOString(),
+      })
+
+      if (pid) {
+        createClient()
+          .from('personagens')
+          .update({ inspiracao: novaInspiracao })
+          .eq('id', pid)
+          .then(({ error }) => {
+            if (error) console.error('Erro ao usar inspiração:', error)
+          })
       }
     }),
   }))

@@ -86,6 +86,110 @@ export interface Arma {
   sistema: string
 }
 
+export interface Monster {
+  id: string
+  slug: string
+  name_pt: string
+  name_en: string
+  size_pt: string | null
+  type_pt: string | null
+  alignment_pt: string | null
+  armor_class: number
+  hit_points: number
+  speed_pt: string | null
+  str_score: number
+  dex_score: number
+  con_score: number
+  int_score: number
+  wis_score: number
+  cha_score: number
+  challenge_rating: string
+  xp: number | null
+  proficiency_bonus: number | null
+  senses_pt: string | null
+  languages_pt: string | null
+  traits_pt: string | null
+  actions_pt: string | null
+  traits_rules_pt: string | null
+  actions_rules_pt: string | null
+  source_page_start: number | null
+}
+
+export interface Spell {
+  id: string
+  slug: string
+  name_pt: string
+  name_en: string
+  level: number
+  school_pt: string | null
+  casting_time_pt: string | null
+  range_pt: string | null
+  components_pt: string | null
+  duration_pt: string | null
+  concentration: boolean
+  ritual: boolean
+  description_pt: string | null
+  classes_pt: string | null
+  classes_en: string | null
+}
+
+export interface MagicItem {
+  id: string
+  slug: string
+  name_pt: string
+  name_en: string
+  category: string | null
+  rarity: string | null
+  requires_attunement: boolean
+  attunement_notes_pt: string | null
+  is_consumable: boolean
+  has_charges: boolean
+  charges_max: number | null
+  activation_type: string | null
+  description_pt: string | null
+  mechanics_pt: string | null
+  source_page_start: number | null
+}
+
+export interface EquipmentWeapon {
+  id: string
+  slug: string
+  name_pt: string
+  name_en: string
+  category_en: string | null
+  category_pt: string | null
+  damage_dice: string | null
+  damage_type_pt: string | null
+  properties_pt: string | null
+  mastery_pt: string | null
+  weight_lb: number | null
+  cost_cp: number | null
+}
+
+export interface EquipmentArmor {
+  id: string
+  slug: string
+  name_pt: string
+  name_en: string
+  category_pt: string | null
+  base_ac_formula_pt: string | null
+  strength_requirement: number | null
+  stealth_disadvantage: boolean
+  weight_lb: number | null
+  cost_cp: number | null
+}
+
+export interface EquipmentGear {
+  id: string
+  slug: string
+  name_pt: string
+  name_en: string
+  category_pt: string | null
+  cost_gp: number | null
+  weight_lb: number | null
+  description_pt: string | null
+}
+
 export interface Condicao {
   id: string
   nome: string
@@ -96,18 +200,30 @@ export interface Condicao {
   sistema: string
 }
 
+export interface Moedas {
+  pc: number
+  pp: number
+  po: number
+  pe: number
+  pl: number
+  custom?: number
+}
+
 export interface Personagem {
   id: string
   campanha_id: string
   jogador_nome: string
   jogador_email: string | null
   nome: string
+  tipo_personagem: 'jogador' | 'npc' | 'monstro' | null
+  imagem_url: string | null
   classe: string | null
   nivel: number
   antecedente: string | null
   raca: string | null
   alinhamento: string | null
   pontos_experiencia: number
+  moedas: Moedas | null
   forca: number
   destreza: number
   constituicao: number
@@ -122,10 +238,11 @@ export interface Personagem {
   pv_temporarios: number
   dado_vida: string
   bonus_proficiencia: number
-  inspiracao: boolean
+  inspiracao: number
   salvaguardas: Record<string, boolean>
   pericias: Record<string, boolean>
   ataques: Ataque[]
+  inventario: ItemInventario[] | null
   equipamento: string | null
   outras_proficiencias: string | null
   tracos_personalidade: string | null
@@ -158,6 +275,15 @@ export interface Ataque {
   dano: string
   tipo_dano: string
   notas: string
+}
+
+export interface ItemInventario {
+  id: string
+  nome: string
+  tipo: string | null
+  raridade: string | null
+  quantidade: number
+  descricao: string | null
 }
 
 export interface EspacoMagia {
