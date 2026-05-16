@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ erro: 'Assinatura inválida' }, { status: 400 })
   }
 
-  const supabase = await createAdminClient()
+  const supabase = createAdminClient()
 
   switch (evento.type) {
     case 'customer.subscription.created':

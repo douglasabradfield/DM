@@ -22,7 +22,7 @@ export default async function AdminPage() {
   if (!isAdmin) redirect('/')
 
   // Fetch all profiles + most recent assinatura per user
-  const admin = await createAdminClient()
+  const admin = createAdminClient()
 
   const [perfisRes, assinaturasRes] = await Promise.all([
     admin

@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   const { campanhaId } = await req.json()
   if (!campanhaId) return NextResponse.json({ erro: 'campanhaId obrigatório' }, { status: 400 })
 
-  const admin = await createAdminClient()
+  const admin = createAdminClient()
 
   const [campanhaRes, sessoesRes, personagensRes, diarioRes] = await Promise.all([
     admin.from('campanhas').select('nome, sistema, descricao, criado_em').eq('id', campanhaId).single(),

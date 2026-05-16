@@ -10,7 +10,7 @@ export async function GET() {
   const isAdmin = await verificarAdmin(user.id)
   if (!isAdmin) return NextResponse.json({ erro: 'Acesso negado' }, { status: 403 })
 
-  const admin = await createAdminClient()
+  const admin = createAdminClient()
 
   const [perfisRes, assinaturasRes] = await Promise.all([
     admin

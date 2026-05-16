@@ -24,7 +24,7 @@ export async function PATCH(
     return NextResponse.json({ erro: 'Plano inválido' }, { status: 400 })
   }
 
-  const admin = await createAdminClient()
+  const admin = createAdminClient()
 
   const { error: errPerfil } = await admin
     .from('profiles')

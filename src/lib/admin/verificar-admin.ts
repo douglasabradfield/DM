@@ -2,7 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 
 export async function verificarAdmin(userId: string): Promise<boolean> {
   try {
-    const supabase = await createAdminClient()
+    const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('profiles')
       .select('is_admin')

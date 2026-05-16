@@ -22,7 +22,7 @@ export async function PATCH(
     return NextResponse.json({ erro: 'Você não pode remover sua própria permissão de admin' }, { status: 400 })
   }
 
-  const admin = await createAdminClient()
+  const admin = createAdminClient()
 
   const { error } = await admin
     .from('profiles')
