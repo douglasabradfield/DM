@@ -27,10 +27,11 @@ export function BestiarioCliente() {
   const router = useRouter()
 
   useEffect(() => {
-    // Lê slug da query string para pré-selecionar monstro (ex: vindo do ModalMonstro da batalha)
     const params = new URLSearchParams(window.location.search)
     const slugParam = params.get('q')
+    const buscaParam = params.get('busca')
     if (slugParam) setBusca(slugParam)
+    else if (buscaParam) setBusca(buscaParam)
   }, [])
 
   useEffect(() => {

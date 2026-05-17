@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useCampanha } from '@/store/campanha'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
@@ -45,6 +46,7 @@ interface ConteudoAventura {
 
 export default function AventuraPage() {
   const { campanhaAtiva } = useCampanha()
+  const router = useRouter()
   const [aventura, setAventura] = useState<ConteudoAventura | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [capSelecionado, setCapSelecionado] = useState<number>(1)
@@ -97,6 +99,39 @@ export default function AventuraPage() {
     } finally {
       setCarregando(false)
     }
+  }
+
+  async function criarNpcComoPersonagem(npc: { nome: string; descricao: string }) {
+    if (!campanhaAtiva?.id) return
+    const supabase = createClient()
+    const { data: existente } = await supabase
+      .from('personagens')
+      .select('id')
+      .eq('campanha_id', campanhaAtiva.id)
+      .eq('nome', npc.nome)
+      .maybeSingle()
+    if (existente) {
+      toast(`${npc.nome} já existe nos personagens!`, { icon: 'ℹ️' })
+      return
+    }
+    const { error } = await supabase.from('personagens').insert({
+      campanha_id: campanhaAtiva.id,
+      nome: npc.nome,
+      tipo_personagem: 'npc',
+      tracos_personalidade: npc.descricao || '',
+      forca: 10, destreza: 10, constituicao: 10,
+      inteligencia: 10, sabedoria: 10, carisma: 10,
+      nivel: 1, ca: 10, pv_maximo: 10, pv_atual: 10,
+      bonus_proficiencia: 2,
+      ataques: [], salvaguardas: {}, pericias: {},
+      resistencias: [], imunidades: [], vulnerabilidades: [],
+    })
+    if (error) { toast.error('Erro ao criar personagem'); return }
+    toast.success(`${npc.nome} criado como NPC!`)
+  }
+
+  function navegarParaMonstro(nomeCriatura: string) {
+    router.push(`/bestiario?busca=${encodeURIComponent(nomeCriatura)}`)
   }
 
   async function enviarAventura() {
@@ -293,16 +328,27 @@ export default function AventuraPage() {
           <div className="flex-1 overflow-y-auto py-1">
             {aventura.npcs_globais?.length > 0 ? aventura.npcs_globais.map((npc, i) => (
               <div key={i} className="px-3 py-2.5 border-b border-[var(--border)]/50">
-                <p className="font-cinzel text-[var(--text)] text-xs font-bold">{npc.nome}</p>
-                {npc.papel && (
-                  <p className="text-[var(--accent)] text-[9px] uppercase tracking-wide mt-0.5">{npc.papel}</p>
-                )}
-                {npc.descricao && (
-                  <p className="text-[var(--text3)] text-[10px] mt-1 leading-relaxed">{npc.descricao}</p>
-                )}
-                {npc.motivacao && (
-                  <p className="text-[var(--text3)]/70 text-[10px] italic mt-1">💭 {npc.motivacao}</p>
-                )}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-cinzel text-[var(--text)] text-xs font-bold">{npc.nome}</p>
+                    {npc.papel && (
+                      <p className="text-[var(--accent)] text-[9px] uppercase tracking-wide mt-0.5">{npc.papel}</p>
+                    )}
+                    {npc.descricao && (
+                      <p className="text-[var(--text3)] text-[10px] mt-1 leading-relaxed">{npc.descricao}</p>
+                    )}
+                    {npc.motivacao && (
+                      <p className="text-[var(--text3)]/70 text-[10px] italic mt-1">💭 {npc.motivacao}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => criarNpcComoPersonagem({ nome: npc.nome, descricao: [npc.descricao, npc.motivacao && `Motivação: ${npc.motivacao}`].filter(Boolean).join(' | ') })}
+                    title="Criar como personagem"
+                    className="flex-shrink-0 w-6 h-6 rounded border border-[var(--border)] text-[var(--text3)] hover:text-[var(--gold)] hover:border-[var(--gold)] text-xs transition-all flex items-center justify-center"
+                  >
+                    ＋
+                  </button>
+                </div>
               </div>
             )) : (
               <p className="text-[var(--border)] text-xs text-center p-4 font-crimson">Nenhum NPC global</p>
@@ -373,13 +419,16 @@ export default function AventuraPage() {
               {capAtual.npcs && capAtual.npcs.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-3">
                   {capAtual.npcs.map((npc, i) => (
-                    <span
+                    <button
                       key={i}
-                      title={npc.descricao}
-                      className="px-2 py-1 bg-[var(--bg3)] border border-[var(--border)] rounded-lg text-[var(--text3)] text-[10px] font-cinzel"
+                      onClick={() => criarNpcComoPersonagem(npc)}
+                      title={`Criar ${npc.nome} como personagem`}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--surface2)] border border-[var(--border)] rounded-lg text-[var(--text2)] text-xs font-cinzel hover:border-[var(--gold)] hover:text-[var(--gold)] transition-all group"
                     >
-                      👤 {npc.nome}
-                    </span>
+                      <span>👤</span>
+                      <span>{npc.nome}</span>
+                      <span className="text-[var(--text3)] group-hover:text-[var(--gold)] text-[10px]">＋</span>
+                    </button>
                   ))}
                 </div>
               )}
@@ -426,13 +475,17 @@ export default function AventuraPage() {
 
                       {local.criaturas && local.criaturas.length > 0 && (
                         <div className="flex flex-wrap gap-1 mb-2">
-                          {local.criaturas.slice(0, 4).map((cr, j) => (
-                            <span key={j} className="text-[9px] px-1.5 py-0.5 bg-[var(--red2)]/10 text-[var(--red2)] rounded border border-[var(--red2)]/30">
+                          {local.criaturas.slice(0, 3).map((cr, j) => (
+                            <button
+                              key={j}
+                              onClick={e => { e.stopPropagation(); navegarParaMonstro(cr) }}
+                              className="text-[9px] px-1.5 py-0.5 bg-[var(--red2)]/10 text-[var(--red2)] rounded border border-[var(--red2)]/30 hover:bg-[var(--red2)]/20 transition-colors"
+                            >
                               ⚔️ {cr}
-                            </span>
+                            </button>
                           ))}
-                          {local.criaturas.length > 4 && (
-                            <span className="text-[9px] text-[var(--text3)]">+{local.criaturas.length - 4}</span>
+                          {local.criaturas.length > 3 && (
+                            <span className="text-[9px] text-[var(--text3)] px-1">+{local.criaturas.length - 3}</span>
                           )}
                         </div>
                       )}
@@ -518,15 +571,23 @@ export default function AventuraPage() {
 
                 {/* Criaturas */}
                 {localSelecionado.criaturas && localSelecionado.criaturas.length > 0 && (
-                  <PainelGrimorio titulo="⚔️ Criaturas" compacto>
+                  <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+                    <p className="font-cinzel text-[var(--text3)] text-[10px] uppercase tracking-wider mb-3">⚔️ Criaturas</p>
                     <div className="flex flex-wrap gap-2">
                       {localSelecionado.criaturas.map((cr, i) => (
-                        <span key={i} className="px-3 py-1.5 bg-[var(--red2)]/10 border border-[var(--red2)]/30 text-[var(--red2)] text-xs rounded-lg font-cinzel capitalize">
-                          {cr}
-                        </span>
+                        <button
+                          key={i}
+                          onClick={() => navegarParaMonstro(cr)}
+                          title={`Ver ${cr} no Bestiário`}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--red2)]/10 border border-[var(--red2)]/30 text-[var(--red2)] text-xs rounded-lg font-cinzel capitalize hover:bg-[var(--red2)]/20 hover:border-[var(--red2)] transition-all"
+                        >
+                          ⚔️ {cr}
+                          <span className="text-[var(--red2)]/60 text-[10px]">→</span>
+                        </button>
                       ))}
                     </div>
-                  </PainelGrimorio>
+                    <p className="text-[var(--text3)] text-[10px] mt-2 italic">Clique para ver no Bestiário e adicionar à batalha</p>
+                  </div>
                 )}
 
                 {/* Tesouros */}
