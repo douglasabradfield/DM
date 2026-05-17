@@ -500,14 +500,11 @@ function ListaDetalhe({
   const [visao, setVisao] = useState<'lista' | 'detalhe'>('lista')
 
   return (
-    <div className={cn(
-      "grid h-full gap-0 md:gap-4",
-      "grid-cols-1 md:grid-cols-[300px,1fr]"
-    )}>
+    <div className="grid md:grid-cols-[300px,1fr] gap-4 h-[calc(100vh-180px)] md:h-full">
       {/* Lista */}
       <div className={cn(
-        "flex flex-col gap-3 overflow-y-auto border-r border-[var(--border)]",
-        visao === 'detalhe' ? "hidden md:flex" : "flex"
+        "flex flex-col gap-2 overflow-y-auto",
+        visao === 'detalhe' ? "hidden md:block" : "block"
       )}>
         <div className="p-3 border-b border-[var(--border)] space-y-2">
           <div className="relative">
@@ -550,7 +547,7 @@ function ListaDetalhe({
 
       {/* Detalhe */}
       <div className={cn(
-        "overflow-y-auto p-4",
+        "overflow-y-auto",
         visao === 'lista' ? "hidden md:block" : "block"
       )}>
         <button
