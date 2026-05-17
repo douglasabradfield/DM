@@ -67,7 +67,15 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const router = useRouter()
   const atualizarCombatentePorPersonagem = useBatalha(s => s.atualizarCombatentePorPersonagem)
   const campanhaAtiva = useCampanha(s => s.campanhaAtiva)
-  const moedaCustomNome = campanhaAtiva?.moeda_custom_nome || 'Especial'
+  const [moedaCustomNome, setMoedaCustomNome] = useState(campanhaAtiva?.moeda_custom_nome || 'Especial')
+
+  useEffect(() => {
+    if (!campanhaAtiva?.id) return
+    const supabase = createClient()
+    supabase.from('campanhas').select('moeda_custom_nome').eq('id', campanhaAtiva.id).single()
+      .then(({ data }) => { if (data?.moeda_custom_nome) setMoedaCustomNome(data.moeda_custom_nome) })
+  }, [campanhaAtiva?.id])
+
   const [pagina, setPagina] = useState(1)
   const [dados, setDados] = useState({
     ...p,
@@ -352,133 +360,19 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
       {pagina === 1 && (
         <div className="grid grid-cols-3 gap-4">
-          {/* Coluna 1 - Atributos + Combate */}
-          <div className="space-y-3">
-            <PainelGrimorio titulo="Atributos" compacto>
-              <div className="grid grid-cols-3 gap-x-2 gap-y-3">
-                {ATRIBUTOS.map(({ key, label, abrev }) => {
-                  const val = dados[key] as number
-                  const mod = calcularModificadorAtributo(val)
-                  return (
-                    <div key={key} className="flex flex-col items-center gap-0.5">
-                      <div className="text-[#8870a8] text-[8px] font-cinzel uppercase">{abrev}</div>
-                      <div className="w-9 h-9 rounded-full bg-[#1e1525] border-2 border-[#4a3060] flex items-center justify-center">
-                        <span className="text-[#d4a843] text-sm font-bold font-cinzel leading-none">{formatarModificador(mod)}</span>
-                      </div>
-                      <input
-                        type="number"
-                        value={val}
-                        onChange={e => atualizar(key, parseInt(e.target.value) || 10)}
-                        className="w-10 input-dd text-center text-sm"
-                        title={label}
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-            </PainelGrimorio>
-
-            <PainelGrimorio titulo="Combate" compacto>
-              <div className="grid grid-cols-2 gap-2 mb-2">
-                <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">CA</label>
-                  <input type="number" value={dados.ca} onChange={e => atualizar('ca', parseInt(e.target.value) || 10)} className="w-full input-dd text-center" />
-                </div>
-                <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Iniciativa</label>
-                  <input type="number" value={dados.iniciativa} onChange={e => atualizar('iniciativa', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" />
-                </div>
-                <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Desl. (m)</label>
-                  <input type="number" value={dados.deslocamento} onChange={e => atualizar('deslocamento', parseInt(e.target.value) || 9)} className="w-full input-dd text-center" />
-                </div>
-                <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Prof. Bônus</label>
-                  <input type="number" value={dados.bonus_proficiencia} onChange={e => atualizar('bonus_proficiencia', parseInt(e.target.value) || 2)} className="w-full input-dd text-center" />
-                </div>
-              </div>
-
-              {/* PV em grid de 3 */}
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Máx</label>
-                  <input type="number" value={dados.pv_maximo} onChange={e => atualizar('pv_maximo', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" />
-                </div>
-                <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Atual</label>
-                  <input type="number" value={dados.pv_atual} onChange={e => atualizar('pv_atual', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" />
-                </div>
-                <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Temp</label>
-                  <input type="number" value={dados.pv_temporarios} onChange={e => atualizar('pv_temporarios', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" />
-                </div>
-              </div>
-
-              {/* Percepção Passiva */}
-              <div className="mt-2 flex items-center justify-between px-2 py-1.5 bg-[var(--bg3)] rounded border border-[var(--border)]">
-                <span className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Percepção Passiva</span>
-                <span className="text-[var(--gold)] font-cinzel font-bold text-sm">{percepcaoPassiva}</span>
-              </div>
-            </PainelGrimorio>
-
-            {/* Defesas */}
-            <PainelGrimorio titulo="Defesas" compacto>
-              <div className="space-y-1">
-                {TIPOS_DANO.map(({ id, nome, icone }) => {
-                  const defesa = getDefesa(id)
-                  return (
-                    <div key={id} className="flex items-center gap-1.5 text-[10px]">
-                      <span className="w-4">{icone}</span>
-                      <span className="text-[#b8a8cc] flex-1 font-crimson">{nome}</span>
-                      {(['resistencia', 'imunidade', 'vulnerabilidade'] as TipoDefesa[]).map(d => (
-                        <button
-                          key={d}
-                          onClick={() => setDefesa(id, defesa === d ? null : d)}
-                          className={`px-1 py-0.5 rounded text-[9px] font-cinzel border transition-colors ${
-                            defesa === d
-                              ? d === 'resistencia' ? 'bg-[#3498db]/30 border-[#3498db] text-[#3498db]'
-                              : d === 'imunidade' ? 'bg-[#27ae60]/30 border-[#27ae60] text-[#27ae60]'
-                              : 'bg-[#e74c3c]/30 border-[#e74c3c] text-[#e74c3c]'
-                              : 'border-[#4a3060] text-[#4a3060] hover:border-[#6b4890]'
-                          }`}
-                          title={{ resistencia: '🛡️ Resistência', imunidade: '🚫 Imunidade', vulnerabilidade: '⚡ Vulnerabilidade' }[d]}
-                        >
-                          {d === 'resistencia' ? '🛡' : d === 'imunidade' ? '🚫' : '⚡'}
-                        </button>
-                      ))}
-                    </div>
-                  )
-                })}
-              </div>
-            </PainelGrimorio>
-
-            {/* Salvaguardas */}
-            <PainelGrimorio titulo="Salvaguardas" compacto>
-              <div className="space-y-1">
-                {ATRIBUTOS.map(({ key, label }) => {
-                  const temProf = dados.salvaguardas?.[key] ?? false
-                  const mod = mods[key as keyof typeof mods] ?? 0
-                  const valorFinal = mod + (temProf ? dados.bonus_proficiencia : 0)
-                  return (
-                    <div key={key} className="flex items-center gap-1.5">
-                      <input
-                        type="checkbox"
-                        checked={temProf}
-                        onChange={e => atualizar('salvaguardas', { ...dados.salvaguardas, [key]: e.target.checked })}
-                        className="w-3 h-3 accent-[var(--accent)] flex-shrink-0"
-                      />
-                      <span className="text-[var(--gold)] text-xs font-cinzel font-bold w-6 text-right flex-shrink-0">
-                        {valorFinal >= 0 ? `+${valorFinal}` : `${valorFinal}`}
-                      </span>
-                      <span className="text-[var(--text2)] text-xs font-crimson">{label}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </PainelGrimorio>
+          {/* Coluna 1 — Atributos em coluna vertical */}
+          <div className="space-y-2">
+            {ATRIBUTOS.map(({ key, label }) => (
+              <AtributoCard
+                key={key}
+                label={label}
+                value={dados[key as keyof Personagem] as number}
+                onChange={v => atualizar(key, v)}
+              />
+            ))}
           </div>
 
-          {/* Coluna 2 - Info geral + Ataques */}
+          {/* Coluna 2 — Informações + Salvaguardas + Combate + Ataques */}
           <div className="space-y-3">
             <PainelGrimorio titulo="Informações" compacto>
               <div className="space-y-2">
@@ -500,8 +394,6 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                     />
                   </div>
                 ))}
-
-                {/* XP + barra de progresso */}
                 <div>
                   <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Pontos de Experiência</label>
                   <InputNumerico
@@ -547,12 +439,73 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                     )
                   })()}
                 </div>
-
-                {/* Inspiração Heroica */}
                 <InspiracaoHeroica
                   valor={typeof dados.inspiracao === 'number' ? dados.inspiracao : 0}
                   onChange={val => atualizar('inspiracao', val as never)}
                 />
+              </div>
+            </PainelGrimorio>
+
+            <PainelGrimorio titulo="Salvaguardas" compacto>
+              <div className="space-y-1">
+                {ATRIBUTOS.map(({ key, label }) => {
+                  const temProf = dados.salvaguardas?.[key] ?? false
+                  const mod = mods[key as keyof typeof mods] ?? 0
+                  const valorFinal = mod + (temProf ? dados.bonus_proficiencia : 0)
+                  return (
+                    <div key={key} className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={temProf}
+                        onChange={e => atualizar('salvaguardas', { ...dados.salvaguardas, [key]: e.target.checked })}
+                        className="w-3 h-3 accent-[var(--accent)] flex-shrink-0"
+                      />
+                      <span className="text-[var(--gold)] text-xs font-cinzel font-bold w-6 text-right flex-shrink-0">
+                        {valorFinal >= 0 ? `+${valorFinal}` : `${valorFinal}`}
+                      </span>
+                      <span className="text-[var(--text2)] text-xs font-crimson">{label}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </PainelGrimorio>
+
+            <PainelGrimorio titulo="Combate" compacto>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <div>
+                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">CA</label>
+                  <input type="number" value={dados.ca} onChange={e => atualizar('ca', parseInt(e.target.value) || 10)} className="w-full input-dd text-center" />
+                </div>
+                <div>
+                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Iniciativa</label>
+                  <input type="number" value={dados.iniciativa} onChange={e => atualizar('iniciativa', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" />
+                </div>
+                <div>
+                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Desl. (m)</label>
+                  <input type="number" value={dados.deslocamento} onChange={e => atualizar('deslocamento', parseInt(e.target.value) || 9)} className="w-full input-dd text-center" />
+                </div>
+                <div>
+                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Prof. Bônus</label>
+                  <input type="number" value={dados.bonus_proficiencia} onChange={e => atualizar('bonus_proficiencia', parseInt(e.target.value) || 2)} className="w-full input-dd text-center" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Máx</label>
+                  <input type="number" value={dados.pv_maximo} onChange={e => atualizar('pv_maximo', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" />
+                </div>
+                <div>
+                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Atual</label>
+                  <input type="number" value={dados.pv_atual} onChange={e => atualizar('pv_atual', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" />
+                </div>
+                <div>
+                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Temp</label>
+                  <input type="number" value={dados.pv_temporarios} onChange={e => atualizar('pv_temporarios', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" />
+                </div>
+              </div>
+              <div className="mt-2 flex items-center justify-between px-2 py-1.5 bg-[var(--bg3)] rounded border border-[var(--border)]">
+                <span className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Percepção Passiva</span>
+                <span className="text-[var(--gold)] font-cinzel font-bold text-sm">{percepcaoPassiva}</span>
               </div>
             </PainelGrimorio>
 
@@ -575,10 +528,10 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
             </PainelGrimorio>
           </div>
 
-          {/* Coluna 3 - Perícias + Traços */}
+          {/* Coluna 3 — Perícias + Traços + Defesas */}
           <div className="space-y-3">
             <PainelGrimorio titulo="Perícias" compacto>
-              <div className="space-y-0.5 max-h-72 overflow-y-auto pr-1">
+              <div className="space-y-0.5 max-h-80 overflow-y-auto pr-1">
                 {PERICIAS.map(({ nome, atributo }) => {
                   const temProf = dados.pericias?.[nome] ?? false
                   const modBase = (mods[atributo as keyof typeof mods] ?? 0) + (temProf ? dados.bonus_proficiencia : 0)
@@ -639,6 +592,36 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                     />
                   </div>
                 ))}
+              </div>
+            </PainelGrimorio>
+
+            <PainelGrimorio titulo="Defesas" compacto>
+              <div className="space-y-1">
+                {TIPOS_DANO.map(({ id, nome, icone }) => {
+                  const defesa = getDefesa(id)
+                  return (
+                    <div key={id} className="flex items-center gap-1.5 text-[10px]">
+                      <span className="w-4">{icone}</span>
+                      <span className="text-[#b8a8cc] flex-1 font-crimson">{nome}</span>
+                      {(['resistencia', 'imunidade', 'vulnerabilidade'] as TipoDefesa[]).map(d => (
+                        <button
+                          key={d}
+                          onClick={() => setDefesa(id, defesa === d ? null : d)}
+                          className={`px-1 py-0.5 rounded text-[9px] font-cinzel border transition-colors ${
+                            defesa === d
+                              ? d === 'resistencia' ? 'bg-[#3498db]/30 border-[#3498db] text-[#3498db]'
+                              : d === 'imunidade' ? 'bg-[#27ae60]/30 border-[#27ae60] text-[#27ae60]'
+                              : 'bg-[#e74c3c]/30 border-[#e74c3c] text-[#e74c3c]'
+                              : 'border-[#4a3060] text-[#4a3060] hover:border-[#6b4890]'
+                          }`}
+                          title={{ resistencia: '🛡️ Resistência', imunidade: '🚫 Imunidade', vulnerabilidade: '⚡ Vulnerabilidade' }[d]}
+                        >
+                          {d === 'resistencia' ? '🛡' : d === 'imunidade' ? '🚫' : '⚡'}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                })}
               </div>
             </PainelGrimorio>
           </div>
@@ -940,6 +923,33 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         </div>,
         document.body
       )}
+    </div>
+  )
+}
+
+function AtributoCard({ label, value, onChange }: {
+  label: string
+  value: number
+  onChange: (v: number) => void
+}) {
+  const mod = calcularModificadorAtributo(value)
+  return (
+    <div className="flex flex-col items-center border border-[#4a3060] rounded-lg overflow-hidden bg-[#1e1525]">
+      <div className="w-full bg-[#261a2e] py-1 text-center">
+        <span className="text-[#8870a8] text-[9px] font-cinzel uppercase tracking-wider">{label}</span>
+      </div>
+      <div className="py-2 flex flex-col items-center gap-1.5">
+        <div className="w-12 h-12 rounded-full border-2 border-[#4a3060] bg-[#261a2e] flex items-center justify-center">
+          <span className="text-[#d4a843] text-base font-bold font-cinzel leading-none">{formatarModificador(mod)}</span>
+        </div>
+        <input
+          type="number"
+          value={value}
+          onChange={e => onChange(parseInt(e.target.value) || 10)}
+          className="w-14 input-dd text-center text-sm font-bold"
+          title={label}
+        />
+      </div>
     </div>
   )
 }
