@@ -111,15 +111,31 @@ function CardPersonagem({ p }: { p: Personagem }) {
 }
 
 export default function PersonagensPage() {
-  const { campanhaAtiva } = useCampanha()
+  const { campanhaAtiva, papelPorCampanha } = useCampanha()
   const [personagens, setPersonagens] = useState<Personagem[]>([])
   const [carregando, setCarregando] = useState(true)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [nomeUsuario, setNomeUsuario] = useState('')
   const [criando, setCriando] = useState(false)
   const [nomeNovo, setNomeNovo] = useState('')
   const [jogadorNovo, setJogadorNovo] = useState('')
   const [tipoNovo, setTipoNovo] = useState<'jogador' | 'npc' | 'monstro'>('jogador')
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
   const [ordenacao, setOrdenacao] = useState<Ordenacao>('nome')
+
+  const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
+
+  useEffect(() => {
+    async function getUser() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      setUserId(user.id)
+      const { data: profile } = await supabase.from('profiles').select('nome').eq('id', user.id).single()
+      if (profile?.nome) setNomeUsuario(profile.nome)
+    }
+    getUser()
+  }, [])
 
   useEffect(() => {
     if (!campanhaAtiva?.id) {
@@ -153,11 +169,11 @@ export default function PersonagensPage() {
     if (!campanhaAtiva?.id) { toast.error('Selecione uma campanha primeiro'); return }
     try {
       const supabase = createClient()
-      const { error } = await supabase.from('personagens').insert({
+      const novoPersonagem: Record<string, unknown> = {
         campanha_id: campanhaAtiva.id,
         nome: nomeNovo,
-        jogador_nome: jogadorNovo || 'Jogador',
-        tipo_personagem: tipoNovo,
+        jogador_nome: jogadorNovo || (ehJogador ? nomeUsuario : 'Jogador'),
+        tipo_personagem: ehJogador ? 'jogador' : tipoNovo,
         nivel: 1,
         forca: 10, destreza: 10, constituicao: 10,
         inteligencia: 10, sabedoria: 10, carisma: 10,
@@ -169,7 +185,10 @@ export default function PersonagensPage() {
         resistencias: [],
         imunidades: [],
         vulnerabilidades: [],
-      })
+      }
+      if (ehJogador && userId) novoPersonagem.user_id = userId
+
+      const { error } = await supabase.from('personagens').insert(novoPersonagem)
       if (error) throw error
       toast.success('Personagem criado!')
       setCriando(false)
@@ -229,60 +248,66 @@ export default function PersonagensPage() {
             <RefreshCw className="w-3 h-3" />
           </BotaoRunico>
           <BotaoRunico variante="ouro" tamanho="sm" onClick={() => setCriando(true)}>
-            <Plus className="w-3 h-3" /> Novo Personagem
+            <Plus className="w-3 h-3" /> {ehJogador ? 'Minha Ficha' : 'Novo Personagem'}
           </BotaoRunico>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-4 items-center">
-        <div className="flex gap-1">
-          {(['todos', 'jogador', 'npc', 'monstro'] as FiltroTipo[]).map(tipo => (
-            <button
-              key={tipo}
-              onClick={() => setFiltroTipo(tipo)}
-              className={`px-2 py-1 rounded text-xs font-cinzel transition-colors ${
-                filtroTipo === tipo
-                  ? 'bg-[var(--accent)] text-[var(--bg)]'
-                  : 'bg-[var(--surface)] text-[var(--text3)] hover:bg-[var(--surface2)]'
-              }`}
-            >
-              {labelFiltro[tipo]}
-            </button>
-          ))}
+      {!ehJogador && (
+        <div className="flex flex-wrap gap-2 mb-4 items-center">
+          <div className="flex gap-1">
+            {(['todos', 'jogador', 'npc', 'monstro'] as FiltroTipo[]).map(tipo => (
+              <button
+                key={tipo}
+                onClick={() => setFiltroTipo(tipo)}
+                className={`px-2 py-1 rounded text-xs font-cinzel transition-colors ${
+                  filtroTipo === tipo
+                    ? 'bg-[var(--accent)] text-[var(--bg)]'
+                    : 'bg-[var(--surface)] text-[var(--text3)] hover:bg-[var(--surface2)]'
+                }`}
+              >
+                {labelFiltro[tipo]}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1" />
+          <select
+            value={ordenacao}
+            onChange={e => setOrdenacao(e.target.value as Ordenacao)}
+            className="input-dd text-xs py-1"
+          >
+            <option value="nome">Nome A-Z</option>
+            <option value="nivel">Nível ↓</option>
+            <option value="xp">Experiência ↓</option>
+            <option value="ca">CA ↓</option>
+            <option value="pv">PV ↓</option>
+          </select>
         </div>
-        <div className="flex-1" />
-        <select
-          value={ordenacao}
-          onChange={e => setOrdenacao(e.target.value as Ordenacao)}
-          className="input-dd text-xs py-1"
-        >
-          <option value="nome">Nome A-Z</option>
-          <option value="nivel">Nível ↓</option>
-          <option value="xp">Experiência ↓</option>
-          <option value="ca">CA ↓</option>
-          <option value="pv">PV ↓</option>
-        </select>
-      </div>
+      )}
 
       {criando && (
-        <PainelGrimorio titulo="Novo Personagem" ornamentado className="mb-4 max-w-md">
+        <PainelGrimorio titulo={ehJogador ? 'Criar Minha Ficha' : 'Novo Personagem'} ornamentado className="mb-4 max-w-md">
           <form onSubmit={criarPersonagem} className="space-y-3">
-            <div>
-              <label className="text-[var(--text3)] text-xs font-cinzel uppercase">Tipo</label>
-              <select value={tipoNovo} onChange={e => setTipoNovo(e.target.value as typeof tipoNovo)} className="w-full input-dd mt-1">
-                <option value="jogador">👤 Jogador</option>
-                <option value="npc">🧙 NPC</option>
-                <option value="monstro">👹 Monstro</option>
-              </select>
-            </div>
+            {!ehJogador && (
+              <div>
+                <label className="text-[var(--text3)] text-xs font-cinzel uppercase">Tipo</label>
+                <select value={tipoNovo} onChange={e => setTipoNovo(e.target.value as typeof tipoNovo)} className="w-full input-dd mt-1">
+                  <option value="jogador">👤 Jogador</option>
+                  <option value="npc">🧙 NPC</option>
+                  <option value="monstro">👹 Monstro</option>
+                </select>
+              </div>
+            )}
             <div>
               <label className="text-[var(--text3)] text-xs font-cinzel uppercase">Nome do Personagem</label>
               <input type="text" value={nomeNovo} onChange={e => setNomeNovo(e.target.value)} className="w-full input-dd mt-1" placeholder="Gandalf" required />
             </div>
-            <div>
-              <label className="text-[var(--text3)] text-xs font-cinzel uppercase">Nome do Jogador</label>
-              <input type="text" value={jogadorNovo} onChange={e => setJogadorNovo(e.target.value)} className="w-full input-dd mt-1" placeholder="João" />
-            </div>
+            {!ehJogador && (
+              <div>
+                <label className="text-[var(--text3)] text-xs font-cinzel uppercase">Nome do Jogador</label>
+                <input type="text" value={jogadorNovo} onChange={e => setJogadorNovo(e.target.value)} className="w-full input-dd mt-1" placeholder="João" />
+              </div>
+            )}
             <div className="flex gap-2">
               <BotaoRunico type="submit" variante="ouro" tamanho="sm">Criar</BotaoRunico>
               <BotaoRunico type="button" variante="fantasma" tamanho="sm" onClick={() => setCriando(false)}>Cancelar</BotaoRunico>

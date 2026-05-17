@@ -1,6 +1,11 @@
 import { NextRequest } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 
+const LIMITE_POR_PLANO: Record<string, number> = {
+  free: 1,
+  heroi: 3,
+}
+
 export async function POST(req: NextRequest) {
   const { token } = await req.json()
   if (!token) return Response.json({ erro: 'Token obrigatório' }, { status: 400 })
@@ -42,6 +47,30 @@ export async function POST(req: NextRequest) {
 
   if (existing) {
     return Response.json({ erro: 'Você já é membro desta campanha' }, { status: 400 })
+  }
+
+  // Check campaign limit per plan
+  const { data: perfil } = await admin
+    .from('profiles')
+    .select('plano')
+    .eq('id', user.id)
+    .single()
+
+  const plano = perfil?.plano ?? 'free'
+  const limite = LIMITE_POR_PLANO[plano]
+
+  if (limite !== undefined) {
+    const { count } = await admin
+      .from('campaign_members')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+
+    if ((count ?? 0) >= limite) {
+      const nomePlano = plano === 'free' ? 'gratuita' : 'Herói'
+      return Response.json({
+        erro: `Limite de ${limite} campanha(s) atingido no plano ${nomePlano}. Faça upgrade para participar de mais campanhas.`,
+      }, { status: 403 })
+    }
   }
 
   const { error } = await admin.from('campaign_members').insert({

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useCampanha } from '@/store/campanha'
@@ -78,6 +78,26 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   })
   const [salvando, setSalvando] = useState(false)
   const [alterado, setAlterado] = useState(false)
+  const alteradoRef = useRef(false)
+  useEffect(() => { alteradoRef.current = alterado }, [alterado])
+
+  useEffect(() => {
+    const supabase = createClient()
+    const canal = supabase
+      .channel(`personagem-${p.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'personagens', filter: `id=eq.${p.id}` },
+        payload => {
+          if (!alteradoRef.current) {
+            setDados(prev => ({ ...prev, ...(payload.new as Partial<typeof prev>) }))
+          }
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(canal) }
+  }, [p.id])
+
   const [levelUp, setLevelUp] = useState<{ novoNivel: number; novaProf: number } | null>(null)
 
   // Inventário

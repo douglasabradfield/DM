@@ -20,6 +20,23 @@ export const PLANOS = [
     destaque: false,
   },
   {
+    id: 'heroi',
+    nome: 'Herói',
+    preco: 900,
+    periodo: '/mês',
+    descricao: 'Para o jogador comprometido com sua história',
+    stripe_price_id: process.env.NEXT_PUBLIC_STRIPE_PRICE_HEROI,
+    recursos: [
+      'Até 3 campanhas simultâneas',
+      'Ficha de personagem completa',
+      'Diário pessoal e de grupo',
+      'Acesso completo a Magias e Itens',
+    ],
+    limitacoes: [],
+    cor: 'accent2',
+    destaque: false,
+  },
+  {
     id: 'solo',
     nome: 'DM Solo',
     preco: 1900,

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { useCampanha } from '@/store/campanha'
-import { X, Upload, Search, Trash2, ExternalLink } from 'lucide-react'
+import { X, Upload, Search, Trash2, ExternalLink, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface ImagemGaleria {
@@ -14,6 +14,7 @@ interface ImagemGaleria {
   url: string
   tipo: 'imagem' | 'mapa'
   criado_em: string
+  visivel_jogadores: boolean
 }
 
 interface GaleriaImagensProps {
@@ -21,7 +22,7 @@ interface GaleriaImagensProps {
 }
 
 export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
-  const { campanhaAtiva } = useCampanha()
+  const { campanhaAtiva, papelPorCampanha } = useCampanha()
   const [imagens, setImagens] = useState<ImagemGaleria[]>([])
   const [carregando, setCarregando] = useState(true)
   const [busca, setBusca] = useState('')
@@ -30,24 +31,32 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
   const [titulo, setTitulo] = useState('')
   const [url, setUrl] = useState('')
   const [salvando, setSalvando] = useState(false)
+  const selecionadaRef = useRef(selecionada)
+  selecionadaRef.current = selecionada
+
+  const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
 
   useEffect(() => {
     if (!campanhaAtiva?.id) { setCarregando(false); return }
     carregar()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campanhaAtiva?.id])
+  }, [campanhaAtiva?.id, ehJogador])
 
   async function carregar() {
     if (!campanhaAtiva?.id) return
     setCarregando(true)
     try {
       const supabase = createClient()
-      const { data } = await supabase
+      let query = supabase
         .from('imagens')
         .select('*')
         .eq('campanha_id', campanhaAtiva.id)
         .eq('tipo', tipo)
         .order('criado_em', { ascending: false })
+
+      if (ehJogador) query = query.eq('visivel_jogadores', true)
+
+      const { data } = await query
       setImagens((data ?? []) as ImagemGaleria[])
     } finally {
       setCarregando(false)
@@ -61,7 +70,13 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
       const supabase = createClient()
       const { data, error } = await supabase
         .from('imagens')
-        .insert({ campanha_id: campanhaAtiva.id, titulo: titulo.trim(), url: url.trim(), tipo })
+        .insert({
+          campanha_id: campanhaAtiva.id,
+          titulo: titulo.trim(),
+          url: url.trim(),
+          tipo,
+          visivel_jogadores: false,
+        })
         .select()
         .single()
       if (error) throw error
@@ -82,8 +97,23 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
     const supabase = createClient()
     await supabase.from('imagens').delete().eq('id', id)
     setImagens(prev => prev.filter(i => i.id !== id))
-    if (selecionada?.id === id) setSelecionada(null)
+    if (selecionadaRef.current?.id === id) setSelecionada(null)
     toast.success('Removida')
+  }
+
+  async function toggleVisibilidade(img: ImagemGaleria) {
+    const supabase = createClient()
+    const novoValor = !img.visivel_jogadores
+    const { error } = await supabase
+      .from('imagens')
+      .update({ visivel_jogadores: novoValor })
+      .eq('id', img.id)
+    if (error) { toast.error('Erro ao atualizar visibilidade'); return }
+    setImagens(prev => prev.map(i => i.id === img.id ? { ...i, visivel_jogadores: novoValor } : i))
+    if (selecionadaRef.current?.id === img.id) {
+      setSelecionada(prev => prev ? { ...prev, visivel_jogadores: novoValor } : null)
+    }
+    toast.success(novoValor ? 'Visível para jogadores' : 'Oculto para jogadores')
   }
 
   const filtradas = imagens.filter(i =>
@@ -115,12 +145,14 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
               className="w-full input-dd pl-7 text-sm"
             />
           </div>
-          <button
-            onClick={() => setModalAdicionar(true)}
-            className="w-full py-1.5 bg-[var(--accent)] hover:opacity-90 text-[var(--bg)] rounded font-cinzel text-xs transition-colors flex items-center justify-center gap-1"
-          >
-            <Upload className="w-3 h-3" /> Adicionar {labelTipo}
-          </button>
+          {!ehJogador && (
+            <button
+              onClick={() => setModalAdicionar(true)}
+              className="w-full py-1.5 bg-[var(--accent)] hover:opacity-90 text-[var(--bg)] rounded font-cinzel text-xs transition-colors flex items-center justify-center gap-1"
+            >
+              <Upload className="w-3 h-3" /> Adicionar {labelTipo}
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -128,7 +160,9 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
             <p className="p-4 text-center text-[var(--text3)] text-sm animate-pulse">Carregando...</p>
           ) : filtradas.length === 0 ? (
             <p className="p-4 text-center text-[var(--border)] text-sm font-crimson">
-              {imagens.length === 0 ? `Nenhum${tipo === 'mapa' ? '' : 'a'} ${labelTipo.toLowerCase()} adicionad${tipo === 'mapa' ? 'o' : 'a'}` : 'Nenhum resultado'}
+              {imagens.length === 0
+                ? `Nenhum${tipo === 'mapa' ? '' : 'a'} ${labelTipo.toLowerCase()} adicionad${tipo === 'mapa' ? 'o' : 'a'}`
+                : 'Nenhum resultado'}
             </p>
           ) : (
             filtradas.map(img => (
@@ -138,7 +172,6 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                 className={`w-full text-left p-2 border-b border-[var(--bg3)] hover:bg-[var(--bg3)] transition-colors ${selecionada?.id === img.id ? 'bg-[var(--surface)]' : ''}`}
               >
                 <div className="flex gap-2 items-start">
-                  {/* Miniatura */}
                   <div className="w-12 h-12 bg-[var(--bg3)] rounded overflow-hidden flex-shrink-0">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -148,11 +181,17 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
                     />
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-[var(--text)] text-sm font-crimson truncate">{img.titulo}</p>
                     <p className="text-[var(--text3)] text-[10px]">
                       {new Date(img.criado_em).toLocaleDateString('pt-BR')}
                     </p>
+                    {!ehJogador && (
+                      <span className={`inline-flex items-center gap-0.5 text-[10px] mt-0.5 ${img.visivel_jogadores ? 'text-[var(--green2)]' : 'text-[var(--border)]'}`}>
+                        {img.visivel_jogadores ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
+                        {img.visivel_jogadores ? 'Visível' : 'Oculto'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </button>
@@ -174,9 +213,24 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
           </div>
         ) : (
           <div className="max-w-4xl w-full">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h2 className="font-cinzel text-[var(--gold)] text-xl font-bold">{selecionada.titulo}</h2>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
+                {!ehJogador && (
+                  <button
+                    onClick={() => toggleVisibilidade(selecionada)}
+                    className={`flex items-center gap-1 px-3 py-1.5 border rounded text-xs transition-colors ${
+                      selecionada.visivel_jogadores
+                        ? 'border-[var(--green2)] text-[var(--green2)] hover:bg-[var(--green2)]/10'
+                        : 'border-[var(--border)] text-[var(--text3)] hover:border-[var(--green2)] hover:text-[var(--green2)]'
+                    }`}
+                  >
+                    {selecionada.visivel_jogadores
+                      ? <><Eye className="w-3 h-3" /> Visível aos jogadores</>
+                      : <><EyeOff className="w-3 h-3" /> Oculto aos jogadores</>
+                    }
+                  </button>
+                )}
                 <a
                   href={selecionada.url}
                   target="_blank"
@@ -185,12 +239,14 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                 >
                   <ExternalLink className="w-3 h-3" /> Abrir original
                 </a>
-                <button
-                  onClick={() => remover(selecionada.id)}
-                  className="flex items-center gap-1 px-3 py-1.5 border border-[var(--red2)] text-[var(--red2)] rounded text-xs hover:bg-[var(--red2)]/10 transition-colors"
-                >
-                  <Trash2 className="w-3 h-3" /> Remover
-                </button>
+                {!ehJogador && (
+                  <button
+                    onClick={() => remover(selecionada.id)}
+                    className="flex items-center gap-1 px-3 py-1.5 border border-[var(--red2)] text-[var(--red2)] rounded text-xs hover:bg-[var(--red2)]/10 transition-colors"
+                  >
+                    <Trash2 className="w-3 h-3" /> Remover
+                  </button>
+                )}
               </div>
             </div>
             {/* eslint-disable-next-line @next/next/no-img-element */}

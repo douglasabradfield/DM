@@ -10,10 +10,11 @@ import { useBatalha } from '@/store/batalha'
 import { useCampanha } from '@/store/campanha'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { BookMarked, Plus, Trash2, Sword, Shield, ScrollText, Star, Map } from 'lucide-react'
+import { BookMarked, Plus, Trash2, Sword, Shield, ScrollText, Star, Map, Lock, Globe } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 type TipoEntrada = 'nota' | 'batalha' | 'npc' | 'item' | 'plot'
+type Visibilidade = 'grupo' | 'privado'
 
 interface EntradaDiario {
   id: string
@@ -24,6 +25,8 @@ interface EntradaDiario {
   criado_em: string
   campanha_id: string
   sessao_id: string | null
+  criado_por: string | null
+  visibilidade: Visibilidade
 }
 
 const ICONES_TIPO: Record<TipoEntrada, React.ReactNode> = {
@@ -49,9 +52,22 @@ export default function DiarioPage() {
   const [tipo, setTipo] = useState<TipoEntrada>('nota')
   const [titulo, setTitulo] = useState('')
   const [conteudo, setConteudo] = useState('')
+  const [visibilidade, setVisibilidade] = useState<Visibilidade>('grupo')
   const [filtroTipo, setFiltroTipo] = useState<TipoEntrada | ''>('')
+  const [userId, setUserId] = useState<string | null>(null)
   const { log } = useBatalha()
-  const { campanhaAtiva } = useCampanha()
+  const { campanhaAtiva, papelPorCampanha } = useCampanha()
+
+  const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
+
+  useEffect(() => {
+    async function getUser() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) setUserId(user.id)
+    }
+    getUser()
+  }, [])
 
   const carregar = useCallback(async () => {
     if (!campanhaAtiva) { setCarregando(false); return }
@@ -61,17 +77,25 @@ export default function DiarioPage() {
       let query = supabase.from('diario_entradas').select('*').eq('campanha_id', campanhaAtiva.id)
       if (filtroTipo) query = query.eq('tipo', filtroTipo)
       const { data } = await query.order('criado_em', { ascending: false })
-      setEntradas((data ?? []) as EntradaDiario[])
+      const todas = (data ?? []) as EntradaDiario[]
+
+      const visiveis = ehJogador && userId
+        ? todas.filter(e =>
+            e.visibilidade === 'grupo' ||
+            (e.visibilidade === 'privado' && e.criado_por === userId)
+          )
+        : todas
+
+      setEntradas(visiveis)
     } finally {
       setCarregando(false)
     }
-  }, [campanhaAtiva, filtroTipo])
+  }, [campanhaAtiva, filtroTipo, ehJogador, userId])
 
   useEffect(() => { carregar() }, [carregar])
 
   async function criar(e: React.FormEvent) {
     e.preventDefault()
-    console.log('campanhaAtiva:', campanhaAtiva)
     if (!campanhaAtiva?.id) { toast.error('Selecione uma campanha ativa primeiro'); return }
     if (!conteudo.trim()) { toast.error('Preencha o conteúdo da entrada'); return }
     try {
@@ -83,9 +107,10 @@ export default function DiarioPage() {
         titulo: titulo.trim() || null,
         conteudo: conteudo.trim(),
         tags: [],
+        criado_por: userId ?? null,
+        visibilidade: ehJogador ? visibilidade : 'grupo',
       })
       if (error) {
-        console.error('Erro ao criar entrada:', error)
         toast.error(`Erro: ${error.message}`)
         return
       }
@@ -93,9 +118,9 @@ export default function DiarioPage() {
       setCriando(false)
       setTitulo('')
       setConteudo('')
+      setVisibilidade('grupo')
       carregar()
-    } catch (err) {
-      console.error('Exceção ao criar entrada:', err)
+    } catch {
       toast.error('Erro ao criar entrada')
     }
   }
@@ -123,6 +148,8 @@ export default function DiarioPage() {
         titulo: `Log de Batalha — ${new Date().toLocaleDateString('pt-BR')}`,
         conteudo: resumo,
         tags: ['batalha', 'log'],
+        criado_por: userId ?? null,
+        visibilidade: 'grupo',
       })
       toast.success('Log exportado para o diário!')
       carregar()
@@ -131,7 +158,8 @@ export default function DiarioPage() {
     }
   }
 
-  const filtradas = filtroTipo ? entradas.filter(e => e.tipo === filtroTipo) : entradas
+  const podeDeletar = (entrada: EntradaDiario) =>
+    !ehJogador || entrada.criado_por === userId
 
   return (
     <div className="p-4">
@@ -141,7 +169,7 @@ export default function DiarioPage() {
           <p className="text-[var(--text3)] text-sm font-crimson">{entradas.length} entradas registradas</p>
         </div>
         <div className="flex gap-2">
-          {log.length > 0 && (
+          {log.length > 0 && !ehJogador && (
             <BotaoRunico variante="secundario" tamanho="sm" onClick={exportarLogBatalha}>
               <Sword className="w-3 h-3" /> Exportar Log de Batalha
             </BotaoRunico>
@@ -153,7 +181,7 @@ export default function DiarioPage() {
       </div>
 
       {/* Filtros */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4 flex-wrap">
         <button
           onClick={() => setFiltroTipo('')}
           className={`px-3 py-1 text-xs font-cinzel rounded border transition-colors ${filtroTipo === '' ? 'bg-[var(--surface)] border-[#d4a843] text-[var(--gold)]' : 'border-[var(--border)] text-[var(--text3)]'}`}
@@ -193,6 +221,33 @@ export default function DiarioPage() {
               className="w-full input-dd text-sm resize-y"
               campanhaId={campanhaAtiva?.id ?? null}
             />
+            {ehJogador && (
+              <div className="flex gap-2 items-center">
+                <span className="text-[var(--text3)] text-xs font-cinzel uppercase">Visibilidade:</span>
+                <button
+                  type="button"
+                  onClick={() => setVisibilidade('grupo')}
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-cinzel border transition-colors ${
+                    visibilidade === 'grupo'
+                      ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10'
+                      : 'border-[var(--border)] text-[var(--text3)]'
+                  }`}
+                >
+                  <Globe className="w-3 h-3" /> Grupo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibilidade('privado')}
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-cinzel border transition-colors ${
+                    visibilidade === 'privado'
+                      ? 'border-[var(--gold)] text-[var(--gold)] bg-[var(--gold)]/10'
+                      : 'border-[var(--border)] text-[var(--text3)]'
+                  }`}
+                >
+                  <Lock className="w-3 h-3" /> Privado
+                </button>
+              </div>
+            )}
             <div className="flex gap-2">
               <BotaoRunico type="submit" variante="ouro" tamanho="sm">Salvar</BotaoRunico>
               <BotaoRunico type="button" variante="fantasma" tamanho="sm" onClick={() => setCriando(false)}>Cancelar</BotaoRunico>
@@ -208,7 +263,7 @@ export default function DiarioPage() {
             <div key={i} className="h-24 bg-[var(--bg2)] border border-[var(--border)] rounded animate-pulse" />
           ))}
         </div>
-      ) : filtradas.length === 0 ? (
+      ) : entradas.length === 0 ? (
         <div className="text-center py-12">
           <BookMarked className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
           <p className="font-cinzel text-[var(--border)] text-lg mb-2">Nenhuma entrada</p>
@@ -216,23 +271,30 @@ export default function DiarioPage() {
         </div>
       ) : (
         <div className="space-y-3 max-w-3xl">
-          {filtradas.map(entrada => (
+          {entradas.map(entrada => (
             <PainelGrimorio key={entrada.id} compacto>
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span style={{ color: COR_TIPO[entrada.tipo] }}>{ICONES_TIPO[entrada.tipo]}</span>
                   {entrada.titulo && (
                     <span className="font-cinzel text-sm" style={{ color: COR_TIPO[entrada.tipo] }}>{entrada.titulo}</span>
                   )}
                   <span className="text-[var(--border)] text-xs capitalize">{entrada.tipo}</span>
+                  {entrada.visibilidade === 'privado' && (
+                    <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 border border-[var(--gold)]/50 text-[var(--gold)] rounded font-cinzel">
+                      <Lock className="w-2.5 h-2.5" /> Privado
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-shrink-0">
                   <span className="text-[var(--border)] text-xs">
                     {format(new Date(entrada.criado_em), "d 'de' MMM, HH:mm", { locale: ptBR })}
                   </span>
-                  <button onClick={() => excluir(entrada.id)} className="text-[var(--border)] hover:text-[var(--red2)] transition-colors">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {podeDeletar(entrada) && (
+                    <button onClick={() => excluir(entrada.id)} className="text-[var(--border)] hover:text-[var(--red2)] transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
               <TextoComMencoes texto={entrada.conteudo} className="text-[var(--text2)] font-crimson text-sm whitespace-pre-wrap" />
