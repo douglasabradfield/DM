@@ -9,8 +9,9 @@ import type { Profile, Campanha } from '@/types/database'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { DivisorOrnamentado } from '@/components/ui/DivisorOrnamentado'
-import { Check, Crown, X, BookOpen } from 'lucide-react'
+import { Check, Crown, X, BookOpen, UserPlus } from 'lucide-react'
 import toast from 'react-hot-toast'
+import type { CampaignMember, CampaignInvite } from '@/types/database'
 
 function SecaoCampanhas() {
   const { campanhaAtiva, campanhas, setCampanhaAtiva, carregarCampanhas } = useCampanha()
@@ -271,6 +272,187 @@ function CampanhaCard({ campanha, ativa, editando, form, salvando, encerrando, o
   )
 }
 
+function SecaoMembros() {
+  const { campanhaAtiva, papelPorCampanha } = useCampanha()
+  const [membros, setMembros] = useState<CampaignMember[]>([])
+  const [convites, setConvites] = useState<CampaignInvite[]>([])
+  const [email, setEmail] = useState('')
+  const [convidando, setConvidando] = useState(false)
+  const [linkConvite, setLinkConvite] = useState('')
+  const [carregando, setCarregando] = useState(false)
+
+  const campanhaId = campanhaAtiva?.id
+  const ehDm = campanhaId ? papelPorCampanha[campanhaId] === 'dm' : false
+
+  useEffect(() => {
+    if (!campanhaId || !ehDm) return
+    carregar()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campanhaId])
+
+  async function carregar() {
+    setCarregando(true)
+    try {
+      const res = await fetch(`/api/campanhas/${campanhaId}/membros`)
+      const dados = await res.json()
+      setMembros(dados.membros ?? [])
+      setConvites(dados.convites ?? [])
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  async function convidar(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email.trim() || !campanhaId) return
+    setConvidando(true)
+    try {
+      const res = await fetch(`/api/campanhas/${campanhaId}/convidar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const dados = await res.json()
+      if (!res.ok) throw new Error(dados.erro)
+      setLinkConvite(dados.link)
+      setEmail('')
+      await carregar()
+      toast.success('Convite gerado!')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao convidar')
+    } finally {
+      setConvidando(false)
+    }
+  }
+
+  async function removerMembro(userId: string) {
+    if (!campanhaId || !confirm('Remover este membro da campanha?')) return
+    const res = await fetch(`/api/campanhas/${campanhaId}/membros?user_id=${userId}`, { method: 'DELETE' })
+    if (res.ok) {
+      toast.success('Membro removido')
+      await carregar()
+    } else {
+      toast.error('Erro ao remover membro')
+    }
+  }
+
+  if (!campanhaAtiva) {
+    return <p className="text-[var(--text3)] text-sm font-crimson">Selecione uma campanha ativa.</p>
+  }
+
+  if (!ehDm) return null
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={convidar} className="flex gap-2">
+        <input
+          type="email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          placeholder="email@jogador.com"
+          className="flex-1 input-dd text-sm"
+        />
+        <button
+          type="submit"
+          disabled={!email.trim() || convidando}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--accent)] text-[var(--bg)] rounded font-cinzel text-xs disabled:opacity-50 hover:opacity-90 transition-opacity"
+        >
+          <UserPlus className="w-3.5 h-3.5" />
+          {convidando ? 'Gerando...' : 'Convidar'}
+        </button>
+      </form>
+
+      {linkConvite && (
+        <div className="bg-[var(--surface)] border border-[var(--accent)]/50 rounded-lg p-3 space-y-1">
+          <p className="text-[var(--text3)] text-xs font-cinzel uppercase tracking-wider">Link de convite gerado</p>
+          <div className="flex gap-2 items-center">
+            <p className="text-[var(--text)] text-xs font-mono truncate flex-1 bg-[var(--bg3)] px-2 py-1 rounded">
+              {linkConvite}
+            </p>
+            <button
+              onClick={() => { navigator.clipboard.writeText(linkConvite); toast.success('Copiado!') }}
+              className="text-xs px-2 py-1 border border-[var(--border)] text-[var(--text2)] rounded hover:bg-[var(--surface2)] transition-colors flex-shrink-0"
+            >
+              Copiar
+            </button>
+          </div>
+          <p className="text-[var(--text3)] text-[11px] font-crimson">Válido por 7 dias. Compartilhe com o jogador.</p>
+        </div>
+      )}
+
+      {carregando ? (
+        <p className="text-[var(--text3)] text-sm animate-pulse font-crimson">Carregando membros...</p>
+      ) : (
+        <>
+          {membros.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[var(--text3)] text-xs font-cinzel uppercase tracking-wider">
+                Membros ({membros.length})
+              </p>
+              {membros.map(m => (
+                <div key={m.id} className="flex items-center justify-between bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-[var(--text)] text-sm font-crimson truncate">
+                      {m.profiles?.nome || m.profiles?.email}
+                    </p>
+                    {m.profiles?.nome && (
+                      <p className="text-[var(--text3)] text-xs truncate">{m.profiles.email}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-cinzel border ${
+                      m.papel === 'dm'
+                        ? 'border-[var(--gold)] text-[var(--gold)]'
+                        : 'border-[var(--accent2)] text-[var(--accent2)]'
+                    }`}>
+                      {m.papel === 'dm' ? 'DM' : 'Jogador'}
+                    </span>
+                    {m.papel !== 'dm' && (
+                      <button
+                        onClick={() => removerMembro(m.user_id)}
+                        className="text-xs px-1.5 py-0.5 border border-[var(--red2)] text-[var(--red2)] rounded hover:bg-[var(--red2)]/10 transition-colors"
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {convites.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[var(--text3)] text-xs font-cinzel uppercase tracking-wider">
+                Convites pendentes ({convites.length})
+              </p>
+              {convites.map(c => (
+                <div key={c.id} className="flex items-center justify-between bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 opacity-60">
+                  <div>
+                    <p className="text-[var(--text)] text-sm font-crimson">{c.email}</p>
+                    <p className="text-[var(--text3)] text-xs">
+                      Expira: {new Date(c.expires_at).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 border border-[var(--border)] text-[var(--text3)] rounded font-cinzel">
+                    Pendente
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {membros.length === 0 && convites.length === 0 && (
+            <p className="text-[var(--text3)] text-sm font-crimson text-center py-2">
+              Nenhum membro ou convite pendente. Convide jogadores pelo email acima.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function ConfiguracoesPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [carregando, setCarregando] = useState(true)
@@ -352,6 +534,13 @@ export default function ConfiguracoesPage() {
       {/* Campanhas */}
       <PainelGrimorio titulo="Gerenciar Campanhas" ornamentado>
         <SecaoCampanhas />
+      </PainelGrimorio>
+
+      <DivisorOrnamentado texto="Membros" />
+
+      {/* Membros */}
+      <PainelGrimorio titulo="Membros da Campanha" ornamentado>
+        <SecaoMembros />
       </PainelGrimorio>
 
       <DivisorOrnamentado texto="Planos" />

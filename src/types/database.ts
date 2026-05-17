@@ -98,3 +98,22 @@ export interface Sessao {
   duracao_minutos: number | null
   encerrada: boolean
 }
+
+export interface CampaignMember {
+  id: string
+  campanha_id: string
+  user_id: string
+  papel: 'dm' | 'jogador'
+  joined_at: string
+  profiles?: { email: string; nome: string | null; avatar_url: string | null }
+}
+
+export interface CampaignInvite {
+  id: string
+  campanha_id: string
+  email: string
+  token: string
+  usado: boolean
+  expires_at: string
+  criado_em: string
+}

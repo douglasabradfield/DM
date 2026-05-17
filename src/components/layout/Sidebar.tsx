@@ -15,48 +15,29 @@ import {
 import toast from 'react-hot-toast'
 
 const itensNav = [
-  { href: '/batalha',       icone: Swords,     label: 'Batalha',       cor: '#e74c3c' },
-  { href: '/personagens',   icone: Users,       label: 'Personagens',   cor: '#3498db' },
-  { href: '/bestiario',     icone: Skull,       label: 'Bestiário',     cor: '#9b59b6' },
-  { href: '/magias',        icone: Wand2,       label: 'Magias',        cor: '#c39bd3' },
-  { href: '/itens',         icone: Package,     label: 'Itens',         cor: '#d4a843' },
-  { href: '/aventura',      icone: Map,         label: 'Aventura',      cor: '#27ae60' },
-  { href: '/diario',        icone: BookMarked,  label: 'Diário',        cor: '#f39c12' },
-  { href: '/imagens',       icone: ImageIcon,   label: 'Imagens',       cor: '#e91e63' },
-  { href: '/mapas',         icone: Compass,     label: 'Mapas',         cor: '#00bcd4' },
-  { href: '/ia',            icone: Bot,         label: 'Assistente IA', cor: '#1abc9c' },
-  { href: '/configuracoes', icone: Settings,    label: 'Configurações', cor: '#95a5a6' },
+  { href: '/batalha',       icone: Swords,     label: 'Batalha',       cor: '#e74c3c', dmOnly: true  },
+  { href: '/personagens',   icone: Users,       label: 'Personagens',   cor: '#3498db'                },
+  { href: '/bestiario',     icone: Skull,       label: 'Bestiário',     cor: '#9b59b6', dmOnly: true  },
+  { href: '/magias',        icone: Wand2,       label: 'Magias',        cor: '#c39bd3'                },
+  { href: '/itens',         icone: Package,     label: 'Itens',         cor: '#d4a843'                },
+  { href: '/aventura',      icone: Map,         label: 'Aventura',      cor: '#27ae60', dmOnly: true  },
+  { href: '/diario',        icone: BookMarked,  label: 'Diário',        cor: '#f39c12'                },
+  { href: '/imagens',       icone: ImageIcon,   label: 'Imagens',       cor: '#e91e63'                },
+  { href: '/mapas',         icone: Compass,     label: 'Mapas',         cor: '#00bcd4'                },
+  { href: '/ia',            icone: Bot,         label: 'Assistente IA', cor: '#1abc9c', dmOnly: true  },
+  { href: '/configuracoes', icone: Settings,    label: 'Configurações', cor: '#95a5a6'                },
 ]
 
 export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
   const pathname = usePathname()
-  const { campanhaAtiva, campanhas, setCampanhaAtiva, setCampanhas } = useCampanha()
+  const { campanhaAtiva, campanhas, setCampanhaAtiva, setCampanhas, carregarCampanhas, papelPorCampanha } = useCampanha()
   const [dropdownAberto, setDropdownAberto] = useState(false)
   const [modalNova, setModalNova] = useState(false)
   const [nomeCampanha, setNomeCampanha] = useState('')
   const [criando, setCriando] = useState(false)
 
-  useEffect(() => {
-    async function carregar() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await supabase
-        .from('campanhas')
-        .select('*')
-        .eq('dm_id', user.id)
-        .order('criado_em', { ascending: false })
-      if (data) {
-        setCampanhas(data as Campanha[])
-        if (!campanhaAtiva && data.length > 0) {
-          const ativa = data.find(c => c.ativa) ?? data[0]
-          setCampanhaAtiva(ativa as Campanha)
-        }
-      }
-    }
-    carregar()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  useEffect(() => { carregarCampanhas() }, [])
 
   async function criarCampanha() {
     if (!nomeCampanha.trim()) return
@@ -81,6 +62,7 @@ export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
       setModalNova(false)
       setNomeCampanha('')
       toast.success(`Campanha "${nova.nome}" criada!`)
+      await carregarCampanhas()
     } catch {
       toast.error('Erro ao criar campanha')
     } finally {
@@ -89,6 +71,8 @@ export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
   }
 
   const campanhasAtivas = campanhas.filter(c => c.ativa !== false)
+  const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
+  const itensVisiveis = itensNav.filter(item => !item.dmOnly || !ehJogador)
 
   return (
     <>
@@ -131,14 +115,19 @@ export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
                   >
                     {c.nome}
                     {campanhaAtiva?.id === c.id && <span className="ml-1 text-[9px]">✓</span>}
+                    {papelPorCampanha[c.id] === 'jogador' && (
+                      <span className="ml-1 text-[9px] text-[var(--accent2)]">(jogador)</span>
+                    )}
                   </button>
                 ))}
-                <button
-                  onClick={() => { setModalNova(true); setDropdownAberto(false) }}
-                  className="w-full text-left px-2 py-1.5 text-sm font-cinzel text-[var(--accent)] hover:bg-[var(--bg3)] transition-colors border-t border-[var(--border)] flex items-center gap-1"
-                >
-                  <Plus className="w-3 h-3" /> Nova campanha
-                </button>
+                {!ehJogador && (
+                  <button
+                    onClick={() => { setModalNova(true); setDropdownAberto(false) }}
+                    className="w-full text-left px-2 py-1.5 text-sm font-cinzel text-[var(--accent)] hover:bg-[var(--bg3)] transition-colors border-t border-[var(--border)] flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" /> Nova campanha
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -146,7 +135,7 @@ export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
 
         {/* Navegação */}
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-          {itensNav.map(({ href, icone: Icone, label, cor }) => {
+          {itensVisiveis.map(({ href, icone: Icone, label, cor }) => {
             const ativo = pathname === href || pathname.startsWith(href + '/')
             return (
               <Link
@@ -253,14 +242,27 @@ export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
 
 export function BottomNav({ isAdmin }: { isAdmin?: boolean }) {
   const pathname = usePathname()
+  const { campanhaAtiva, papelPorCampanha } = useCampanha()
 
-  const itensPrincipais = [
-    { href: '/batalha',     icone: Swords,  label: 'Batalha'  },
-    { href: '/personagens', icone: Users,   label: 'Persona.' },
-    { href: '/bestiario',   icone: Skull,   label: 'Bestia.'  },
-    { href: '/magias',      icone: Wand2,   label: 'Magias'   },
-    { href: '/aventura',    icone: Map,     label: 'Aventura' },
+  const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
+
+  const itensDm = [
+    { href: '/batalha',     icone: Swords,      label: 'Batalha'  },
+    { href: '/personagens', icone: Users,        label: 'Persona.' },
+    { href: '/bestiario',   icone: Skull,        label: 'Bestia.'  },
+    { href: '/magias',      icone: Wand2,        label: 'Magias'   },
+    { href: '/aventura',    icone: Map,          label: 'Aventura' },
   ]
+
+  const itensJogador = [
+    { href: '/personagens', icone: Users,        label: 'Persona.' },
+    { href: '/magias',      icone: Wand2,        label: 'Magias'   },
+    { href: '/itens',       icone: Package,      label: 'Itens'    },
+    { href: '/diario',      icone: BookMarked,   label: 'Diário'   },
+    { href: '/imagens',     icone: ImageIcon,    label: 'Imagens'  },
+  ]
+
+  const itensPrincipais = ehJogador ? itensJogador : itensDm
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50
