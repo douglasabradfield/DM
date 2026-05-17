@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server'
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 
-export async function GET(
-  _req: NextRequest,
+export async function POST(
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: campanhaId } = await params
@@ -20,27 +20,19 @@ export async function GET(
     return Response.json({ erro: 'Sem permissão' }, { status: 403 })
   }
 
-  const admin = createAdminClient()
+  const token = campanha.link_token ?? crypto.randomUUID()
 
-  const { data: membros } = await admin
-    .from('campaign_members')
-    .select('*, profiles(email, nome, avatar_url)')
-    .eq('campanha_id', campanhaId)
-    .order('joined_at')
+  if (!campanha.link_token) {
+    await supabase.from('campanhas').update({ link_token: token }).eq('id', campanhaId)
+  }
 
-  const { data: convites } = await admin
-    .from('campaign_invites')
-    .select('*')
-    .eq('campanha_id', campanhaId)
-    .eq('usado', false)
-    .gt('expires_at', new Date().toISOString())
-    .order('criado_em', { ascending: false })
-
-  return Response.json({ membros: membros ?? [], convites: convites ?? [], link_token: campanha.link_token ?? null })
+  const origin = req.nextUrl.origin
+  const link = `${origin}/entrar?c=${token}`
+  return Response.json({ link, token })
 }
 
 export async function DELETE(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: campanhaId } = await params
@@ -58,16 +50,6 @@ export async function DELETE(
     return Response.json({ erro: 'Sem permissão' }, { status: 403 })
   }
 
-  const userId = req.nextUrl.searchParams.get('user_id')
-  if (!userId) return Response.json({ erro: 'user_id obrigatório' }, { status: 400 })
-
-  const admin = createAdminClient()
-  const { error } = await admin
-    .from('campaign_members')
-    .delete()
-    .eq('campanha_id', campanhaId)
-    .eq('user_id', userId)
-
-  if (error) return Response.json({ erro: error.message }, { status: 500 })
+  await supabase.from('campanhas').update({ link_token: null }).eq('id', campanhaId)
   return Response.json({ ok: true })
 }

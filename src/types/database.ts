@@ -31,6 +31,7 @@ export interface Campanha {
   descricao: string | null
   sistema: string
   ativa: boolean
+  link_token: string | null
   criado_em: string
   resumo_final?: string | null
 }

@@ -8,7 +8,7 @@ import type { Campanha, CampaignMember, CampaignInvite } from '@/types/database'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { cn } from '@/lib/utils'
-import { Plus, X, BookOpen, UserPlus, Users, ChevronLeft } from 'lucide-react'
+import { Plus, X, BookOpen, UserPlus, Users, ChevronLeft, Link2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const SISTEMAS = ['D&D 5e', 'Pathfinder', 'Call of Cthulhu', 'Tormenta', 'Vampiro: A Máscara', 'Outro']
@@ -400,6 +400,8 @@ function MembrosSecao({ campanhaId, ehDm }: { campanhaId: string; ehDm: boolean 
   const [email, setEmail] = useState('')
   const [convidando, setConvidando] = useState(false)
   const [linkConvite, setLinkConvite] = useState('')
+  const [linkEntrada, setLinkEntrada] = useState<string | null>(null)
+  const [gerandoLink, setGerandoLink] = useState(false)
   const [carregando, setCarregando] = useState(true)
 
   const carregar = useCallback(async () => {
@@ -414,6 +416,9 @@ function MembrosSecao({ campanhaId, ehDm }: { campanhaId: string; ehDm: boolean 
         const dados = await res.json()
         setMembros(dados.membros ?? [])
         setConvites(dados.convites ?? [])
+        if (dados.link_token) {
+          setLinkEntrada(`${window.location.origin}/entrar?c=${dados.link_token}`)
+        }
       }
     } finally {
       setCarregando(false)
@@ -450,6 +455,25 @@ function MembrosSecao({ campanhaId, ehDm }: { campanhaId: string; ehDm: boolean 
     const res = await fetch(`/api/campanhas/${campanhaId}/membros?user_id=${userId}`, { method: 'DELETE' })
     if (res.ok) { toast.success('Membro removido'); await carregar() }
     else toast.error('Erro ao remover')
+  }
+
+  async function gerarLink() {
+    setGerandoLink(true)
+    try {
+      const res = await fetch(`/api/campanhas/${campanhaId}/link-entrada`, { method: 'POST' })
+      const dados = await res.json()
+      if (!res.ok) throw new Error(dados.erro)
+      setLinkEntrada(dados.link)
+      toast.success('Link gerado!')
+    } catch { toast.error('Erro ao gerar link') }
+    finally { setGerandoLink(false) }
+  }
+
+  async function revogarLink() {
+    if (!confirm('Revogar o link de entrada? Quem tiver o link antigo não conseguirá mais entrar.')) return
+    const res = await fetch(`/api/campanhas/${campanhaId}/link-entrada`, { method: 'DELETE' })
+    if (res.ok) { setLinkEntrada(null); toast.success('Link revogado') }
+    else toast.error('Erro ao revogar link')
   }
 
   if (!ehDm) {
@@ -521,10 +545,45 @@ function MembrosSecao({ campanhaId, ehDm }: { campanhaId: string; ehDm: boolean 
           )}
 
           {membros.length === 0 && convites.length === 0 && (
-            <p className="text-[var(--text3)] text-sm font-crimson">Nenhum membro ainda. Convide jogadores pelo email.</p>
+            <p className="text-[var(--text3)] text-sm font-crimson">Nenhum membro ainda. Convide jogadores pelo email ou gere um link de entrada.</p>
           )}
         </>
       )}
+
+      {/* Link de Entrada */}
+      <div className="border-t border-[var(--border)] pt-3 mt-1">
+        <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider mb-1">Link de Entrada</p>
+        <p className="text-[var(--text2)] text-xs font-crimson mb-2">
+          Qualquer pessoa com este link pode entrar como jogador.
+        </p>
+        {linkEntrada ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <p className="text-[var(--text)] text-xs font-mono truncate flex-1 bg-[var(--bg3)] px-2 py-1 rounded">{linkEntrada}</p>
+              <button
+                onClick={() => { navigator.clipboard.writeText(linkEntrada); toast.success('Copiado!') }}
+                className="text-xs px-2 py-1 border border-[var(--border)] text-[var(--text2)] rounded hover:bg-[var(--surface2)] flex-shrink-0"
+              >
+                Copiar
+              </button>
+            </div>
+            <button
+              onClick={revogarLink}
+              className="text-xs text-[var(--red2)] hover:underline font-cinzel"
+            >
+              Revogar link
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={gerarLink}
+            disabled={gerandoLink}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--surface)] border border-[var(--border)] text-[var(--text2)] rounded font-cinzel text-xs hover:border-[var(--border2)] transition-colors disabled:opacity-50"
+          >
+            <Link2 className="w-3.5 h-3.5" /> {gerandoLink ? '...' : 'Gerar Link de Entrada'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
