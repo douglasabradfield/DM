@@ -6,6 +6,8 @@ export interface Profile {
   is_admin: boolean
   stripe_customer_id: string | null
   avatar_url: string | null
+  username: string | null
+  telefone: string | null
   criado_em: string
   atualizado_em: string
 }

@@ -2,9 +2,10 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useCampanha } from '@/store/campanha'
 import { getTemaAtual, aplicarTema, type NomeTema, TEMAS } from '@/lib/tema'
-import { LogOut, User, ChevronDown } from 'lucide-react'
+import { LogOut, User, ChevronDown, Settings } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
 interface HeaderProps {
@@ -106,10 +107,20 @@ export function Header({ titulo, usuario }: HeaderProps) {
             </button>
 
             {menuAberto && (
-              <div className="absolute right-0 top-full mt-1 bg-[var(--surface)] border border-[var(--border)] rounded shadow-lg z-50 min-w-40">
+              <div className="absolute right-0 top-full mt-1 bg-[var(--surface)] border border-[var(--border)] rounded shadow-lg z-50 min-w-44">
                 <div className="px-3 py-2 border-b border-[var(--border)]">
-                  <p className="text-xs text-[var(--text3)]">{usuario.email}</p>
+                  <p className="text-xs font-medium text-[var(--text2)]">{usuario.nome || usuario.email}</p>
+                  <p className="text-xs text-[var(--text3)] truncate">{usuario.email}</p>
                 </div>
+                <Link
+                  href="/conta"
+                  onClick={() => setMenuAberto(false)}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--text2)] hover:bg-[var(--bg3)] transition-colors"
+                >
+                  <Settings className="w-4 h-4" />
+                  Minha Conta
+                </Link>
+                <div className="border-t border-[var(--border)]" />
                 <button
                   onClick={sair}
                   className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--red2)] hover:bg-[var(--bg3)] transition-colors"

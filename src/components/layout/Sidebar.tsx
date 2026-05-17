@@ -8,9 +8,9 @@ import { useCampanha } from '@/store/campanha'
 import { createClient } from '@/lib/supabase/client'
 import type { Campanha } from '@/types/database'
 import {
-  Swords, Users, BookOpen, Wand2, Package,
-  Map, BookMarked, Bot, Settings, Shield,
-  ChevronRight, Skull, ChevronDown, Plus, X, ImageIcon, Compass, ShieldCheck,
+  Swords, Users, Wand2, Package,
+  Map, BookMarked, Bot, Shield,
+  ChevronRight, Skull, ChevronDown, Plus, X, ImageIcon, Compass, ShieldCheck, Scroll,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -25,7 +25,7 @@ const itensNav = [
   { href: '/imagens',       icone: ImageIcon,   label: 'Imagens',       cor: '#e91e63'                },
   { href: '/mapas',         icone: Compass,     label: 'Mapas',         cor: '#00bcd4'                },
   { href: '/ia',            icone: Bot,         label: 'Assistente IA', cor: '#1abc9c', dmOnly: true  },
-  { href: '/configuracoes', icone: Settings,    label: 'Configurações', cor: '#95a5a6'                },
+  { href: '/campanhas',     icone: Scroll,      label: 'Campanhas',     cor: '#d4a843'                },
 ]
 
 export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
