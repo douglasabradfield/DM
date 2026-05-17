@@ -6,6 +6,7 @@ import type { Spell } from '@/types/dnd'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoAdicionarPersonagem } from '@/components/ui/BotaoAdicionarPersonagem'
 import { Search } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 const ESCOLAS = ['Abjuração', 'Adivinhação', 'Conjuração', 'Encantamento', 'Evocação', 'Ilusão', 'Necromancia', 'Transmutação']
 const CLASSES = ['Bardo', 'Clérigo', 'Druida', 'Feiticeiro', 'Guardião', 'Mago', 'Paladino', 'Bruxo', 'Artífice']
@@ -28,6 +29,7 @@ export function MagiasCliente() {
   const [selecionada, setSelecionada] = useState<Spell | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false)
+  const [visao, setVisao] = useState<'lista' | 'detalhe'>('lista')
   const [busca, setBusca] = useState('')
   const [filtroNivel, setFiltroNivel] = useState<number | ''>('')
   const [filtroEscola, setFiltroEscola] = useState('')
@@ -55,6 +57,7 @@ export function MagiasCliente() {
     const { data } = await supabase.from('spells').select('*').eq('id', stub.id).single()
     setSelecionada(data as Spell)
     setCarregandoDetalhe(false)
+    setVisao('detalhe')
   }
 
   const filtradas = useMemo(() => lista.filter(m => {
@@ -71,9 +74,12 @@ export function MagiasCliente() {
   const corEscola = (escola: string | null) => COR_ESCOLA[escola ?? ''] ?? 'var(--text3)'
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col md:flex-row h-full gap-0 md:gap-4">
       {/* Lista */}
-      <div className="w-72 border-r border-[var(--border)] flex flex-col">
+      <div className={cn(
+        "flex flex-col gap-4 w-full md:w-72 overflow-y-auto border-r border-[var(--border)]",
+        visao === 'detalhe' ? "hidden md:flex" : "flex"
+      )}>
         <div className="p-3 border-b border-[var(--border)] space-y-2">
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
@@ -130,17 +136,14 @@ export function MagiasCliente() {
                   selecionada?.id === m.id ? 'bg-[var(--surface)]' : 'hover:bg-[var(--bg3)]'
                 }`}
               >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-[var(--text)] text-sm font-crimson truncate flex-1">{m.name_pt}</span>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {m.concentration && <span className="text-[var(--gold)] text-[9px] font-cinzel">C</span>}
-                    {m.ritual && <span className="text-[var(--accent2)] text-[9px] font-cinzel">R</span>}
-                    <span className="text-[10px] font-cinzel" style={{ color: corEscola(m.school_pt) }}>
-                      {m.level === 0 ? 'Truque' : `Nv${m.level}`}
-                    </span>
-                  </div>
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-cinzel font-semibold text-sm text-[var(--dd-text)] leading-tight truncate">
+                    {m.name_pt}
+                  </span>
+                  <span className="text-xs text-[var(--dd-text2)] truncate">
+                    {m.school_pt} · Nível {m.level}
+                  </span>
                 </div>
-                <p className="text-[var(--text3)] text-[10px]">{m.school_pt} · {m.casting_time_pt}</p>
               </button>
             ))
           )}
@@ -152,7 +155,17 @@ export function MagiasCliente() {
       </div>
 
       {/* Detalhes */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className={cn(
+        "flex-1 overflow-y-auto p-4",
+        visao === 'lista' ? "hidden md:block" : "block"
+      )}>
+        <button
+          onClick={() => setVisao('lista')}
+          className="md:hidden flex items-center gap-2 text-sm text-[var(--dd-text2)]
+                     hover:text-[var(--dd-text)] mb-4 transition-colors"
+        >
+          ← Voltar às Magias
+        </button>
         {carregandoDetalhe ? (
           <div className="h-full flex items-center justify-center">
             <p className="text-[var(--text3)] font-cinzel animate-pulse">Carregando detalhes...</p>

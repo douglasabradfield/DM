@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useCampanha } from '@/store/campanha'
-import { getTemaAtual, aplicarTema, type NomeTema } from '@/lib/tema'
+import { getTemaAtual, aplicarTema, type NomeTema, TEMAS } from '@/lib/tema'
 import { LogOut, User, ChevronDown } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
@@ -16,6 +16,7 @@ export function Header({ titulo, usuario }: HeaderProps) {
   const router = useRouter()
   const { campanhaAtiva } = useCampanha()
   const [menuAberto, setMenuAberto] = useState(false)
+  const [temaMenuAberto, setTemaMenuAberto] = useState(false)
   const [tema, setTema] = useState<NomeTema>('grimorio')
 
   useEffect(() => {
@@ -24,10 +25,10 @@ export function Header({ titulo, usuario }: HeaderProps) {
     aplicarTema(t)
   }, [])
 
-  function alternarTema() {
-    const novo: NomeTema = tema === 'grimorio' ? 'medieval' : 'grimorio'
+  function selecionarTema(novo: NomeTema) {
     aplicarTema(novo)
     setTema(novo)
+    setTemaMenuAberto(false)
   }
 
   async function sair() {
@@ -48,14 +49,50 @@ export function Header({ titulo, usuario }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-3">
-        {/* Botão de tema */}
-        <button
-          onClick={alternarTema}
-          className="text-sm px-2 py-1 rounded border border-[var(--border)] text-[var(--text3)] hover:border-[var(--gold)] hover:text-[var(--gold)] transition-colors font-cinzel"
-          title={tema === 'grimorio' ? 'Mudar para tema Medieval' : 'Mudar para tema Grimório'}
-        >
-          {tema === 'grimorio' ? '📜 Medieval' : '🌙 Grimório'}
-        </button>
+        {/* Seletor de tema */}
+        <div className="relative">
+          <button
+            onClick={() => setTemaMenuAberto(!temaMenuAberto)}
+            className="flex items-center gap-1.5 px-3 py-1 text-sm rounded
+                       bg-[var(--bg2)] hover:bg-[var(--bg3)] transition-colors
+                       border border-[var(--border)]"
+          >
+            <span>{TEMAS.find(t => t.id === tema)?.icone}</span>
+            <span className="hidden sm:inline text-[var(--dd-text2)]">
+              {TEMAS.find(t => t.id === tema)?.label}
+            </span>
+            <ChevronDown size={14} className="text-[var(--dd-text3)]" />
+          </button>
+
+          {temaMenuAberto && (
+            <>
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setTemaMenuAberto(false)}
+              />
+              <div className="absolute right-0 top-full mt-1 z-20 min-w-[180px]
+                              bg-[var(--surface)] border border-[var(--border)]
+                              rounded-lg shadow-xl overflow-hidden animate-fadeIn">
+                {TEMAS.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => selecionarTema(t.id)}
+                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm
+                                transition-colors text-left
+                                ${tema === t.id
+                                  ? 'bg-[var(--surface2)] text-[var(--dd-gold)] font-semibold'
+                                  : 'text-[var(--dd-text2)] hover:bg-[var(--surface2)] hover:text-[var(--dd-text)]'
+                                }`}
+                  >
+                    <span>{t.icone}</span>
+                    <span>{t.label}</span>
+                    {tema === t.id && <span className="ml-auto text-[var(--dd-gold)]">✓</span>}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
 
         {usuario && (
           <div className="relative">

@@ -13,7 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         {/* Aplicar tema antes do primeiro paint para evitar flash */}
         <script dangerouslySetInnerHTML={{ __html: `
-          (function(){try{var t=localStorage.getItem('dd-tema');if(t==='medieval')document.documentElement.classList.add('tema-medieval')}catch(e){}})()
+          (function(){try{var t=localStorage.getItem('dd-tema');if(t&&t!=='grimorio'){document.documentElement.classList.add('tema-'+t);}}catch(e){}})()
         ` }} />
       </head>
       <body className="antialiased">

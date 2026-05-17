@@ -6,6 +6,7 @@ import type { MagicItem, EquipmentWeapon, EquipmentArmor, EquipmentGear } from '
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoAdicionarPersonagem } from '@/components/ui/BotaoAdicionarPersonagem'
 import { Search } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 type AbaId = 'magicos' | 'armas' | 'armaduras' | 'equipamentos'
 
@@ -496,9 +497,18 @@ function ListaDetalhe({
   detalhe: React.ReactNode
   placeholderDetalhe: string
 }) {
+  const [visao, setVisao] = useState<'lista' | 'detalhe'>('lista')
+
   return (
-    <div className="flex h-full">
-      <div className="w-72 border-r border-[var(--border)] flex flex-col">
+    <div className={cn(
+      "grid h-full gap-0 md:gap-4",
+      "grid-cols-1 md:grid-cols-[300px,1fr]"
+    )}>
+      {/* Lista */}
+      <div className={cn(
+        "flex flex-col gap-3 overflow-y-auto border-r border-[var(--border)]",
+        visao === 'detalhe' ? "hidden md:flex" : "flex"
+      )}>
         <div className="p-3 border-b border-[var(--border)] space-y-2">
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
@@ -516,14 +526,18 @@ function ListaDetalhe({
             itens.map(item => (
               <button
                 key={item.id}
-                onClick={item.onClick}
+                onClick={() => { item.onClick(); setVisao('detalhe') }}
                 className={`w-full text-left px-3 py-2 border-b border-[var(--bg3)] transition-colors ${item.ativo ? 'bg-[var(--surface)]' : 'hover:bg-[var(--bg3)]'}`}
               >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-[var(--text)] text-sm font-crimson truncate flex-1">{item.principal}</span>
-                  {item.badge}
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-cinzel font-semibold text-sm text-[var(--dd-text)] leading-tight truncate">
+                    {item.principal}
+                  </span>
+                  <div className="flex items-center justify-between gap-2 mt-0.5">
+                    <span className="text-xs text-[var(--dd-text2)] truncate">{item.secundario}</span>
+                    {item.badge && <span className="flex-shrink-0">{item.badge}</span>}
+                  </div>
                 </div>
-                <p className="text-[var(--text3)] text-[10px] truncate">{item.secundario}</p>
               </button>
             ))
           )}
@@ -534,7 +548,18 @@ function ListaDetalhe({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      {/* Detalhe */}
+      <div className={cn(
+        "overflow-y-auto p-4",
+        visao === 'lista' ? "hidden md:block" : "block"
+      )}>
+        <button
+          onClick={() => setVisao('lista')}
+          className="md:hidden flex items-center gap-2 text-sm text-[var(--dd-text2)]
+                     hover:text-[var(--dd-text)] mb-4 transition-colors"
+        >
+          ← Voltar aos Itens
+        </button>
         {carregandoDetalhe ? (
           <div className="h-full flex items-center justify-center">
             <p className="text-[var(--text3)] font-cinzel animate-pulse">Carregando detalhes...</p>

@@ -1,6 +1,13 @@
-export type NomeTema = 'grimorio' | 'medieval'
+export type NomeTema = 'grimorio' | 'medieval' | 'dragao' | 'elfico'
 
 const CHAVE_LOCAL = 'dd-tema'
+
+export const TEMAS: { id: NomeTema; label: string; icone: string }[] = [
+  { id: 'grimorio', label: 'Grimório',         icone: '🌙' },
+  { id: 'medieval', label: 'Pergaminho',       icone: '📜' },
+  { id: 'dragao',   label: 'Sangue de Dragão', icone: '🔥' },
+  { id: 'elfico',   label: 'Névoa Élfica',     icone: '🌿' },
+]
 
 export function getTemaAtual(): NomeTema {
   if (typeof window === 'undefined') return 'grimorio'
@@ -9,10 +16,9 @@ export function getTemaAtual(): NomeTema {
 
 export function aplicarTema(nome: NomeTema) {
   const html = document.documentElement
-  if (nome === 'medieval') {
-    html.classList.add('tema-medieval')
-  } else {
-    html.classList.remove('tema-medieval')
+  html.classList.remove('tema-medieval', 'tema-dragao', 'tema-elfico')
+  if (nome !== 'grimorio') {
+    html.classList.add(`tema-${nome}`)
   }
   localStorage.setItem(CHAVE_LOCAL, nome)
 }
