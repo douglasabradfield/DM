@@ -14,9 +14,9 @@ export async function POST(req: NextRequest) {
 
   const [campanhaRes, sessoesRes, personagensRes, diarioRes] = await Promise.all([
     admin.from('campanhas').select('nome, sistema, descricao, criado_em').eq('id', campanhaId).single(),
-    admin.from('sessoes').select('titulo, total_rodadas, resumo_ia, concluida_em').eq('campanha_id', campanhaId).eq('status', 'concluida').order('concluida_em', { ascending: true }),
-    admin.from('personagens').select('nome, classe, nivel, tipo_personagem').eq('campanha_id', campanhaId).eq('tipo_personagem', 'jogador').eq('ativo', true),
-    admin.from('diario_entradas').select('titulo, conteudo, tipo, criado_em').eq('campanha_id', campanhaId).order('criado_em', { ascending: true }).limit(20),
+    admin.from('sessoes').select('titulo, resumo_ia, data').eq('campanha_id', campanhaId).eq('encerrada', true).order('data', { ascending: true }),
+    admin.from('personagens').select('nome, classe, nivel, tipo_personagem').eq('campanha_id', campanhaId).eq('tipo_personagem', 'jogador'),
+    admin.from('diario_entradas').select('titulo, conteudo, criado_em').eq('campanha_id', campanhaId).order('criado_em', { ascending: true }).limit(20),
   ])
 
   const campanha = campanhaRes.data
@@ -39,7 +39,6 @@ export async function POST(req: NextRequest) {
     .join('\n\n')
 
   const entradaTexto = entradas
-    .filter(e => e.tipo === 'sessao' || e.tipo === 'nota')
     .map(e => `[${e.titulo}] ${String(e.conteudo ?? '').slice(0, 300)}`)
     .join('\n')
     .slice(0, 2000)

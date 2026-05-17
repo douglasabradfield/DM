@@ -26,15 +26,15 @@ export async function POST(req: NextRequest) {
   const mes = agora.getMonth() + 1
   const ano = agora.getFullYear()
 
-  const { data: uso } = await supabase
+  const { data: usoArr } = await supabase
     .from('uso_ia')
     .select('total_mensagens')
     .eq('user_id', user.id)
     .eq('mes', mes)
     .eq('ano', ano)
-    .single()
+    .limit(1)
 
-  const totalAtual = uso?.total_mensagens ?? 0
+  const totalAtual = usoArr?.[0]?.total_mensagens ?? 0
 
   if (limite !== Infinity && totalAtual >= limite) {
     return Response.json(

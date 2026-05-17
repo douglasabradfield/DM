@@ -39,16 +39,16 @@ export default function IAPage() {
     if (!user) return
 
     const agora = new Date()
-    const [{ data: uso }, { data: profile }] = await Promise.all([
+    const [{ data: usoArr }, { data: profile }] = await Promise.all([
       supabase.from('uso_ia').select('total_mensagens')
         .eq('user_id', user.id)
         .eq('mes', agora.getMonth() + 1)
         .eq('ano', agora.getFullYear())
-        .single(),
+        .limit(1),
       supabase.from('profiles').select('plano').eq('id', user.id).single(),
     ])
 
-    setUsoMes(uso?.total_mensagens ?? 0)
+    setUsoMes(usoArr?.[0]?.total_mensagens ?? 0)
     setPlano(profile?.plano ?? 'free')
   }, [])
 

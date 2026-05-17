@@ -61,6 +61,11 @@ export default function AventuraPage() {
 
   async function enviarAventura() {
     if (!arquivo || !campanhaAtiva?.id) return
+    const MAX_MB = 4
+    if (arquivo.size > MAX_MB * 1024 * 1024) {
+      toast.error(`Arquivo muito grande (${(arquivo.size / 1024 / 1024).toFixed(1)} MB). Limite máximo: ${MAX_MB} MB.`)
+      return
+    }
     setEnviando(true)
     try {
       const formData = new FormData()
