@@ -34,6 +34,7 @@ export interface Campanha {
   link_token: string | null
   criado_em: string
   resumo_final?: string | null
+  moeda_custom_nome?: string | null
 }
 
 export interface Aventura {

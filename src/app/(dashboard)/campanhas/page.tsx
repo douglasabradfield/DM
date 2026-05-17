@@ -247,13 +247,13 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
   onSetarAtiva: (c: Campanha) => void
   onCronica: (nome: string, resumo: string) => void
 }) {
-  const [form, setForm] = useState({ nome: campanha.nome, descricao: campanha.descricao ?? '', sistema: campanha.sistema ?? 'D&D 5e' })
+  const [form, setForm] = useState({ nome: campanha.nome, descricao: campanha.descricao ?? '', sistema: campanha.sistema ?? 'D&D 5e', moeda_custom_nome: campanha.moeda_custom_nome ?? '' })
   const [salvando, setSalvando] = useState(false)
   const [encerrando, setEncerrando] = useState(false)
 
   useEffect(() => {
-    setForm({ nome: campanha.nome, descricao: campanha.descricao ?? '', sistema: campanha.sistema ?? 'D&D 5e' })
-  }, [campanha.id, campanha.nome, campanha.descricao, campanha.sistema])
+    setForm({ nome: campanha.nome, descricao: campanha.descricao ?? '', sistema: campanha.sistema ?? 'D&D 5e', moeda_custom_nome: campanha.moeda_custom_nome ?? '' })
+  }, [campanha.id, campanha.nome, campanha.descricao, campanha.sistema, campanha.moeda_custom_nome])
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
@@ -262,7 +262,7 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
       const supabase = createClient()
       const { data, error } = await supabase
         .from('campanhas')
-        .update({ nome: form.nome, descricao: form.descricao, sistema: form.sistema })
+        .update({ nome: form.nome, descricao: form.descricao, sistema: form.sistema, moeda_custom_nome: form.moeda_custom_nome || null })
         .eq('id', campanha.id)
         .select().single()
       if (error) throw error
@@ -353,6 +353,17 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
               <select value={form.sistema} onChange={e => setForm(f => ({ ...f, sistema: e.target.value }))} className="input-dd w-full">
                 {SISTEMAS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
+            </div>
+            <div>
+              <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Nome da Moeda Especial</label>
+              <input
+                type="text"
+                value={form.moeda_custom_nome}
+                onChange={e => setForm(f => ({ ...f, moeda_custom_nome: e.target.value }))}
+                placeholder="Ex: Pontos de Glória, Influência..."
+                className="input-dd w-full"
+              />
+              <p className="text-[var(--text3)] text-[10px] mt-0.5 font-crimson">Aparece nas fichas de personagem como moeda adicional</p>
             </div>
             <div className="flex gap-2">
               <BotaoRunico type="submit" variante="ouro" tamanho="sm" carregando={salvando}>Salvar</BotaoRunico>

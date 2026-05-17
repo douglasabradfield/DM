@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { MagicItem, EquipmentWeapon, EquipmentArmor, EquipmentGear } from '@/types/dnd'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoAdicionarPersonagem } from '@/components/ui/BotaoAdicionarPersonagem'
+import { BotaoReportar } from '@/components/ui/BotaoReportar'
 import { Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -140,16 +141,24 @@ function AbaMagicos() {
                   )}
                 </div>
               </div>
-              <BotaoAdicionarPersonagem
-                tipo="item"
-                nome={selecionado.name_pt}
-                dadosExtras={{
-                  item_id: selecionado.id,
-                  tipo: 'magico',
-                  raridade: selecionado.rarity ?? null,
-                  descricao: selecionado.description_pt ?? null,
-                }}
-              />
+              <div className="flex items-center gap-2">
+                <BotaoReportar
+                  itemSlug={selecionado.slug}
+                  itemNome={selecionado.name_pt}
+                  itemTipo="item"
+                  pagina="/itens"
+                />
+                <BotaoAdicionarPersonagem
+                  tipo="item"
+                  nome={selecionado.name_pt}
+                  dadosExtras={{
+                    item_id: selecionado.id,
+                    tipo: 'magico',
+                    raridade: selecionado.rarity ?? null,
+                    descricao: selecionado.description_pt ?? null,
+                  }}
+                />
+              </div>
             </div>
             {selecionado.description_pt && (
               <PainelGrimorio titulo="Descrição" compacto className="mb-3">
@@ -248,11 +257,19 @@ function AbaArmas() {
                 <p className="text-[var(--border)] text-sm italic">{selecionado.name_en}</p>
                 <p className="text-[var(--text2)] text-sm mt-1">{CAT_ARMA_PT[selecionado.category_en ?? ''] ?? selecionado.category_pt}</p>
               </div>
-              <BotaoAdicionarPersonagem
-                tipo="arma"
-                nome={selecionado.name_pt}
-                dadosExtras={{ arma_nome: selecionado.name_pt, dano: selecionado.damage_dice, tipo_dano: selecionado.damage_type_pt }}
-              />
+              <div className="flex items-center gap-2">
+                <BotaoReportar
+                  itemSlug={selecionado.slug}
+                  itemNome={selecionado.name_pt}
+                  itemTipo="item"
+                  pagina="/itens"
+                />
+                <BotaoAdicionarPersonagem
+                  tipo="arma"
+                  nome={selecionado.name_pt}
+                  dadosExtras={{ arma_nome: selecionado.name_pt, dano: selecionado.damage_dice, tipo_dano: selecionado.damage_type_pt }}
+                />
+              </div>
             </div>
             <PainelGrimorio compacto className="mb-3">
               <div className="grid grid-cols-3 gap-3 text-sm">
@@ -350,11 +367,19 @@ function AbaArmaduras() {
                 <p className="text-[var(--border)] text-sm italic">{selecionado.name_en}</p>
                 <p className="text-[var(--text2)] text-sm mt-1">{selecionado.category_pt}</p>
               </div>
-              <BotaoAdicionarPersonagem
-                tipo="item"
-                nome={selecionado.name_pt}
-                dadosExtras={{ item_id: selecionado.id, tipo: 'armadura', descricao: null }}
-              />
+              <div className="flex items-center gap-2">
+                <BotaoReportar
+                  itemSlug={selecionado.slug}
+                  itemNome={selecionado.name_pt}
+                  itemTipo="item"
+                  pagina="/itens"
+                />
+                <BotaoAdicionarPersonagem
+                  tipo="item"
+                  nome={selecionado.name_pt}
+                  dadosExtras={{ item_id: selecionado.id, tipo: 'armadura', descricao: null }}
+                />
+              </div>
             </div>
             <PainelGrimorio compacto className="mb-3">
               <div className="grid grid-cols-2 gap-3 text-sm">
@@ -445,11 +470,19 @@ function AbaEquipamentos() {
                 <p className="text-[var(--border)] text-sm italic">{selecionado.name_en}</p>
                 <p className="text-[var(--text2)] text-sm mt-1">{selecionado.category_pt}</p>
               </div>
-              <BotaoAdicionarPersonagem
-                tipo="item"
-                nome={selecionado.name_pt}
-                dadosExtras={{ item_id: selecionado.id, tipo: 'equipamento', descricao: selecionado.description_pt ?? null }}
-              />
+              <div className="flex items-center gap-2">
+                <BotaoReportar
+                  itemSlug={selecionado.slug}
+                  itemNome={selecionado.name_pt}
+                  itemTipo="item"
+                  pagina="/itens"
+                />
+                <BotaoAdicionarPersonagem
+                  tipo="item"
+                  nome={selecionado.name_pt}
+                  dadosExtras={{ item_id: selecionado.id, tipo: 'equipamento', descricao: selecionado.description_pt ?? null }}
+                />
+              </div>
             </div>
             <PainelGrimorio compacto className="mb-3">
               <div className="grid grid-cols-2 gap-3 text-sm">

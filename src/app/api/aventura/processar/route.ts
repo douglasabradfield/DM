@@ -28,28 +28,41 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ erro: 'Erro ao baixar arquivo do Storage' }, { status: 500 })
     }
 
-    // 2. Extrair texto com pdf-parse
-    const buffer = Buffer.from(await fileData.arrayBuffer())
-    const pdf = await pdfParse(buffer)
+    // 2. Extrair texto conforme o formato do arquivo
+    const ext = storagePath.split('.').pop()?.toLowerCase() ?? ''
 
-    let textoAventura = pdf.text
-    const totalPaginas = pdf.numpages
+    let textoAventura: string
+    let totalPaginas: number
+    let formatoDesc: string
+
+    if (ext === 'pdf') {
+      const buffer = Buffer.from(await fileData.arrayBuffer())
+      const pdf = await pdfParse(buffer)
+      textoAventura = pdf.text
+      totalPaginas = pdf.numpages
+      formatoDesc = `PDF (${totalPaginas} páginas)`
+    } else {
+      // .md ou .txt — leitura direta, sem biblioteca
+      textoAventura = await fileData.text()
+      totalPaginas = 1
+      formatoDesc = ext === 'md' ? 'Markdown' : 'texto simples'
+    }
 
     // Limitar a 400K chars (≈100K tokens — cobre aventuras de até ~160 páginas de texto denso)
     const MAX_CHARS = 400_000
     const truncado = textoAventura.length > MAX_CHARS
     if (truncado) textoAventura = textoAventura.slice(0, MAX_CHARS)
 
-    // Normalizar texto extraído do PDF
+    // Normalizar texto
     textoAventura = textoAventura
       .replace(/\r\n/g, '\n')
       .replace(/\n{4,}/g, '\n\n\n')
       .trim()
 
-    console.log(`PDF: ${totalPaginas} páginas, ${pdf.text.length} chars${truncado ? ' (TRUNCADO)' : ''}`)
+    console.log(`Arquivo: ${formatoDesc}, ${textoAventura.length} chars${truncado ? ' (TRUNCADO)' : ''}`)
 
     if (!textoAventura || textoAventura.length < 100) {
-      return NextResponse.json({ erro: 'PDF sem texto extraível (pode ser digitalizado como imagem)' }, { status: 422 })
+      return NextResponse.json({ erro: ext === 'pdf' ? 'PDF sem texto extraível (pode ser digitalizado como imagem)' : 'Arquivo sem conteúdo suficiente para processar' }, { status: 422 })
     }
 
     // 3. Enviar texto ao Claude com prompt robusto
@@ -60,56 +73,94 @@ export async function POST(req: NextRequest) {
       max_tokens: 8096,
       messages: [{
         role: 'user',
-        content: `Você é um especialista em analisar aventuras de RPG de mesa (D&D, Pathfinder, Tormenta, Call of Cthulhu, etc.).
+        content: `Você é um assistente especializado em processar aventuras de RPG de mesa (D&D 5e e sistemas compatíveis).
 
-Analise o texto abaixo, extraído de um PDF de aventura, e estruture todas as informações.
+Analise o conteúdo da aventura abaixo e estruture-o em JSON válido, sem markdown externo.
+Se o conteúdo estiver em inglês, TRADUZA TUDO para português brasileiro.
+Mantenha os textos de leitura em voz alta fiéis ao original, apenas traduzindo.
+
+RETORNE APENAS O JSON, sem texto antes ou depois, sem blocos de código markdown.
 
 INSTRUÇÕES:
 - A aventura pode ser oficial (WotC, Paizo, etc.) ou criada pelo próprio DM — adapte-se ao formato encontrado
-- O texto foi extraído de PDF e pode ter imperfeições: espaços extras, quebras de linha inesperadas, mistura de colunas, fragmentos de tabelas
+- Formato de origem: ${formatoDesc}
+- ${ext === 'pdf' ? 'O texto foi extraído de PDF e pode ter imperfeições: espaços extras, quebras de linha inesperadas, mistura de colunas, fragmentos de tabelas' : 'O texto está em formato legível (Markdown/texto simples) e deve estar bem estruturado'}
 - "Texto narrativo" = o que o DM lê em voz alta para os jogadores (frequentemente em itálico ou caixas destacadas nos livros impressos)
 - "Notas do DM" = instruções táticas, informações secretas, contexto de fundo, mecânicas — o que apenas o DM precisa saber
 - Se uma informação não existir no texto, use null ou [] — NUNCA invente conteúdo
-- Se o texto estiver em inglês ou outro idioma, traduza tudo para português brasileiro
 - Inclua TODOS os locais, salas, cenas e encontros mencionados — não pule nenhum
 - Para criaturas: se o CR não aparecer no texto, estime baseado no sistema e no contexto
 - Para aventuras sem estrutura de capítulos explícita: crie um único capítulo com todos os locais
+- Para stat blocks: extraia nome e CR; não invente atributos ausentes no texto
+- Onde havia imagem no PDF, ignore marcadores como [image] ou [figure]
 ${truncado ? '- ATENÇÃO: o texto foi truncado pois a aventura é muito grande. Processe o máximo possível com o texto disponível.' : ''}
 
-TEXTO DA AVENTURA (${totalPaginas} páginas):
+TEXTO DA AVENTURA (${formatoDesc}):
 ${textoAventura}
 
-Retorne APENAS JSON válido, sem markdown, sem texto fora do JSON:
+Formato de saída (APENAS JSON válido):
 {
-  "titulo": "título da aventura",
+  "titulo": "título da aventura em português",
   "sistema": "D&D 5e",
+  "nivel_recomendado": "1-4",
+  "numero_jogadores": "3-5",
   "sinopse": "resumo da trama em 2-3 frases",
-  "nivel_recomendado": "1-4 ou null",
   "capitulos": [
     {
       "numero": 1,
-      "titulo": "nome do capítulo ou parte",
+      "titulo": "Nome do Capítulo",
+      "contexto_dm": "Resumo narrativo do capítulo para o DM entender o que acontece",
       "locais": [
         {
           "id": "loc_1",
           "codigo": "C1-A",
-          "nome": "nome do local",
+          "nome": "Nome do Local",
           "capitulo": "nome do capítulo pai",
-          "texto_narrativo": "texto para leitura em voz alta, ou null",
-          "notas_dm": "notas táticas e segredos para o DM, ou null",
+          "texto_narrativo": "Texto para leitura em voz alta aos jogadores, ou null",
+          "notas_dm": "Informações táticas, segredos e detalhes para o DM, ou null",
+          "detalhes_ocultos": "Armadilhas, itens escondidos, segredos do local, ou null",
           "encontros": [
-            { "nome": "Goblin Batedeiro", "cr": "1/4", "quantidade": 3, "notas": "" }
+            {
+              "nome": "Nome do Encontro ou criatura principal",
+              "cr": "1/4",
+              "quantidade": 3,
+              "notas": "táticas e comportamento",
+              "gatilho": "O que faz o encontro começar, ou null",
+              "recompensa_xp": 150
+            }
           ],
           "npcs": [
-            { "nome": "Tavita", "descricao": "estalajadeira idosa", "personalidade": "acolhedora mas desconfiada", "objetivo": "proteger sua taverna", "segredos": "" }
+            {
+              "nome": "Nome do NPC",
+              "descricao": "Aparência e personalidade",
+              "personalidade": "traços principais",
+              "objetivo": "O que quer",
+              "segredos": "O que esconde"
+            }
+          ],
+          "tesouros": [
+            {
+              "nome": "Item ou moeda",
+              "descricao": "Descrição",
+              "valor": "50 PO",
+              "localizacao": "Onde está"
+            }
           ],
           "ordem": 1
         }
       ]
     }
   ],
-  "npcs_globais": [],
-  "notas_gerais": "ganchos de aventura, premissa, notas gerais"
+  "npcs_globais": [
+    {
+      "nome": "Nome do NPC global",
+      "descricao": "Descrição completa",
+      "personalidade": "traços principais",
+      "objetivo": "motivação",
+      "segredos": "o que esconde"
+    }
+  ],
+  "notas_gerais": "Informações gerais, tom da aventura, dicas para o DM"
 }`,
       }],
     })

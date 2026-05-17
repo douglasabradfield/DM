@@ -50,6 +50,26 @@ export function Header({ titulo, usuario }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-3">
+        {/* Links de ajuda e legal */}
+        <div className="hidden sm:flex items-center gap-1">
+          <Link
+            href="/ajuda"
+            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs
+                       text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--surface)]
+                       transition-colors font-cinzel"
+          >
+            ❓ Ajuda
+          </Link>
+          <Link
+            href="/legal"
+            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs
+                       text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--surface)]
+                       transition-colors font-cinzel"
+          >
+            ⚖️ Legal
+          </Link>
+        </div>
+
         {/* Seletor de tema */}
         <div className="relative">
           <button

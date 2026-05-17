@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -41,6 +41,8 @@ export function LinhaCombatente({ combatente: c, ativo, indice }: LinhaCombatent
   const [editandoPV, setEditandoPV] = useState(false)
   const [editandoPVMax, setEditandoPVMax] = useState(false)
   const [mostraCondicoes, setMostraCondicoes] = useState(false)
+  const [posCondicoes, setPosCondicoes] = useState({ top: 0, left: 0 })
+  const btnCondicoesRef = useRef<HTMLButtonElement>(null)
   const [valorAcao, setValorAcao] = useState('')
   const [modalMonstroAberto, setModalMonstroAberto] = useState(false)
 
@@ -317,23 +319,39 @@ export function LinhaCombatente({ combatente: c, ativo, indice }: LinhaCombatent
           ))}
           <div className="relative">
             <button
-              onClick={() => setMostraCondicoes(!mostraCondicoes)}
+              ref={btnCondicoesRef}
+              onClick={() => {
+                const rect = btnCondicoesRef.current?.getBoundingClientRect()
+                if (rect) {
+                  const top = rect.bottom + 4
+                  const left = Math.min(rect.left, window.innerWidth - 168)
+                  setPosCondicoes({ top, left })
+                }
+                setMostraCondicoes(v => !v)
+              }}
               className="w-4 h-4 rounded border border-[var(--border)] text-[var(--text3)] hover:border-[var(--gold)] hover:text-[var(--gold)] flex items-center justify-center text-xs transition-colors"
             >
               <Plus className="w-2.5 h-2.5" />
             </button>
-            {mostraCondicoes && (
-              <div className="fixed z-[9998] bg-[var(--surface)] border border-[var(--border)] rounded shadow-xl w-40 max-h-48 overflow-y-auto">
-                {TODAS_CONDICOES.filter(cond => !c.condicoes.includes(cond)).map(cond => (
-                  <button
-                    key={cond}
-                    onClick={() => { adicionarCondicao(c.id, cond as TipoCondicao); setMostraCondicoes(false) }}
-                    className="w-full text-left px-2 py-1 text-xs text-[var(--text2)] hover:bg-[var(--bg3)] hover:text-[var(--text)] transition-colors"
-                  >
-                    {cond}
-                  </button>
-                ))}
-              </div>
+            {mostraCondicoes && typeof document !== 'undefined' && createPortal(
+              <>
+                <div className="fixed inset-0 z-[9997]" onClick={() => setMostraCondicoes(false)} />
+                <div
+                  style={{ position: 'fixed', top: posCondicoes.top, left: posCondicoes.left, zIndex: 9998 }}
+                  className="bg-[var(--surface)] border border-[var(--border)] rounded shadow-xl w-40 max-h-48 overflow-y-auto"
+                >
+                  {TODAS_CONDICOES.filter(cond => !c.condicoes.includes(cond)).map(cond => (
+                    <button
+                      key={cond}
+                      onClick={() => { adicionarCondicao(c.id, cond as TipoCondicao); setMostraCondicoes(false) }}
+                      className="w-full text-left px-2 py-1 text-xs text-[var(--text2)] hover:bg-[var(--bg3)] hover:text-[var(--text)] transition-colors"
+                    >
+                      {cond}
+                    </button>
+                  ))}
+                </div>
+              </>,
+              document.body
             )}
           </div>
         </div>

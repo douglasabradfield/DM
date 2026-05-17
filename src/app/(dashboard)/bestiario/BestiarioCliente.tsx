@@ -9,6 +9,7 @@ import { calcularModificadorAtributo, formatarModificador, cn } from '@/lib/util
 import { Search, Swords } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
+import { BotaoReportar } from '@/components/ui/BotaoReportar'
 
 const CRS = ['0', '1/8', '1/4', '1/2', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '23', '24', '30']
 
@@ -205,12 +206,20 @@ export function BestiarioCliente() {
                   <p className="text-[var(--text3)] text-[10px] font-cinzel mt-0.5">SRD p.{selecionado.source_page_start}</p>
                 )}
               </div>
-              <button
-                onClick={() => adicionarNaBatalha(selecionado)}
-                className="flex items-center gap-2 px-3 py-2 bg-[var(--accent)] border border-[var(--accent2)] text-[var(--bg)] rounded text-sm font-cinzel hover:opacity-90 transition-colors"
-              >
-                <Swords className="w-4 h-4" /> Adicionar à Batalha
-              </button>
+              <div className="flex items-center gap-2">
+                <BotaoReportar
+                  itemSlug={selecionado.slug}
+                  itemNome={selecionado.name_pt}
+                  itemTipo="monstro"
+                  pagina="/bestiario"
+                />
+                <button
+                  onClick={() => adicionarNaBatalha(selecionado)}
+                  className="flex items-center gap-2 px-3 py-2 bg-[var(--accent)] border border-[var(--accent2)] text-[var(--bg)] rounded text-sm font-cinzel hover:opacity-90 transition-colors"
+                >
+                  <Swords className="w-4 h-4" /> Adicionar à Batalha
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-4 gap-2 mb-4">

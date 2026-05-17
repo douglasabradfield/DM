@@ -143,10 +143,10 @@ export default function AventuraPage() {
               <p className="text-[var(--border)] text-xs text-center font-crimson">Nenhuma aventura carregada</p>
               <div className="space-y-2">
                 <label className="block">
-                  <span className="text-[var(--text3)] text-xs font-cinzel uppercase">Upload PDF</span>
+                  <span className="text-[var(--text3)] text-xs font-cinzel uppercase">Upload PDF / MD / TXT</span>
                   <input
                     type="file"
-                    accept=".pdf"
+                    accept=".pdf,.md,.txt"
                     onChange={e => setArquivo(e.target.files?.[0] ?? null)}
                     className="mt-1 block w-full text-xs text-[var(--text3)] file:mr-2 file:py-1 file:px-2 file:rounded file:border file:border-[var(--border)] file:bg-[var(--surface)] file:text-[var(--gold)] file:text-xs file:font-cinzel cursor-pointer"
                   />
@@ -187,9 +187,9 @@ export default function AventuraPage() {
           <div className="p-2 border-t border-[var(--border)]">
             <label className="block cursor-pointer">
               <div className="flex items-center gap-2 text-xs text-[var(--text3)] hover:text-[var(--text2)] transition-colors">
-                <Upload className="w-3 h-3" /> Trocar aventura (PDF)
+                <Upload className="w-3 h-3" /> Trocar aventura (PDF / MD / TXT)
               </div>
-              <input type="file" accept=".pdf" onChange={e => setArquivo(e.target.files?.[0] ?? null)} className="hidden" />
+              <input type="file" accept=".pdf,.md,.txt" onChange={e => setArquivo(e.target.files?.[0] ?? null)} className="hidden" />
             </label>
             {arquivo && (
               <BotaoRunico variante="ouro" tamanho="sm" className="w-full mt-1" onClick={enviarAventura} disabled={enviando}>

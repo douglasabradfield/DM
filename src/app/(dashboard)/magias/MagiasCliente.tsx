@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Spell } from '@/types/dnd'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoAdicionarPersonagem } from '@/components/ui/BotaoAdicionarPersonagem'
+import { BotaoReportar } from '@/components/ui/BotaoReportar'
 import { Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -193,11 +194,19 @@ export function MagiasCliente() {
                   )}
                 </div>
               </div>
-              <BotaoAdicionarPersonagem
-                tipo="magia"
-                nome={selecionada.name_pt}
-                dadosExtras={{ magia_id: selecionada.id, nivel: selecionada.level, escola: selecionada.school_pt }}
-              />
+              <div className="flex items-center gap-2">
+                <BotaoReportar
+                  itemSlug={selecionada.slug}
+                  itemNome={selecionada.name_pt}
+                  itemTipo="magia"
+                  pagina="/magias"
+                />
+                <BotaoAdicionarPersonagem
+                  tipo="magia"
+                  nome={selecionada.name_pt}
+                  dadosExtras={{ magia_id: selecionada.id, nivel: selecionada.level, escola: selecionada.school_pt }}
+                />
+              </div>
             </div>
 
             <PainelGrimorio compacto className="mb-3">

@@ -67,7 +67,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const router = useRouter()
   const atualizarCombatentePorPersonagem = useBatalha(s => s.atualizarCombatentePorPersonagem)
   const campanhaAtiva = useCampanha(s => s.campanhaAtiva)
-  const moedaCustomNome = (campanhaAtiva as unknown as Record<string, string>)?.moeda_custom_nome || 'Especial'
+  const moedaCustomNome = campanhaAtiva?.moeda_custom_nome || 'Especial'
   const [pagina, setPagina] = useState(1)
   const [dados, setDados] = useState({
     ...p,
@@ -357,25 +357,23 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           {/* Coluna 1 - Atributos + Combate */}
           <div className="space-y-3">
             <PainelGrimorio titulo="Atributos" compacto>
-              <div className="space-y-2">
+              <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                 {ATRIBUTOS.map(({ key, label, abrev }) => {
                   const val = dados[key] as number
                   const mod = calcularModificadorAtributo(val)
                   return (
-                    <div key={key} className="flex items-center gap-2">
-                      <div className="w-8 text-center bg-[#1e1525] border border-[#4a3060] rounded p-1">
-                        <div className="text-[#8870a8] text-[8px] font-cinzel">{abrev}</div>
-                        <div className="text-[#d4a843] text-sm font-bold font-cinzel">{formatarModificador(mod)}</div>
+                    <div key={key} className="flex flex-col items-center gap-0.5">
+                      <div className="text-[#8870a8] text-[8px] font-cinzel uppercase">{abrev}</div>
+                      <div className="w-9 h-9 rounded-full bg-[#1e1525] border-2 border-[#4a3060] flex items-center justify-center">
+                        <span className="text-[#d4a843] text-sm font-bold font-cinzel leading-none">{formatarModificador(mod)}</span>
                       </div>
-                      <div>
-                        <div className="text-[#8870a8] text-[9px] font-cinzel uppercase">{label}</div>
-                        <input
-                          type="number"
-                          value={val}
-                          onChange={e => atualizar(key, parseInt(e.target.value) || 10)}
-                          className="w-12 input-dd text-center text-sm"
-                        />
-                      </div>
+                      <input
+                        type="number"
+                        value={val}
+                        onChange={e => atualizar(key, parseInt(e.target.value) || 10)}
+                        className="w-10 input-dd text-center text-sm"
+                        title={label}
+                      />
                     </div>
                   )
                 })}

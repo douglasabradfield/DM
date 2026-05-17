@@ -186,8 +186,34 @@ export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
         </nav>
 
         {/* Rodapé */}
-        <div className="p-3 border-t border-[var(--border)]">
-          <div className="text-center">
+        <div className="p-3 border-t border-[var(--border)] space-y-1">
+          <Link
+            href="/feedback"
+            onClick={() => setDropdownAberto(false)}
+            className={cn(
+              'flex items-center gap-2 px-3 py-1.5 rounded text-sm font-crimson transition-colors w-full',
+              pathname === '/feedback'
+                ? 'bg-[var(--surface)] text-[var(--text)]'
+                : 'text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--bg3)]'
+            )}
+          >
+            💬 Feedback & Sugestões
+          </Link>
+          {isAdmin && (
+            <Link
+              href="/admin/feedbacks"
+              onClick={() => setDropdownAberto(false)}
+              className={cn(
+                'flex items-center gap-2 px-3 py-1.5 rounded text-sm font-crimson transition-colors w-full',
+                pathname === '/admin/feedbacks'
+                  ? 'bg-[var(--surface)] text-[var(--text)]'
+                  : 'text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--bg3)]'
+              )}
+            >
+              📋 Feedbacks Admin
+            </Link>
+          )}
+          <div className="text-center pt-1">
             <p className="font-cinzel text-xs text-[var(--border)] tracking-widest uppercase">Dungeon Desk</p>
             <p className="text-xs text-[var(--border)] mt-0.5">v1.0</p>
           </div>

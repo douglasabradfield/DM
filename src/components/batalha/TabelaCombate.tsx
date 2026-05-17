@@ -776,24 +776,24 @@ const LABEL_DIFICULDADE: Record<NivelDificuldade, string> = {
 function PainelDificuldade({ combatentes }: { combatentes: Combatente[] }) {
   const [aberto, setAberto] = useState(false)
   const [nivelMedio, setNivelMedio] = useState(5)
-  const [numJogadores, setNumJogadores] = useState(4)
-  const [xpExtra, setXpExtra] = useState(0)
 
   const monstros = combatentes.filter(c => c.tipo === 'monstro' && !c.ausente)
+  const jogadores = combatentes.filter(c => c.tipo === 'jogador' && !c.ausente)
+  const numJogadores = jogadores.length
+
   const crs = monstros.map(c => c.dados_monstro?.cr ?? '0')
-  const niveis = Array.from({ length: numJogadores }, () => nivelMedio)
+  const niveis = Array.from({ length: Math.max(1, numJogadores) }, () => nivelMedio)
 
   const resultado = calcularDificuldade(niveis, crs)
-  const xpBrutoTotal = resultado.xpBruto + xpExtra
-  const xpAjustadoTotal = Math.round(xpBrutoTotal * resultado.multiplicador)
+  const xpAjustadoTotal = Math.round(resultado.xpBruto * resultado.multiplicador)
 
   let dificuldadeFinal: NivelDificuldade = 'trivial'
-  if (xpAjustadoTotal >= resultado.limiares.mortal)  dificuldadeFinal = 'mortal'
+  if (xpAjustadoTotal >= resultado.limiares.mortal)       dificuldadeFinal = 'mortal'
   else if (xpAjustadoTotal >= resultado.limiares.dificil) dificuldadeFinal = 'dificil'
   else if (xpAjustadoTotal >= resultado.limiares.medio)   dificuldadeFinal = 'medio'
   else if (xpAjustadoTotal >= resultado.limiares.facil)   dificuldadeFinal = 'facil'
 
-  if (monstros.length === 0 && !aberto) return null
+  if (monstros.length === 0 && jogadores.length === 0 && !aberto) return null
 
   return (
     <div className="bg-[var(--bg3)] border-b border-[var(--border)]">
@@ -803,14 +803,14 @@ function PainelDificuldade({ combatentes }: { combatentes: Combatente[] }) {
       >
         <div className="flex items-center gap-2">
           <span className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider">Dificuldade do Encontro</span>
-          {monstros.length > 0 && (
+          {monstros.length > 0 && numJogadores > 0 && (
             <span className={`text-xs font-cinzel font-bold ${COR_DIFICULDADE[dificuldadeFinal]}`}>
               {LABEL_DIFICULDADE[dificuldadeFinal]}
             </span>
           )}
           {monstros.length > 0 && (
             <span className="text-[var(--text3)] text-[10px]">
-              {xpAjustadoTotal.toLocaleString('pt-BR')} XP ajustado · {monstros.length} monstro{monstros.length !== 1 ? 's' : ''}
+              {xpAjustadoTotal.toLocaleString('pt-BR')} XP · {numJogadores} jogador{numJogadores !== 1 ? 'es' : ''} · {monstros.length} monstro{monstros.length !== 1 ? 's' : ''}
             </span>
           )}
         </div>
@@ -819,36 +819,19 @@ function PainelDificuldade({ combatentes }: { combatentes: Combatente[] }) {
 
       {aberto && (
         <div className="px-3 pb-3 space-y-2">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="flex items-center gap-2">
             <div>
-              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Nível Médio (jogadores)</label>
+              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Nível Médio dos Jogadores</label>
               <input
                 type="number"
                 min={1} max={20}
                 value={nivelMedio}
                 onChange={e => setNivelMedio(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
-                className="input-dd w-full text-center text-sm mt-0.5"
+                className="input-dd w-16 text-center text-sm mt-0.5"
               />
             </div>
-            <div>
-              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Nº de Jogadores</label>
-              <input
-                type="number"
-                min={1} max={8}
-                value={numJogadores}
-                onChange={e => setNumJogadores(Math.max(1, Math.min(8, parseInt(e.target.value) || 1)))}
-                className="input-dd w-full text-center text-sm mt-0.5"
-              />
-            </div>
-            <div>
-              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">XP Extra (manual)</label>
-              <input
-                type="number"
-                min={0}
-                value={xpExtra}
-                onChange={e => setXpExtra(parseInt(e.target.value) || 0)}
-                className="input-dd w-full text-center text-sm mt-0.5"
-              />
+            <div className="text-[var(--text3)] text-xs mt-3">
+              {numJogadores} jogador{numJogadores !== 1 ? 'es' : ''} na batalha
             </div>
           </div>
 
@@ -863,10 +846,10 @@ function PainelDificuldade({ combatentes }: { combatentes: Combatente[] }) {
 
           {monstros.length > 0 && (
             <div className="flex items-center gap-3 text-xs">
-              <span className="text-[var(--text3)]">XP bruto: <span className="text-[var(--text)]">{xpBrutoTotal.toLocaleString('pt-BR')}</span></span>
+              <span className="text-[var(--text3)]">XP bruto: <span className="text-[var(--text)]">{resultado.xpBruto.toLocaleString('pt-BR')}</span></span>
               <span className="text-[var(--text3)]">×{resultado.multiplicador}</span>
               <span className="text-[var(--text3)]">XP ajustado: <span className={`font-bold ${COR_DIFICULDADE[dificuldadeFinal]}`}>{xpAjustadoTotal.toLocaleString('pt-BR')}</span></span>
-              <span className={`font-cinzel font-bold text-sm ${COR_DIFICULDADE[dificuldadeFinal]}`}>{LABEL_DIFICULDADE[dificuldadeFinal]}</span>
+              {numJogadores > 0 && <span className={`font-cinzel font-bold text-sm ${COR_DIFICULDADE[dificuldadeFinal]}`}>{LABEL_DIFICULDADE[dificuldadeFinal]}</span>}
             </div>
           )}
         </div>
