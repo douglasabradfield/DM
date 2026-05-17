@@ -134,6 +134,16 @@ export default function AventuraPage() {
     router.push(`/bestiario?busca=${encodeURIComponent(nomeCriatura)}`)
   }
 
+  function getMimeType(arquivo: File): string {
+    const ext = arquivo.name.split('.').pop()?.toLowerCase()
+    const tipos: Record<string, string> = {
+      'md':  'text/markdown',
+      'txt': 'text/plain',
+      'pdf': 'application/pdf',
+    }
+    return tipos[ext || ''] || arquivo.type || 'text/plain'
+  }
+
   async function enviarAventura() {
     if (!arquivo || !campanhaAtiva?.id) return
     const MAX_MB = 150
@@ -150,9 +160,10 @@ export default function AventuraPage() {
 
       const nomeArquivo = `${Date.now()}_${arquivo.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
       const storagePath = `${user.id}/${nomeArquivo}`
+      const mimeType = getMimeType(arquivo)
       const { error: uploadError } = await supabase.storage
         .from('aventuras')
-        .upload(storagePath, arquivo, { upsert: true })
+        .upload(storagePath, arquivo, { contentType: mimeType, upsert: true })
       if (uploadError) throw new Error(`Erro no upload: ${uploadError.message}`)
 
       setProgresso('processando')
