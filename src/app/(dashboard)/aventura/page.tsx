@@ -18,6 +18,7 @@ export default function AventuraPage() {
   const [busca, setBusca] = useState('')
   const [carregando, setCarregando] = useState(true)
   const [enviando, setEnviando] = useState(false)
+  const [progresso, setProgresso] = useState<'idle' | 'enviando' | 'processando'>('idle')
   const [arquivo, setArquivo] = useState<File | null>(null)
 
   useEffect(() => {
@@ -61,22 +62,44 @@ export default function AventuraPage() {
 
   async function enviarAventura() {
     if (!arquivo || !campanhaAtiva?.id) return
-    const MAX_MB = 4
+    const MAX_MB = 150
     if (arquivo.size > MAX_MB * 1024 * 1024) {
-      toast.error(`Arquivo muito grande (${(arquivo.size / 1024 / 1024).toFixed(1)} MB). Limite máximo: ${MAX_MB} MB.`)
+      toast.error(`Arquivo muito grande (${(arquivo.size / 1024 / 1024).toFixed(0)} MB). Limite: ${MAX_MB} MB.`)
       return
     }
     setEnviando(true)
+    setProgresso('enviando')
     try {
-      const formData = new FormData()
-      formData.append('arquivo', arquivo)
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
-      const res = await fetch('/api/aventura/processar', { method: 'POST', body: formData })
-      if (!res.ok) throw new Error('Erro ao processar')
+      // Envia direto ao Supabase Storage — sem passar pelo Vercel
+      const nomeArquivo = `${Date.now()}_${arquivo.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+      const storagePath = `${user.id}/${nomeArquivo}`
+      const { error: uploadError } = await supabase.storage
+        .from('aventuras')
+        .upload(storagePath, arquivo, { upsert: true })
+      if (uploadError) throw new Error(`Erro no upload: ${uploadError.message}`)
+
+      // API processa a partir do caminho no Storage
+      setProgresso('processando')
+      const res = await fetch('/api/aventura/processar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storagePath, campanhaId: campanhaAtiva.id }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.erro ?? 'Erro ao processar')
+      }
       toast.success('Aventura processada com sucesso!')
+      setArquivo(null)
+      setProgresso('idle')
       carregar()
-    } catch {
-      toast.error('Erro ao processar aventura')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao processar aventura')
+      setProgresso('idle')
     } finally {
       setEnviando(false)
     }
@@ -129,8 +152,12 @@ export default function AventuraPage() {
                   />
                 </label>
                 {arquivo && (
-                  <BotaoRunico variante="ouro" tamanho="sm" className="w-full" onClick={enviarAventura} carregando={enviando}>
-                    <Upload className="w-3 h-3" /> Processar Aventura
+                  <BotaoRunico variante="ouro" tamanho="sm" className="w-full" onClick={enviarAventura} disabled={enviando}>
+                    {progresso === 'enviando'
+                      ? <><span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> Enviando PDF...</>
+                      : progresso === 'processando'
+                      ? <><span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> Processando com IA...</>
+                      : <><Upload className="w-3 h-3" /> Processar Aventura</>}
                   </BotaoRunico>
                 )}
               </div>
@@ -165,8 +192,12 @@ export default function AventuraPage() {
               <input type="file" accept=".pdf" onChange={e => setArquivo(e.target.files?.[0] ?? null)} className="hidden" />
             </label>
             {arquivo && (
-              <BotaoRunico variante="ouro" tamanho="sm" className="w-full mt-1" onClick={enviarAventura} carregando={enviando}>
-                Processar
+              <BotaoRunico variante="ouro" tamanho="sm" className="w-full mt-1" onClick={enviarAventura} disabled={enviando}>
+                {progresso === 'enviando'
+                  ? 'Enviando...'
+                  : progresso === 'processando'
+                  ? 'Processando...'
+                  : 'Processar'}
               </BotaoRunico>
             )}
           </div>
