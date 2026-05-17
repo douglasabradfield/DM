@@ -123,8 +123,8 @@ export default function AventuraPage() {
       inteligencia: 10, sabedoria: 10, carisma: 10,
       nivel: 1, ca: 10, pv_maximo: 10, pv_atual: 10,
       bonus_proficiencia: 2,
-      ataques: [], salvaguardas: {}, pericias: {},
-      resistencias: [], imunidades: [], vulnerabilidades: [],
+      deslocamento: '9 m',
+      ativo: true,
     })
     if (error) { toast.error('Erro ao criar personagem'); return }
     toast.success(`${npc.nome} criado como NPC!`)
