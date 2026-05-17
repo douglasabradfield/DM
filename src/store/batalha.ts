@@ -122,6 +122,15 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       })
 
       set(state => {
+        const jogadores = state.combatentes.filter(c => c.tipo === 'jogador')
+        const monstros = state.combatentes.filter(c => c.tipo === 'monstro')
+        const npcs = state.combatentes.filter(c => c.tipo === 'npc')
+
+        const linhas: string[] = [`⚔️ Batalha "${nome}" iniciada`]
+        if (jogadores.length > 0) linhas.push(`👤 Jogadores: ${jogadores.map(c => c.nome).join(', ')}`)
+        if (npcs.length > 0) linhas.push(`🧑 NPCs: ${npcs.map(c => c.nome).join(', ')}`)
+        if (monstros.length > 0) linhas.push(`👹 Monstros: ${monstros.map(c => c.nome).join(', ')}`)
+
         state.sessaoId = sessao.id
         state.nomeBatalha = nome
         state.statusBatalha = 'ativa'
@@ -139,7 +148,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           alvo: 'Batalha',
           valor: null,
           tipo_dano: null,
-          descricao: `⚔️ Batalha "${nome}" iniciada`,
+          descricao: linhas.join(' | '),
           criado_em: new Date().toISOString(),
         })
       })

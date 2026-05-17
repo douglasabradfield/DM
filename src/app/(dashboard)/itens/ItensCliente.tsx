@@ -27,6 +27,10 @@ const COR_RARIDADE: Record<string, string> = {
   legendary: 'text-[var(--gold)] border-[var(--gold)]',
 }
 
+function lbParaKg(lb: number): string {
+  return (lb * 0.453592).toFixed(1).replace('.', ',') + ' kg'
+}
+
 const CAT_ARMA_PT: Record<string, string> = {
   'Simple Melee':   'Corpo a corpo simples',
   'Simple Ranged':  'À distância simples',
@@ -275,7 +279,7 @@ function AbaArmas() {
               <div className="grid grid-cols-3 gap-3 text-sm">
                 <div><span className="text-[var(--text3)] font-cinzel text-xs block">Dano</span><span className="text-[var(--red2)] font-bold font-cinzel">{selecionado.damage_dice ?? '—'}</span></div>
                 <div><span className="text-[var(--text3)] font-cinzel text-xs block">Tipo</span><span className="text-[var(--text)]">{selecionado.damage_type_pt ?? '—'}</span></div>
-                <div><span className="text-[var(--text3)] font-cinzel text-xs block">Peso</span><span className="text-[var(--text)]">{selecionado.weight_lb != null ? `${selecionado.weight_lb} lb` : '—'}</span></div>
+                <div><span className="text-[var(--text3)] font-cinzel text-xs block">Peso</span><span className="text-[var(--text)]">{selecionado.weight_lb != null ? lbParaKg(selecionado.weight_lb) : '—'}</span></div>
               </div>
               <div className="mt-2">
                 <span className="text-[var(--text3)] font-cinzel text-xs block">Custo</span>
@@ -384,7 +388,7 @@ function AbaArmaduras() {
             <PainelGrimorio compacto className="mb-3">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-[var(--text3)] font-cinzel text-xs block">Classe de Armadura</span><span className="text-[var(--gold)] font-bold font-cinzel text-lg">{selecionado.base_ac_formula_pt ?? '—'}</span></div>
-                <div><span className="text-[var(--text3)] font-cinzel text-xs block">Peso</span><span className="text-[var(--text)]">{selecionado.weight_lb != null ? `${selecionado.weight_lb} lb` : '—'}</span></div>
+                <div><span className="text-[var(--text3)] font-cinzel text-xs block">Peso</span><span className="text-[var(--text)]">{selecionado.weight_lb != null ? lbParaKg(selecionado.weight_lb) : '—'}</span></div>
                 <div><span className="text-[var(--text3)] font-cinzel text-xs block">Custo</span><span className="text-[var(--text)]">{formatarCusto(selecionado.cost_cp)}</span></div>
                 {selecionado.strength_requirement && (
                   <div><span className="text-[var(--text3)] font-cinzel text-xs block">FOR mínima</span><span className="text-[var(--text)]">{selecionado.strength_requirement}</span></div>
@@ -487,7 +491,7 @@ function AbaEquipamentos() {
             <PainelGrimorio compacto className="mb-3">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-[var(--text3)] font-cinzel text-xs block">Custo</span><span className="text-[var(--gold)] font-cinzel">{selecionado.cost_gp != null ? `${selecionado.cost_gp} po` : '—'}</span></div>
-                <div><span className="text-[var(--text3)] font-cinzel text-xs block">Peso</span><span className="text-[var(--text)]">{selecionado.weight_lb != null ? `${selecionado.weight_lb} lb` : '—'}</span></div>
+                <div><span className="text-[var(--text3)] font-cinzel text-xs block">Peso</span><span className="text-[var(--text)]">{selecionado.weight_lb != null ? lbParaKg(selecionado.weight_lb) : '—'}</span></div>
               </div>
             </PainelGrimorio>
             {selecionado.description_pt && (
@@ -541,8 +545,8 @@ function ListaDetalhe({
       )}>
         <div className="p-3 border-b border-[var(--border)] space-y-2">
           <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
-            <input type="text" value={busca} onChange={e => onBusca(e.target.value)} placeholder={placeholder} className="w-full input-dd pl-7 text-sm" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
+            <input type="text" value={busca} onChange={e => onBusca(e.target.value)} placeholder={placeholder} className="w-full input-dd pl-9 text-sm" />
           </div>
           {filtros}
         </div>

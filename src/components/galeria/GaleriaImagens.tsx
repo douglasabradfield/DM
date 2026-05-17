@@ -15,6 +15,7 @@ interface ImagemGaleria {
   tipo: 'imagem' | 'mapa'
   criado_em: string
   visivel_jogadores: boolean
+  storage_path?: string | null
 }
 
 interface GaleriaImagensProps {
@@ -31,6 +32,10 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
   const [titulo, setTitulo] = useState('')
   const [url, setUrl] = useState('')
   const [salvando, setSalvando] = useState(false)
+  const [modoUpload, setModoUpload] = useState<'url' | 'arquivo'>('arquivo')
+  const [arquivo, setArquivo] = useState<File | null>(null)
+  const [previewArquivo, setPreviewArquivo] = useState<string | null>(null)
+  const inputArquivoRef = useRef<HTMLInputElement>(null)
   const selecionadaRef = useRef(selecionada)
   selecionadaRef.current = selecionada
 
@@ -63,19 +68,49 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
     }
   }
 
+  function selecionarArquivo(file: File) {
+    if (file.size > 2 * 1024 * 1024) { toast.error('Arquivo muito grande. Máximo: 2 MB'); return }
+    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
+      toast.error('Formato não suportado. Use JPEG, PNG, GIF ou WebP'); return
+    }
+    setArquivo(file)
+    const reader = new FileReader()
+    reader.onload = e => setPreviewArquivo(e.target?.result as string)
+    reader.readAsDataURL(file)
+    if (!titulo) setTitulo(file.name.replace(/\.[^.]+$/, ''))
+  }
+
   async function adicionar() {
-    if (!titulo.trim() || !url.trim() || !campanhaAtiva?.id) return
+    if (!titulo.trim() || !campanhaAtiva?.id) return
+    if (modoUpload === 'url' && !url.trim()) return
+    if (modoUpload === 'arquivo' && !arquivo) return
     setSalvando(true)
     try {
       const supabase = createClient()
+      let finalUrl = url.trim()
+      let storagePath: string | null = null
+
+      if (modoUpload === 'arquivo' && arquivo) {
+        const ext = arquivo.name.split('.').pop()
+        const path = `${campanhaAtiva.id}/${Date.now()}.${ext}`
+        const { error: upErr } = await supabase.storage
+          .from('dungeon-desk-imagens')
+          .upload(path, arquivo, { contentType: arquivo.type })
+        if (upErr) throw upErr
+        const { data: urlData } = supabase.storage.from('dungeon-desk-imagens').getPublicUrl(path)
+        finalUrl = urlData.publicUrl
+        storagePath = path
+      }
+
       const { data, error } = await supabase
         .from('imagens')
         .insert({
           campanha_id: campanhaAtiva.id,
           titulo: titulo.trim(),
-          url: url.trim(),
+          url: finalUrl,
           tipo,
           visivel_jogadores: false,
+          ...(storagePath ? { storage_path: storagePath } : {}),
         })
         .select()
         .single()
@@ -83,9 +118,12 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
       setImagens(prev => [data as ImagemGaleria, ...prev])
       setTitulo('')
       setUrl('')
+      setArquivo(null)
+      setPreviewArquivo(null)
       setModalAdicionar(false)
       toast.success(`${tipo === 'mapa' ? 'Mapa' : 'Imagem'} adicionada!`)
-    } catch {
+    } catch (err) {
+      console.error(err)
       toast.error('Erro ao adicionar')
     } finally {
       setSalvando(false)
@@ -95,6 +133,10 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
   async function remover(id: string) {
     if (!confirm('Remover esta imagem?')) return
     const supabase = createClient()
+    const alvo = imagens.find(i => i.id === id)
+    if (alvo?.storage_path) {
+      await supabase.storage.from('dungeon-desk-imagens').remove([alvo.storage_path])
+    }
     await supabase.from('imagens').delete().eq('id', id)
     setImagens(prev => prev.filter(i => i.id !== id))
     if (selecionadaRef.current?.id === id) setSelecionada(null)
@@ -136,13 +178,13 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
       <div className="w-72 border-r border-[var(--border)] flex flex-col">
         <div className="p-3 border-b border-[var(--border)] space-y-2">
           <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
             <input
               type="text"
               value={busca}
               onChange={e => setBusca(e.target.value)}
               placeholder={`Buscar ${labelTipo.toLowerCase()}...`}
-              className="w-full input-dd pl-7 text-sm"
+              className="w-full input-dd pl-9 text-sm"
             />
           </div>
           {!ehJogador && (
@@ -262,14 +304,28 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
 
       {/* Modal adicionar */}
       {modalAdicionar && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70" onClick={() => setModalAdicionar(false)}>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70" onClick={() => { setModalAdicionar(false); setArquivo(null); setPreviewArquivo(null) }}>
           <div className="bg-[var(--bg2)] border border-[var(--gold)] rounded-xl p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-cinzel text-[var(--gold)] text-lg font-bold">+ Adicionar {labelTipo}</h3>
-              <button onClick={() => setModalAdicionar(false)} className="text-[var(--border)] hover:text-[var(--text)]">
+              <button onClick={() => { setModalAdicionar(false); setArquivo(null); setPreviewArquivo(null) }} className="text-[var(--border)] hover:text-[var(--text)]">
                 <X className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Tabs URL / Arquivo */}
+            <div className="flex border border-[var(--border)] rounded overflow-hidden mb-4 text-xs font-cinzel">
+              {(['arquivo', 'url'] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setModoUpload(m)}
+                  className={`flex-1 py-1.5 transition-colors ${modoUpload === m ? 'bg-[var(--accent)] text-[var(--bg)]' : 'text-[var(--text3)] hover:text-[var(--text)]'}`}
+                >
+                  {m === 'arquivo' ? 'Enviar arquivo' : 'URL externa'}
+                </button>
+              ))}
+            </div>
+
             <div className="space-y-3">
               <div>
                 <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Título</label>
@@ -282,31 +338,70 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                   autoFocus
                 />
               </div>
-              <div>
-                <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">URL da Imagem</label>
-                <input
-                  type="url"
-                  value={url}
-                  onChange={e => setUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="input-dd w-full"
-                />
-              </div>
-              {url && (
-                <div className="mt-2 rounded overflow-hidden border border-[var(--border)] h-32">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={url} alt="preview" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+
+              {modoUpload === 'arquivo' ? (
+                <div>
+                  <input
+                    ref={inputArquivoRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) selecionarArquivo(f) }}
+                  />
+                  {!arquivo ? (
+                    <button
+                      onClick={() => inputArquivoRef.current?.click()}
+                      className="w-full border-2 border-dashed border-[var(--border)] rounded-lg p-6 text-center hover:border-[var(--accent)] transition-colors"
+                    >
+                      <Upload className="w-6 h-6 mx-auto mb-2 text-[var(--text3)]" />
+                      <p className="text-[var(--text3)] text-sm font-crimson">Clique para selecionar</p>
+                      <p className="text-[var(--border)] text-xs mt-1">JPEG, PNG, GIF ou WebP · máx. 2 MB</p>
+                    </button>
+                  ) : (
+                    <div className="relative">
+                      {previewArquivo && (
+                        <div className="rounded overflow-hidden border border-[var(--border)] h-32">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={previewArquivo} alt="preview" className="w-full h-full object-cover" />
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between mt-1">
+                        <p className="text-[var(--text3)] text-xs font-crimson truncate flex-1">{arquivo.name}</p>
+                        <button onClick={() => { setArquivo(null); setPreviewArquivo(null) }} className="text-[var(--border)] hover:text-[var(--red2)] ml-2">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">URL da Imagem</label>
+                  <input
+                    type="url"
+                    value={url}
+                    onChange={e => setUrl(e.target.value)}
+                    placeholder="https://..."
+                    className="input-dd w-full"
+                  />
+                  {url && (
+                    <div className="mt-2 rounded overflow-hidden border border-[var(--border)] h-32">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt="preview" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+
             <div className="flex gap-2 mt-4">
-              <button onClick={() => setModalAdicionar(false)} className="flex-1 py-2 border border-[var(--border)] rounded text-[var(--text2)] text-sm">Cancelar</button>
+              <button onClick={() => { setModalAdicionar(false); setArquivo(null); setPreviewArquivo(null) }} className="flex-1 py-2 border border-[var(--border)] rounded text-[var(--text2)] text-sm">Cancelar</button>
               <button
                 onClick={adicionar}
-                disabled={!titulo.trim() || !url.trim() || salvando}
+                disabled={!titulo.trim() || (modoUpload === 'url' ? !url.trim() : !arquivo) || salvando}
                 className="flex-1 py-2 bg-[var(--accent)] hover:opacity-90 text-[var(--bg)] rounded font-cinzel text-sm disabled:opacity-50"
               >
-                {salvando ? 'Salvando...' : 'Adicionar'}
+                {salvando ? 'Enviando...' : 'Adicionar'}
               </button>
             </div>
           </div>

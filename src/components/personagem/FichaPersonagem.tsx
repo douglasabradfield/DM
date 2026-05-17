@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useCampanha } from '@/store/campanha'
-import type { Personagem, Magia, ItemInventario } from '@/types/dnd'
+import type { Personagem, Spell, ItemInventario } from '@/types/dnd'
 import { calcularModificadorAtributo, formatarModificador } from '@/lib/utils'
 import { DivisorOrnamentado } from '@/components/ui/DivisorOrnamentado'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
@@ -55,7 +55,7 @@ interface MagiaPersonagem {
   id: string
   personagem_id: string
   magia_id: string
-  magia: Magia
+  spell: Spell
 }
 
 interface FichaPersonagemProps {
@@ -122,7 +122,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   // Magias
   const [magiasPersonagem, setMagiasPersonagem] = useState<MagiaPersonagem[]>([])
   const [buscaMagia, setBuscaMagia] = useState('')
-  const [resultadosBusca, setResultadosBusca] = useState<Magia[]>([])
+  const [resultadosBusca, setResultadosBusca] = useState<Spell[]>([])
   const [buscandoMagia, setBuscandoMagia] = useState(false)
   const [espacosUtilizados, setEspacosUtilizados] = useState<Record<number, number>>({})
 
@@ -228,14 +228,14 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     try {
       const supabase = createClient()
       const { data, error } = await supabase
-        .from('magias')
-        .select('id, nome, nivel, escola, descricao, classes, tempo_conjuracao, alcance, componentes, duracao')
-        .ilike('nome', `%${termo}%`)
-        .order('nivel', { ascending: true })
-        .order('nome', { ascending: true })
+        .from('spells')
+        .select('id, slug, name_pt, name_en, level, school_pt, casting_time_pt, range_pt, components_pt, duration_pt, description_pt, classes_pt, concentration, ritual')
+        .ilike('name_pt', `%${termo}%`)
+        .order('level', { ascending: true })
+        .order('name_pt', { ascending: true })
         .limit(20)
       if (error) console.error('Busca de magias:', error)
-      setResultadosBusca((data ?? []) as Magia[])
+      setResultadosBusca((data ?? []) as Spell[])
     } finally {
       setBuscandoMagia(false)
     }
@@ -250,7 +250,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     const supabase = createClient()
     const { data, error } = await supabase
       .from('magias_personagem')
-      .select('*, magia:magias(*)')
+      .select('*, spell:spells(id, slug, name_pt, name_en, level, school_pt, casting_time_pt, range_pt, components_pt, duration_pt, concentration, ritual, description_pt, classes_pt)')
       .eq('personagem_id', p.id)
     if (error) console.error('Erro ao carregar magias:', error)
     if (data) setMagiasPersonagem(data as MagiaPersonagem[])
@@ -258,25 +258,23 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
   useEffect(() => { carregarMagias() }, [carregarMagias])
 
-  async function adicionarMagia(magia: Magia) {
+  async function adicionarMagia(magia: Spell) {
     if (magiasPersonagem.some(m => m.magia_id === magia.id)) {
       toast.error('Magia já adicionada')
       return
     }
-    alert(`Tentando adicionar: ${magia.nome} (id: ${magia.id}) ao personagem ${p.id}`)
     const supabase = createClient()
     const { error } = await supabase
       .from('magias_personagem')
       .insert({
         personagem_id: p.id,
         magia_id: magia.id,
-        nome: magia.nome,
-        nivel: magia.nivel,
+        nome: magia.name_pt,
+        nivel: magia.level,
         preparada: false,
-        classe_conjuradora: dados.classe || magia.classes?.[0] || '',
+        classe_conjuradora: dados.classe || magia.classes_pt?.split(',')[0]?.trim() || '',
       })
     if (error) {
-      alert(`ERRO ao adicionar magia:\n${JSON.stringify(error, null, 2)}`)
       console.error('Erro ao adicionar magia:', error)
       toast.error(`Erro ao adicionar magia: ${error.message}`)
       return
@@ -284,7 +282,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     await carregarMagias()
     setBuscaMagia('')
     setResultadosBusca([])
-    toast.success(`${magia.nome} adicionada!`)
+    toast.success(`${magia.name_pt} adicionada!`)
   }
 
   async function removerMagia(id: string) {
@@ -314,7 +312,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
   // Magias agrupadas por nível
   const magiasPorNivel = magiasPersonagem.reduce<Record<number, MagiaPersonagem[]>>((acc, m) => {
-    const n = m.magia.nivel
+    const n = m.spell.level
     if (!acc[n]) acc[n] = []
     acc[n].push(m)
     return acc
@@ -842,13 +840,13 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           <PainelGrimorio titulo="Magias Conhecidas" compacto>
             {/* Busca */}
             <div className="relative mb-3">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#8870a8]" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#8870a8]" />
               <input
                 type="text"
                 value={buscaMagia}
                 onChange={e => setBuscaMagia(e.target.value)}
                 placeholder="Buscar magia para adicionar..."
-                className="w-full input-dd pl-7 text-sm"
+                className="w-full input-dd pl-9 text-sm"
               />
               {resultadosBusca.length > 0 && (
                 <div className="absolute top-full left-0 right-0 z-50 bg-[#261a2e] border border-[#4a3060] rounded shadow-xl mt-1 max-h-48 overflow-y-auto">
@@ -858,8 +856,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                       onClick={() => adicionarMagia(m)}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-[#1e1525] transition-colors flex items-center justify-between"
                     >
-                      <span className="text-[#e8dff0] font-crimson">{m.nome}</span>
-                      <span className="text-[#8870a8] text-xs">{m.nivel === 0 ? 'Truque' : `Nv${m.nivel}`} · {m.escola}</span>
+                      <span className="text-[#e8dff0] font-crimson">{m.name_pt}</span>
+                      <span className="text-[#8870a8] text-xs">{m.level === 0 ? 'Truque' : `Nv${m.level}`} · {m.school_pt}</span>
                     </button>
                   ))}
                 </div>
@@ -886,7 +884,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                       <div className="space-y-0.5">
                         {magias.map(m => (
                           <div key={m.id} className="flex items-center justify-between px-2 py-1 bg-[#1e1525] rounded">
-                            <span className="text-[#b8a8cc] text-sm font-crimson">{m.magia.nome}</span>
+                            <span className="text-[#b8a8cc] text-sm font-crimson">{m.spell.name_pt}</span>
                             <button
                               onClick={() => removerMagia(m.id)}
                               className="text-[#4a3060] hover:text-[#e74c3c] transition-colors"

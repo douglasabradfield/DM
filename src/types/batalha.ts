@@ -34,6 +34,7 @@ export interface Combatente {
   ordem: number
   vantagem?: 'vantagem' | 'desvantagem' | null
   inspiracao?: number
+  nivel?: number
   // estado local (não salvo)
   dano_input: number
   dano_tipo: TipoDano

@@ -313,7 +313,6 @@ export function TabelaCombate() {
                       <thead className="bg-[var(--bg3)] sticky top-0 z-10">
                         <tr className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider">
                           <th className="px-1 py-1.5 w-6"></th>
-                          <th className="px-1 py-1.5 text-center w-8">✓</th>
                           <th className="px-1 py-1.5 text-center w-6">St</th>
                           <th className="px-2 py-1.5 text-left">Nome</th>
                           <th className="px-1 py-1.5 text-center w-14">Init</th>
@@ -681,6 +680,7 @@ function ModalCarregarPersonagens({ campanhaId, onFechar }: { campanhaId: string
         dados_monstro: null,
         ordem: 999,
         inspiracao: typeof p.inspiracao === 'number' ? p.inspiracao : 0,
+        nivel: p.nivel ?? 1,
       })
     })
 
@@ -775,14 +775,18 @@ const LABEL_DIFICULDADE: Record<NivelDificuldade, string> = {
 
 function PainelDificuldade({ combatentes }: { combatentes: Combatente[] }) {
   const [aberto, setAberto] = useState(false)
-  const [nivelMedio, setNivelMedio] = useState(5)
 
   const monstros = combatentes.filter(c => c.tipo === 'monstro' && !c.ausente)
   const jogadores = combatentes.filter(c => c.tipo === 'jogador' && !c.ausente)
   const numJogadores = jogadores.length
 
   const crs = monstros.map(c => c.dados_monstro?.cr ?? '0')
-  const niveis = Array.from({ length: Math.max(1, numJogadores) }, () => nivelMedio)
+  const niveis = jogadores.length > 0
+    ? jogadores.map(j => j.nivel ?? 1)
+    : [1]
+  const nivelMedioExibido = niveis.length > 0
+    ? Math.round(niveis.reduce((a, b) => a + b, 0) / niveis.length)
+    : 1
 
   const resultado = calcularDificuldade(niveis, crs)
   const xpAjustadoTotal = Math.round(resultado.xpBruto * resultado.multiplicador)
@@ -819,20 +823,16 @@ function PainelDificuldade({ combatentes }: { combatentes: Combatente[] }) {
 
       {aberto && (
         <div className="px-3 pb-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <div>
-              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Nível Médio dos Jogadores</label>
-              <input
-                type="number"
-                min={1} max={20}
-                value={nivelMedio}
-                onChange={e => setNivelMedio(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
-                className="input-dd w-16 text-center text-sm mt-0.5"
-              />
-            </div>
-            <div className="text-[var(--text3)] text-xs mt-3">
-              {numJogadores} jogador{numJogadores !== 1 ? 'es' : ''} na batalha
-            </div>
+          <div className="flex items-center gap-2 text-xs text-[var(--text3)]">
+            <span className="font-cinzel">
+              {numJogadores} jogador{numJogadores !== 1 ? 'es' : ''}
+              {numJogadores > 0 && ` · nível médio ${nivelMedioExibido}`}
+            </span>
+            {numJogadores > 0 && jogadores.map(j => (
+              <span key={j.id} className="text-[var(--text3)] text-[10px]">
+                {j.nome} Nv{j.nivel ?? 1}
+              </span>
+            ))}
           </div>
 
           <div className="grid grid-cols-4 gap-1 text-center text-[10px]">

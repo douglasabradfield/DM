@@ -7,7 +7,8 @@ import { useCampanha } from '@/store/campanha'
 import type { Personagem } from '@/types/dnd'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
-import { Plus, RefreshCw, Users } from 'lucide-react'
+import { BotaoImportarFicha } from '@/components/personagem/BotaoImportarFicha'
+import { Plus, RefreshCw, Users, Download } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 type FiltroTipo = 'todos' | 'jogador' | 'npc' | 'monstro'
@@ -243,10 +244,18 @@ export default function PersonagensPage() {
           <h2 className="font-cinzel text-[var(--gold)] text-xl font-bold">Personagens</h2>
           <p className="text-[var(--text3)] text-sm font-crimson">{ordenados.length} de {personagens.length} personagens · {campanhaAtiva.nome}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <BotaoRunico variante="secundario" tamanho="sm" onClick={carregar}>
             <RefreshCw className="w-3 h-3" />
           </BotaoRunico>
+          <a
+            href="/ficha-dnd5e-pt.pdf"
+            download
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-[var(--border)] text-[var(--text2)] rounded text-xs font-cinzel hover:border-[var(--gold)] hover:text-[var(--gold)] transition-colors"
+          >
+            <Download className="w-3 h-3" /> Ficha Oficial
+          </a>
+          <BotaoImportarFicha />
           <BotaoRunico variante="ouro" tamanho="sm" onClick={() => setCriando(true)}>
             <Plus className="w-3 h-3" /> {ehJogador ? 'Minha Ficha' : 'Novo Personagem'}
           </BotaoRunico>

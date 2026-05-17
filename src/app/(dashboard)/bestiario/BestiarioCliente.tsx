@@ -122,13 +122,13 @@ export function BestiarioCliente() {
       )}>
         <div className="p-3 border-b border-[var(--border)]">
           <div className="relative mb-2">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
             <input
               type="text"
               value={busca}
               onChange={e => setBusca(e.target.value)}
               placeholder="Buscar monstro (PT ou EN)..."
-              className="w-full input-dd pl-7 text-sm"
+              className="w-full input-dd pl-9 text-sm"
             />
           </div>
           <select value={filtroCR} onChange={e => setFiltroCR(e.target.value)} className="w-full input-dd text-sm">

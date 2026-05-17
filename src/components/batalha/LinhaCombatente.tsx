@@ -27,7 +27,7 @@ interface LinhaCombatenteProps {
 export function LinhaCombatente({ combatente: c, ativo, indice }: LinhaCombatenteProps) {
   const router = useRouter()
   const {
-    toggleAusencia, toggleMorto, removerCombatente,
+    toggleMorto, removerCombatente,
     aplicarDano, aplicarCura, atualizarCombatente,
     setarDanoInput, setarTipoDano,
     adicionarCondicao, removerCondicao,
@@ -92,16 +92,6 @@ export function LinhaCombatente({ combatente: c, ativo, indice }: LinhaCombatent
         >
           <GripVertical className="w-3.5 h-3.5" />
         </button>
-      </td>
-
-      {/* Presença */}
-      <td className="px-1 py-1 w-8 text-center">
-        <input
-          type="checkbox"
-          checked={!c.ausente}
-          onChange={() => toggleAusencia(c.id)}
-          className="w-3 h-3 accent-[var(--accent)] cursor-pointer"
-        />
       </td>
 
       {/* Status */}
