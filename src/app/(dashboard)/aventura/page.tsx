@@ -72,16 +72,20 @@ export default function AventuraPage() {
     setCarregando(true)
     try {
       const supabase = createClient()
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('aventuras')
-        .select('conteudo_json, titulo, processada')
+        .select('conteudo_json, titulo')
         .eq('campanha_id', campanhaAtiva.id)
+        .eq('processada', true)
+        .not('conteudo_json', 'is', null)
         .order('criado_em', { ascending: false })
         .limit(1)
-        .maybeSingle()
 
-      if (data?.conteudo_json && data.processada) {
-        setAventura(data.conteudo_json as ConteudoAventura)
+      if (error) console.error('Erro ao carregar aventura:', error)
+
+      const aventuraData = data?.[0]
+      if (aventuraData?.conteudo_json) {
+        setAventura(aventuraData.conteudo_json as ConteudoAventura)
         setCapSelecionado(1)
         setLocalSelecionado(null)
       } else {
