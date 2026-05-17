@@ -9,11 +9,16 @@ const pdfParse = require('pdf-parse') as (buffer: Buffer) => Promise<{ text: str
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
-
   try {
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) {
+      return NextResponse.json({ erro: 'ANTHROPIC_API_KEY não configurada no Vercel' }, { status: 500 })
+    }
+
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+
     const { storagePath, campanhaId } = await req.json()
     if (!storagePath) return NextResponse.json({ erro: 'storagePath obrigatório' }, { status: 400 })
 
@@ -255,11 +260,12 @@ Formato de saída (APENAS JSON válido):
       truncado,
     })
 
-  } catch (err) {
+  } catch (err: unknown) {
+    const e = err as { message?: string; stack?: string }
     console.error('Erro ao processar aventura:', err)
     return NextResponse.json({
-      erro: 'Erro interno ao processar aventura',
-      detalhe: err instanceof Error ? err.message : String(err),
+      erro: e?.message || String(err),
+      stack: e?.stack?.slice(0, 500),
     }, { status: 500 })
   }
 }
