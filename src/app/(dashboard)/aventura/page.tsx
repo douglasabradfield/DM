@@ -80,10 +80,15 @@ export default function AventuraPage() {
         .limit(1)
         .maybeSingle()
 
+      console.log('aventura data:', data, 'erro:', error, 'campanhaId:', campanhaAtiva?.id)
+
       if (error) console.error('Erro ao carregar aventura:', error)
 
       if (data?.conteudo_json) {
-        setAventura(data.conteudo_json as ConteudoAventura)
+        const conteudo = typeof data.conteudo_json === 'string'
+          ? JSON.parse(data.conteudo_json)
+          : data.conteudo_json
+        setAventura(conteudo as ConteudoAventura)
         setCapSelecionado(1)
         setLocalSelecionado(null)
       } else {
