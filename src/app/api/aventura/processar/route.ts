@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getClaudeClient, MODELO_CLAUDE } from '@/lib/claude/client'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 // pdf-parse usa require (serverExternalPackage) — evita problema de default export no ESM
@@ -71,10 +70,11 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Enviar texto ao Claude com prompt robusto
-    const claude = getClaudeClient()
+    const { default: Anthropic } = await import('@anthropic-ai/sdk')
+    const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
     const resposta = await claude.messages.create({
-      model: MODELO_CLAUDE,
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 8096,
       messages: [{
         role: 'user',
