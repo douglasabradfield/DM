@@ -11,4 +11,4 @@ export function getClaudeClient(): Anthropic {
   return clienteAnthropic
 }
 
-export const MODELO_CLAUDE = 'claude-sonnet-4-20250514'
+export const MODELO_CLAUDE = 'claude-sonnet-4-5'

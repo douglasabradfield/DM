@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
 
     console.log('9. Chamando API Claude...')
     const resposta = await claude.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5',
       max_tokens: 8096,
       messages: [{
         role: 'user',
