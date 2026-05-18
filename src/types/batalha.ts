@@ -31,6 +31,11 @@ export interface Combatente {
   espacos_magia: EspacosMagiaBatalha
   notas: string
   dados_monstro: DadosMonstroSimples | null
+  dados_personagem?: {
+    nivel: number
+    classe: string | null
+    ataques: Array<{ nome: string; bonus: string; dano: string }>
+  } | null
   ordem: number
   vantagem?: 'vantagem' | 'desvantagem' | null
   inspiracao?: number

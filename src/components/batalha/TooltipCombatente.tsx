@@ -72,8 +72,7 @@ export function TooltipCombatente({ combatente: c, children }: Props) {
     ? c.dados_monstro.acoes.slice(0, 300) + (c.dados_monstro.acoes.length > 300 ? '…' : '')
     : null
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ataques: Array<{ nome: string; bonus: string; dano: string }> = (c as any).dados_personagem?.ataques || []
+  const ataques = c.dados_personagem?.ataques ?? []
 
   return (
     <>

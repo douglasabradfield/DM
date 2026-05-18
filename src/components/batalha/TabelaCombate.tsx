@@ -36,7 +36,7 @@ export function TabelaCombate() {
     adicionarCombatente, confirmarIniciativa, rolarIniciativasMonstros,
     proximoTurno, turnoAnterior, proximaRodada,
     aplicarTodosDanos, zerarContadores, reordenarCombatentes,
-    xpGanhoNaBatalha,
+    xpGanhoNaBatalha, xpDistribuido,
   } = useBatalha()
   const { campanhaAtiva } = useCampanha()
 
@@ -46,6 +46,7 @@ export function TabelaCombate() {
   const [modalIniciar, setModalIniciar] = useState(false)
   const [modalCarregar, setModalCarregar] = useState(false)
   const [encerrando, setEncerrando] = useState(false)
+  const [avisoXP, setAvisoXP] = useState(false)
   const campanhaAnteriorRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -191,6 +192,7 @@ export function TabelaCombate() {
                 tamanho="sm"
                 disabled={encerrando}
                 onClick={async () => {
+                  if (!xpDistribuido) { setAvisoXP(true); return }
                   if (!confirm('Encerrar a batalha? Isso salvará o log no diário.')) return
                   setEncerrando(true)
                   try {
@@ -220,6 +222,7 @@ export function TabelaCombate() {
                 tamanho="sm"
                 disabled={encerrando}
                 onClick={async () => {
+                  if (!xpDistribuido) { setAvisoXP(true); return }
                   if (!confirm('Encerrar a batalha?')) return
                   setEncerrando(true)
                   try {
@@ -374,6 +377,45 @@ export function TabelaCombate() {
       </div>
     </div>
 
+    {avisoXP && createPortal(
+      <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70" onClick={() => setAvisoXP(false)}>
+        <div className="bg-[var(--bg2)] border border-[var(--gold)] rounded-xl p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+          <h3 className="font-cinzel text-[var(--gold)] text-lg font-bold mb-2">⚠️ XP não distribuído</h3>
+          <p className="text-[var(--text2)] text-sm mb-5 font-crimson">O XP da batalha ainda não foi distribuído aos jogadores. Deseja distribuir antes de encerrar?</p>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => { setAvisoXP(false); setModalXP(true) }}
+              className="py-2 bg-[var(--accent)] hover:bg-[var(--accent2)] text-white rounded-lg font-cinzel text-sm"
+            >
+              ⭐ Distribuir XP agora
+            </button>
+            <button
+              onClick={async () => {
+                setAvisoXP(false)
+                if (!confirm('Encerrar sem distribuir XP?')) return
+                setEncerrando(true)
+                try {
+                  await encerrarBatalha()
+                  toast.success('Batalha encerrada e salva no diário!')
+                } catch (e) {
+                  console.error(e)
+                  toast.error('Erro ao encerrar batalha')
+                } finally {
+                  setEncerrando(false)
+                }
+              }}
+              className="py-2 border border-[var(--border)] rounded-lg text-[var(--text2)] hover:bg-[var(--surface)] text-sm"
+            >
+              Encerrar sem distribuir
+            </button>
+            <button onClick={() => setAvisoXP(false)} className="py-2 text-[var(--text3)] hover:text-[var(--text2)] text-sm">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
     {modalXP && <ModalDistribuirXP xpSugerido={xpGanhoNaBatalha} onFechar={() => setModalXP(false)} />}
     {modalInspiracao && <ModalDarInspiracao onFechar={() => setModalInspiracao(false)} />}
     {modalCarregar && campanhaAtiva?.id && (
@@ -406,6 +448,7 @@ function ModalDistribuirXP({ onFechar, xpSugerido }: { onFechar: () => void; xpS
   const [xpTotal, setXpTotal] = useState(xpSugerido && xpSugerido > 0 ? String(xpSugerido) : '')
   const [loading, setLoading] = useState(false)
   const combatentes = useBatalha(s => s.combatentes)
+  const marcarXPDistribuido = useBatalha(s => s.marcarXPDistribuido)
 
   const jogadores = combatentes.filter(c => c.tipo === 'jogador' && !c.ausente)
   const xpPorJogador = jogadores.length > 0
@@ -456,7 +499,10 @@ function ModalDistribuirXP({ onFechar, xpSugerido }: { onFechar: () => void; xpS
     }
 
     if (semId > 0) toast.error(`${semId} jogador(es) sem personagem vinculado foram ignorados`)
-    if (sucesso > 0) toast.success(`✅ ${xpPorJogador.toLocaleString('pt-BR')} XP distribuídos para ${sucesso} jogadores!`)
+    if (sucesso > 0) {
+      toast.success(`✅ ${xpPorJogador.toLocaleString('pt-BR')} XP distribuídos para ${sucesso} jogadores!`)
+      marcarXPDistribuido(xpPorJogador, jogadores.filter(j => j.personagem_id).map(j => j.nome))
+    }
     setLoading(false)
     onFechar()
   }
@@ -678,6 +724,15 @@ function ModalCarregarPersonagens({ campanhaId, onFechar }: { campanhaId: string
         espacos_magia: espacos,
         notas: '',
         dados_monstro: null,
+        dados_personagem: {
+          nivel: p.nivel ?? 1,
+          classe: p.classe ?? null,
+          ataques: (p.ataques ?? []).map(a => ({
+            nome: a.nome,
+            bonus: a.bonus_ataque,
+            dano: a.dano,
+          })),
+        },
         ordem: 999,
         inspiracao: typeof p.inspiracao === 'number' ? p.inspiracao : 0,
         nivel: p.nivel ?? 1,

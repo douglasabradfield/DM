@@ -17,6 +17,8 @@ interface EstadoBatalhaStore {
   ativa: boolean
   batalhaId: string | null
   xpGanhoNaBatalha: number
+  xpDistribuido: boolean
+  marcarXPDistribuido: (xpPorJogador: number, nomes: string[]) => void
 
   // Sessão / persistência
   sessaoId: string | null
@@ -91,6 +93,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
     ativa: false,
     batalhaId: null,
     xpGanhoNaBatalha: 0,
+    xpDistribuido: false,
     sessaoId: null,
     nomeBatalha: '',
     statusBatalha: 'inativa',
@@ -188,6 +191,8 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             mortos: mortos.map(c => c.nome),
             combatentes: combatentes.map(c => ({
               nome: c.nome, tipo: c.tipo, pvFinal: c.pv_atual, pvMax: c.pv_maximo,
+              status: c.morto || c.pv_atual <= 0 ? 'morto' : 'vivo',
+              condicoes: c.condicoes,
             })),
             log: narrativaLog.slice(0, 3000),
           }),
@@ -332,10 +337,27 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       state.ativa = false
       state.batalhaId = null
       state.xpGanhoNaBatalha = 0
+      state.xpDistribuido = false
       state.sessaoId = null
       state.nomeBatalha = ''
       state.statusBatalha = 'inativa'
       state.iniciadaEm = null
+    }),
+
+    marcarXPDistribuido: (xpPorJogador, nomes) => set(state => {
+      state.xpDistribuido = true
+      state.log.push({
+        id: gerarId(),
+        rodada: state.rodadaAtual,
+        turno: state.turnoAtual,
+        tipo: 'sistema',
+        origem: 'DM',
+        alvo: 'Grupo',
+        valor: xpPorJogador,
+        tipo_dano: null,
+        descricao: `⭐ XP distribuído: ${xpPorJogador} XP para ${nomes.join(', ')}`,
+        criado_em: new Date().toISOString(),
+      })
     }),
 
     adicionarCombatente: (c) => set(state => {
@@ -390,6 +412,12 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       const c = state.combatentes.find(c => c.id === id)
       if (!c) return
 
+      // Identificar o combatente ativo (atacante) antes de modificar o estado
+      const ordenados = [...state.combatentes].sort((a, b) => a.ordem - b.ordem)
+      const ativos = ordenados.filter(x => !x.ausente && !x.morto)
+      const combatenteAtivo = ativos[state.turnoAtual] || null
+      const nomeAtacante = combatenteAtivo?.nome || 'DM'
+
       const { danoFinal, modificador } = aplicarResistencias(dano, tipo, c.resistencias, c.imunidades, c.vulnerabilidades)
 
       const pvAntes = c.pv_atual
@@ -424,16 +452,26 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         })
       }
 
+      let descricao: string
+      if (danoFinal === 0) {
+        descricao = `${c.nome} é IMUNE a ${tipo}`
+      } else {
+        descricao = `${nomeAtacante} causou ${danoFinal} de dano${tipo ? ` (${tipo})` : ''} em ${c.nome}`
+        if (modificador === 'resistencia') descricao += ` (resistência: ${dano}→${danoFinal})`
+        else if (modificador === 'vulnerabilidade') descricao += ` (vulnerabilidade: ${dano}→${danoFinal})`
+        if (c.pv_atual <= 0 && pvAntes > 0) descricao += ` — ${c.nome} caiu! 💀`
+      }
+
       state.log.push({
         id: gerarId(),
         rodada: state.rodadaAtual,
         turno: state.turnoAtual,
         tipo: 'dano',
-        origem: 'DM',
+        origem: nomeAtacante,
         alvo: c.nome,
         valor: danoFinal,
         tipo_dano: tipo,
-        descricao: `${c.nome} sofreu ${danoFinal} de dano ${tipo}${modificador ? ` (${modificador}: ${dano}→${danoFinal})` : ''}`,
+        descricao,
         criado_em: new Date().toISOString(),
       })
 
@@ -449,6 +487,10 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       const c = state.combatentes.find(c => c.id === id)
       if (!c) return
 
+      const ordenados = [...state.combatentes].sort((a, b) => a.ordem - b.ordem)
+      const ativos = ordenados.filter(x => !x.ausente && !x.morto)
+      const nomeAtacante = ativos[state.turnoAtual]?.nome || 'DM'
+
       c.pv_atual = Math.min(c.pv_maximo, c.pv_atual + cura)
       c.cura_total += cura
       c.flash = 'cura'
@@ -458,11 +500,11 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         rodada: state.rodadaAtual,
         turno: state.turnoAtual,
         tipo: 'cura',
-        origem: 'DM',
+        origem: nomeAtacante,
         alvo: c.nome,
         valor: cura,
         tipo_dano: null,
-        descricao: `${c.nome} foi curado em ${cura} PV`,
+        descricao: `${nomeAtacante} curou ${cura} PV de ${c.nome}`,
         criado_em: new Date().toISOString(),
       })
 

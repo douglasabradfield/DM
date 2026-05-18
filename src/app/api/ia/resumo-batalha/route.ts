@@ -24,11 +24,15 @@ DADOS DA BATALHA:
 - Dano total causado: ${totalDano}
 - Cura total: ${totalCura}
 - Baixas: ${(mortos as string[]).length > 0 ? (mortos as string[]).join(', ') : 'nenhuma'}
-- Combatentes: ${(combatentes as Array<{ nome: string; tipo: string; pvFinal: number; pvMax: number }>)
+- Combatentes: ${(combatentes as Array<{ nome: string; tipo: string; pvFinal: number; pvMax: number; status: string; condicoes: string[] }>)
   .map(c => `${c.nome} (${c.tipo}, PV: ${c.pvFinal}/${c.pvMax})`).join(', ')}
 
 LOG DE AÇÕES:
 ${log}
+
+STATUS FINAL DOS COMBATENTES:
+${(combatentes as Array<{ nome: string; tipo: string; pvFinal: number; pvMax: number; status: string; condicoes: string[] }>)
+  .map(c => `${c.nome} (${c.tipo}): ${c.status === 'morto' ? '💀 Morto' : `✅ Vivo — ${c.pvFinal}/${c.pvMax} PV`}${c.condicoes?.length ? ` [${c.condicoes.join(', ')}]` : ''}`).join('\n')}
 
 Escreva a narrativa épica agora:`
     }]
