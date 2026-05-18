@@ -58,6 +58,7 @@ export default function AventuraPage() {
   const [enviando, setEnviando] = useState(false)
   const [progresso, setProgresso] = useState<'idle' | 'enviando' | 'processando'>('idle')
   const [arquivo, setArquivo] = useState<File | null>(null)
+  const [confirmandoApagar, setConfirmandoApagar] = useState(false)
 
   useEffect(() => {
     if (!campanhaAtiva?.id) {
@@ -132,6 +133,19 @@ export default function AventuraPage() {
 
   function navegarParaMonstro(nomeCriatura: string) {
     router.push(`/bestiario?busca=${encodeURIComponent(nomeCriatura)}`)
+  }
+
+  async function apagarAventura() {
+    if (!campanhaAtiva?.id) return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('aventuras')
+      .delete()
+      .eq('campanha_id', campanhaAtiva.id)
+    if (error) { toast.error('Erro ao apagar aventura'); return }
+    setAventura(null)
+    setConfirmandoApagar(false)
+    toast.success('Aventura apagada')
   }
 
   function getMimeType(arquivo: File): string {
@@ -317,18 +331,42 @@ export default function AventuraPage() {
               </button>
             ))}
 
-            {/* Trocar aventura */}
-            <div className="px-3 py-3 mt-1 border-t border-[var(--border)]">
-              <label className="block cursor-pointer">
-                <div className="flex items-center gap-1.5 text-[10px] text-[var(--text3)] hover:text-[var(--text2)] transition-colors font-cinzel">
-                  <Upload className="w-3 h-3" /> Trocar aventura
-                </div>
+            {/* Enriquecer / Apagar */}
+            <div className="px-3 py-3 mt-1 border-t border-[var(--border)] space-y-2">
+              <label className="flex items-center gap-1.5 px-3 py-1.5 border border-[var(--border)] rounded-lg text-[var(--text2)] text-xs cursor-pointer hover:bg-[var(--surface)] transition-colors font-cinzel">
+                ✨ Enriquecer com IA
                 <input type="file" accept=".pdf,.md,.txt" onChange={e => setArquivo(e.target.files?.[0] ?? null)} className="hidden" />
               </label>
               {arquivo && (
-                <BotaoRunico variante="ouro" tamanho="sm" className="w-full mt-1.5" onClick={enviarAventura} disabled={enviando}>
+                <BotaoRunico variante="ouro" tamanho="sm" className="w-full" onClick={enviarAventura} disabled={enviando}>
                   {progresso === 'enviando' ? 'Enviando...' : progresso === 'processando' ? 'Processando...' : 'Processar'}
                 </BotaoRunico>
+              )}
+              {!confirmandoApagar ? (
+                <button
+                  onClick={() => setConfirmandoApagar(true)}
+                  className="w-full px-3 py-1.5 border border-[var(--red2)]/30 text-[var(--red2)] text-xs rounded-lg hover:bg-[var(--red2)]/10 transition-colors font-cinzel"
+                >
+                  🗑️ Apagar aventura
+                </button>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-[var(--text3)] text-[10px] text-center font-cinzel">Confirmar apagar?</p>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={apagarAventura}
+                      className="flex-1 py-1.5 bg-[var(--red2)] text-white text-xs rounded-lg hover:opacity-90 font-cinzel"
+                    >
+                      Sim
+                    </button>
+                    <button
+                      onClick={() => setConfirmandoApagar(false)}
+                      className="flex-1 py-1.5 border border-[var(--border)] text-[var(--text2)] text-xs rounded-lg font-cinzel"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
