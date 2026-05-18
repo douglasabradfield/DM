@@ -12,6 +12,7 @@ import { BotaoImportarFicha } from '@/components/personagem/BotaoImportarFicha'
 import { Plus, RefreshCw, Users, Download, MoreVertical, X, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getPlano } from '@/lib/planos'
+import { usePlanoEfetivo } from '@/hooks/usePlanoEfetivo'
 
 type FiltroTipo = 'todos' | 'jogador' | 'npc' | 'monstro'
 type Ordenacao = 'nome' | 'nivel' | 'xp' | 'ca' | 'pv'
@@ -177,6 +178,7 @@ export default function PersonagensPage() {
   const [mostrarInativos, setMostrarInativos] = useState(false)
 
   const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
+  const planoEfetivo = usePlanoEfetivo()
 
   useEffect(() => {
     async function getUser() {
@@ -378,6 +380,14 @@ export default function PersonagensPage() {
             <Download className="w-3 h-3" /> Ficha Oficial
           </a>
           <BotaoImportarFicha />
+          {ehJogador && planoEfetivo === 'guild_master' && (
+            <Link
+              href="/personagens/criar"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--accent2)] text-[var(--bg)] rounded text-xs font-cinzel hover:opacity-90 transition-opacity"
+            >
+              ✨ Criar Personagem
+            </Link>
+          )}
           <BotaoRunico variante="ouro" tamanho="sm" onClick={() => setCriando(true)}>
             <Plus className="w-3 h-3" /> {ehJogador ? 'Minha Ficha' : 'Novo Personagem'}
           </BotaoRunico>

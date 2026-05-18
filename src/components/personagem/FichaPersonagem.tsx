@@ -77,6 +77,14 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       .then(({ data }) => { if (data?.moeda_custom_nome) setMoedaCustomNome(data.moeda_custom_nome) })
   }, [campanhaAtiva?.id])
 
+  const [userId, setUserId] = useState<string | null>(null)
+  const isDM = !!campanhaAtiva && !!userId && campanhaAtiva.dm_id === userId
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => { if (user) setUserId(user.id) })
+  }, [])
+
   const [pagina, setPagina] = useState(1)
   const [dados, setDados] = useState({
     ...p,
@@ -187,6 +195,32 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     } catch (err) {
       console.error('Exceção ao salvar personagem:', err)
       toast.error('Erro ao salvar')
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function aprovarPersonagem() {
+    setSalvando(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.from('personagens').update({ ativo: true }).eq('id', p.id)
+      if (error) throw error
+      const playerUserId = (dados as Record<string, unknown>).user_id as string | null
+      if (playerUserId) {
+        await supabase.from('notificacoes').insert({
+          user_id: playerUserId,
+          tipo: 'personagem_aprovado',
+          titulo: 'Personagem Aprovado!',
+          mensagem: `${dados.nome} foi aprovado pelo Mestre e já está disponível na campanha.`,
+          link: `/personagens/${p.id}`,
+          lida: false,
+        })
+      }
+      setDados(prev => ({ ...prev, ativo: true }))
+      toast.success(`${dados.nome} aprovado!`)
+    } catch {
+      toast.error('Erro ao aprovar personagem')
     } finally {
       setSalvando(false)
     }
@@ -372,6 +406,29 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
   return (
     <div className="max-w-4xl mx-auto">
+      {/* Banner de aprovação pendente */}
+      {!dados.ativo && isDM && (
+        <div className="mb-4 p-4 bg-[var(--accent2)]/10 border border-[var(--accent2)]/40 rounded-xl flex items-center justify-between gap-4">
+          <div>
+            <p className="font-cinzel text-[var(--accent2)] text-sm font-bold">⏳ Personagem Aguardando Aprovação</p>
+            <p className="text-[var(--text2)] text-sm font-crimson mt-0.5">
+              {dados.nome} foi criado por um jogador e aguarda sua aprovação para entrar na campanha.
+            </p>
+          </div>
+          <button
+            onClick={aprovarPersonagem}
+            disabled={salvando}
+            className="flex-shrink-0 px-4 py-2 bg-[var(--green2)] text-[var(--bg)] font-cinzel text-sm rounded hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {salvando ? 'Aprovando...' : '✓ Aprovar'}
+          </button>
+        </div>
+      )}
+      {!dados.ativo && !isDM && (
+        <div className="mb-4 p-3 bg-[var(--accent2)]/10 border border-[var(--accent2)]/40 rounded-xl">
+          <p className="font-cinzel text-[var(--accent2)] text-sm">⏳ Aguardando aprovação do Mestre</p>
+        </div>
+      )}
       {/* Cabeçalho */}
       <div className="flex items-center justify-between mb-4">
         <div>
