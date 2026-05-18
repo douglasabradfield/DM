@@ -79,5 +79,18 @@ Escreva a crônica final agora:`
     // coluna pode não existir ainda
   }
 
+  if (resumo) {
+    try {
+      await admin.from('diario_entradas').insert({
+        campanha_id: campanhaId,
+        tipo: 'nota',
+        titulo: `📜 Crônica Final — ${campanha.nome}`,
+        conteudo: resumo,
+        visibilidade: 'grupo',
+        criado_em: new Date().toISOString(),
+      })
+    } catch { /* ignora */ }
+  }
+
   return NextResponse.json({ resumo })
 }

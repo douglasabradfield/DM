@@ -10,11 +10,11 @@ import { useBatalha } from '@/store/batalha'
 import { useCampanha } from '@/store/campanha'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { BookMarked, Plus, Trash2, Sword, Shield, ScrollText, Star, Map, Lock, Globe } from 'lucide-react'
+import { BookMarked, Plus, Trash2, Sword, Shield, ScrollText, Star, Map } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 type TipoEntrada = 'nota' | 'batalha' | 'npc' | 'item' | 'plot'
-type Visibilidade = 'grupo' | 'privado'
+type Visibilidade = 'dm' | 'grupo' | 'privado'
 
 interface EntradaDiario {
   id: string
@@ -52,7 +52,7 @@ export default function DiarioPage() {
   const [tipo, setTipo] = useState<TipoEntrada>('nota')
   const [titulo, setTitulo] = useState('')
   const [conteudo, setConteudo] = useState('')
-  const [visibilidade, setVisibilidade] = useState<Visibilidade>('grupo')
+  const [visibilidade, setVisibilidade] = useState<Visibilidade>('dm')
   const [filtroTipo, setFiltroTipo] = useState<TipoEntrada | ''>('')
   const [userId, setUserId] = useState<string | null>(null)
   const { log } = useBatalha()
@@ -108,7 +108,7 @@ export default function DiarioPage() {
         conteudo: conteudo.trim(),
         tags: [],
         criado_por: userId ?? null,
-        visibilidade: ehJogador ? visibilidade : 'grupo',
+        visibilidade,
       })
       if (error) {
         toast.error(`Erro: ${error.message}`)
@@ -118,7 +118,7 @@ export default function DiarioPage() {
       setCriando(false)
       setTitulo('')
       setConteudo('')
-      setVisibilidade('grupo')
+      setVisibilidade('dm')
       carregar()
     } catch {
       toast.error('Erro ao criar entrada')
@@ -221,33 +221,27 @@ export default function DiarioPage() {
               className="w-full input-dd text-sm resize-y"
               campanhaId={campanhaAtiva?.id ?? null}
             />
-            {ehJogador && (
-              <div className="flex gap-2 items-center">
-                <span className="text-[var(--text3)] text-xs font-cinzel uppercase">Visibilidade:</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[var(--text3)] text-xs font-cinzel">Visível para:</span>
+              {[
+                { value: 'dm', label: '🔒 Só DM' },
+                { value: 'grupo', label: '👥 Grupo' },
+                { value: 'privado', label: '🙈 Privado' },
+              ].map(op => (
                 <button
+                  key={op.value}
                   type="button"
-                  onClick={() => setVisibilidade('grupo')}
-                  className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-cinzel border transition-colors ${
-                    visibilidade === 'grupo'
-                      ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10'
-                      : 'border-[var(--border)] text-[var(--text3)]'
+                  onClick={() => setVisibilidade(op.value as Visibilidade)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-cinzel border transition-all ${
+                    visibilidade === op.value
+                      ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                      : 'border-[var(--border)] text-[var(--text2)]'
                   }`}
                 >
-                  <Globe className="w-3 h-3" /> Grupo
+                  {op.label}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setVisibilidade('privado')}
-                  className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-cinzel border transition-colors ${
-                    visibilidade === 'privado'
-                      ? 'border-[var(--gold)] text-[var(--gold)] bg-[var(--gold)]/10'
-                      : 'border-[var(--border)] text-[var(--text3)]'
-                  }`}
-                >
-                  <Lock className="w-3 h-3" /> Privado
-                </button>
-              </div>
-            )}
+              ))}
+            </div>
             <div className="flex gap-2">
               <BotaoRunico type="submit" variante="ouro" tamanho="sm">Salvar</BotaoRunico>
               <BotaoRunico type="button" variante="fantasma" tamanho="sm" onClick={() => setCriando(false)}>Cancelar</BotaoRunico>
@@ -280,11 +274,14 @@ export default function DiarioPage() {
                     <span className="font-cinzel text-sm" style={{ color: COR_TIPO[entrada.tipo] }}>{entrada.titulo}</span>
                   )}
                   <span className="text-[var(--border)] text-xs capitalize">{entrada.tipo}</span>
-                  {entrada.visibilidade === 'privado' && (
-                    <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 border border-[var(--gold)]/50 text-[var(--gold)] rounded font-cinzel">
-                      <Lock className="w-2.5 h-2.5" /> Privado
-                    </span>
-                  )}
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-cinzel ${
+                    entrada.visibilidade === 'grupo' ? 'text-[var(--green2)] bg-[var(--green2)]/10' :
+                    entrada.visibilidade === 'privado' ? 'text-[var(--text3)] bg-[var(--surface2)]' :
+                    'text-[var(--gold)] bg-[var(--gold)]/10'
+                  }`}>
+                    {entrada.visibilidade === 'grupo' ? '👥 Grupo' :
+                     entrada.visibilidade === 'privado' ? '🙈 Privado' : '🔒 DM'}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className="text-[var(--border)] text-xs">

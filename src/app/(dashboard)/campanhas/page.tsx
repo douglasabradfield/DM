@@ -250,10 +250,25 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
   const [form, setForm] = useState({ nome: campanha.nome, descricao: campanha.descricao ?? '', sistema: campanha.sistema ?? 'D&D 5e', moeda_custom_nome: campanha.moeda_custom_nome ?? '' })
   const [salvando, setSalvando] = useState(false)
   const [encerrando, setEncerrando] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [userPlano, setUserPlano] = useState('')
+  const [confirmandoApagar, setConfirmandoApagar] = useState(false)
 
   useEffect(() => {
     setForm({ nome: campanha.nome, descricao: campanha.descricao ?? '', sistema: campanha.sistema ?? 'D&D 5e', moeda_custom_nome: campanha.moeda_custom_nome ?? '' })
   }, [campanha.id, campanha.nome, campanha.descricao, campanha.sistema, campanha.moeda_custom_nome])
+
+  useEffect(() => {
+    async function carregarUser() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      setUserId(user.id)
+      const { data } = await supabase.from('profiles').select('plano').eq('id', user.id).single()
+      setUserPlano(data?.plano ?? '')
+    }
+    carregarUser()
+  }, [])
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
@@ -297,6 +312,19 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
     await supabase.from('campanhas').update({ ativa: true }).eq('id', campanha.id)
     toast.success('Campanha reativada!')
     onReativar()
+  }
+
+  async function apagarCampanha() {
+    if (!campanha?.id || !userId) return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('campanhas')
+      .delete()
+      .eq('id', campanha.id)
+      .eq('dm_id', userId)
+    if (error) { toast.error('Erro ao apagar campanha'); return }
+    toast.success('Campanha apagada')
+    window.location.href = '/batalha'
   }
 
   const isAtiva = campanhaAtiva?.id === campanha.id
@@ -401,6 +429,44 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
       <PainelGrimorio titulo="Membros & Convites" compacto>
         <MembrosSecao campanhaId={campanha.id} ehDm={ehDm} />
       </PainelGrimorio>
+
+      {/* Zona de Perigo */}
+      {ehDm && userPlano === 'guild_master' && (
+        <div className="pt-4 border-t border-[var(--border)]">
+          {!confirmandoApagar ? (
+            <button
+              onClick={() => setConfirmandoApagar(true)}
+              className="text-[var(--red2)] text-sm font-cinzel border border-[var(--red2)]/30 px-4 py-2 rounded-lg hover:bg-[var(--red2)]/10 transition-colors"
+            >
+              🗑️ Apagar campanha
+            </button>
+          ) : (
+            <div className="bg-[var(--red2)]/10 border border-[var(--red2)]/30 rounded-xl p-4">
+              <p className="text-[var(--red2)] font-cinzel text-sm font-bold mb-2">
+                ⚠️ Apagar &quot;{campanha.nome}&quot; permanentemente?
+              </p>
+              <p className="text-[var(--text3)] text-xs mb-3">
+                Todos os personagens, batalhas, diário e imagens serão perdidos.
+                Esta ação não pode ser desfeita.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmandoApagar(false)}
+                  className="flex-1 py-2 border border-[var(--border)] rounded-lg text-sm text-[var(--text2)]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={apagarCampanha}
+                  className="flex-1 py-2 bg-[var(--red2)] text-white rounded-lg text-sm font-cinzel"
+                >
+                  Apagar tudo
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
