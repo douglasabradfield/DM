@@ -18,11 +18,9 @@ interface EditorComMencoesProps {
   campanhaId: string | null
 }
 
-// Calcula as coordenadas do caret dentro do textarea usando um div-espelho
-function calcularPosCaret(textarea: HTMLTextAreaElement): { top: number; left: number } {
+function getCaretCoordinates(element: HTMLTextAreaElement, position: number): { x: number; y: number } {
   const div = document.createElement('div')
-  const style = window.getComputedStyle(textarea)
-
+  const style = window.getComputedStyle(element)
   const props: (keyof CSSStyleDeclaration)[] = [
     'fontFamily', 'fontSize', 'fontWeight', 'letterSpacing', 'lineHeight',
     'textIndent', 'wordSpacing', 'paddingTop', 'paddingRight', 'paddingBottom',
@@ -33,40 +31,27 @@ function calcularPosCaret(textarea: HTMLTextAreaElement): { top: number; left: n
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(div.style as any)[p] = style[p]
   })
-
   div.style.position = 'absolute'
-  div.style.visibility = 'hidden'
-  div.style.width = `${textarea.clientWidth}px`
-  div.style.height = 'auto'
+  div.style.top = '-9999px'
+  div.style.width = `${element.clientWidth}px`
   div.style.whiteSpace = 'pre-wrap'
-  div.style.overflow = 'hidden'
-
-  const texto = textarea.value.substring(0, textarea.selectionStart)
-  div.textContent = texto
-
+  div.textContent = element.value.substring(0, position)
   const span = document.createElement('span')
   span.textContent = '|'
   div.appendChild(span)
-
   document.body.appendChild(div)
-  const rect = textarea.getBoundingClientRect()
-  const spanRect = span.getBoundingClientRect()
+  const rect = element.getBoundingClientRect()
+  const x = rect.left + span.offsetLeft - element.scrollLeft
+  const y = rect.top + span.offsetTop - element.scrollTop
   document.body.removeChild(div)
-
-  const scrollTop = textarea.scrollTop
-
-  return {
-    top: rect.top + span.offsetTop - scrollTop + div.offsetHeight / (texto.split('\n').length || 1),
-    left: rect.left + spanRect.left - div.getBoundingClientRect().left,
-  }
+  return { x, y }
 }
 
 export function EditorComMencoes({ value, onChange, rows = 5, placeholder, className, campanhaId }: EditorComMencoesProps) {
   const [sugestoes, setSugestoes] = useState<Mencao[]>([])
   const [queryMencao, setQueryMencao] = useState<string | null>(null)
-  const [posicaoCursor, setPosicaoCursor] = useState(0)
   const [indiceSelecionado, setIndiceSelecionado] = useState(0)
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null)
+  const [dropdownPos, setDropdownPos] = useState<{ x: number; y: number } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const buscarPersonagens = useCallback(async (query: string) => {
@@ -95,13 +80,18 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
     const match = anteCursor.match(/@(\w*)$/)
     if (match) {
       setQueryMencao(match[1])
-      setPosicaoCursor(cursor)
       setIndiceSelecionado(0)
-      // Calcular posição do caret para o portal
       if (textareaRef.current) {
         try {
-          const { top, left } = calcularPosCaret(textareaRef.current)
-          setDropdownPos({ top: top + 20, left })
+          const coords = getCaretCoordinates(textareaRef.current, cursor)
+          const dropdownH = Math.min(8 * 44, 200)
+          const y = coords.y + 20 + dropdownH > window.innerHeight
+            ? coords.y - dropdownH - 4
+            : coords.y + 20
+          setDropdownPos({
+            x: Math.max(8, Math.min(coords.x, window.innerWidth - 224 - 8)),
+            y: Math.max(8, y),
+          })
         } catch {
           setDropdownPos(null)
         }
@@ -113,20 +103,20 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
   }
 
   function inserirMencao(nome: string) {
-    const anteCursor = value.slice(0, posicaoCursor)
-    const depoisCursor = value.slice(posicaoCursor)
-    const posicaoArroba = anteCursor.lastIndexOf('@')
-    const novoTexto = anteCursor.slice(0, posicaoArroba) + `@${nome}` + depoisCursor
-    onChange(novoTexto)
+    const textarea = textareaRef.current
+    if (!textarea) return
+    const pos = textarea.selectionStart
+    const antes = value.slice(0, pos)
+    const depois = value.slice(pos)
+    const novosAntes = antes.replace(/@\w*$/, `@${nome}`)
+    onChange(`${novosAntes} ${depois}`)
     setQueryMencao(null)
     setSugestoes([])
     setDropdownPos(null)
     setTimeout(() => {
-      const ta = textareaRef.current
-      if (!ta) return
-      const novoCursor = posicaoArroba + nome.length + 1
-      ta.focus()
-      ta.setSelectionRange(novoCursor, novoCursor)
+      const novaPosicao = novosAntes.length + 1
+      textarea.setSelectionRange(novaPosicao, novaPosicao)
+      textarea.focus()
     }, 0)
   }
 
@@ -145,8 +135,8 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
         <div
           style={{
             position: 'fixed',
-            top: dropdownPos.top,
-            left: dropdownPos.left,
+            top: dropdownPos.y,
+            left: dropdownPos.x,
             zIndex: 9999,
             width: 224,
           }}

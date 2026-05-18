@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Combatente } from '@/types/batalha'
 import { calcularModificadorAtributo, formatarModificador } from '@/lib/utils'
@@ -29,51 +29,36 @@ function TagDano({ label, cor, tipos }: { label: string; cor: string; tipos: Tip
   )
 }
 
-const TOOLTIP_WIDTH = 320
-const TOOLTIP_HEIGHT = 440
+const TOOLTIP_W = 320
+const TOOLTIP_H = 440
 const OFFSET = 16
 
 export function TooltipCombatente({ combatente: c, children }: Props) {
   const [visivel, setVisivel] = useState(false)
   const [pos, setPos] = useState({ x: 0, y: 0 })
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    setPos({ x: e.clientX, y: e.clientY })
-  }, [])
-
   function handleMouseEnter(e: React.MouseEvent) {
     setPos({ x: e.clientX, y: e.clientY })
-    document.addEventListener('mousemove', handleMouseMove)
     setVisivel(true)
   }
 
+  function handleMouseMove(e: React.MouseEvent) {
+    setPos({ x: e.clientX, y: e.clientY })
+  }
+
   function handleMouseLeave() {
-    document.removeEventListener('mousemove', handleMouseMove)
     setVisivel(false)
   }
 
-  useEffect(() => {
-    return () => { document.removeEventListener('mousemove', handleMouseMove) }
-  }, [handleMouseMove])
-
-  // Posicionamento inteligente — evita sair da tela
-  const spaceBelow = typeof window !== 'undefined' ? window.innerHeight - pos.y : 9999
-  const spaceRight = typeof window !== 'undefined' ? window.innerWidth - pos.x : 9999
-
-  const rawTop = spaceBelow < TOOLTIP_HEIGHT + OFFSET
-    ? pos.y - TOOLTIP_HEIGHT - OFFSET
+  const rawLeft = pos.x + OFFSET + TOOLTIP_W > window.innerWidth
+    ? pos.x - TOOLTIP_W - OFFSET
+    : pos.x + OFFSET
+  const rawTop = pos.y + OFFSET + TOOLTIP_H > window.innerHeight
+    ? pos.y - TOOLTIP_H - OFFSET
     : pos.y + OFFSET
 
-  const rawLeft = spaceRight < TOOLTIP_WIDTH + OFFSET
-    ? pos.x - TOOLTIP_WIDTH - OFFSET
-    : pos.x + OFFSET
-
-  const top = typeof window !== 'undefined'
-    ? Math.max(8, Math.min(rawTop, window.innerHeight - TOOLTIP_HEIGHT - 8))
-    : rawTop
-  const left = typeof window !== 'undefined'
-    ? Math.max(8, Math.min(rawLeft, window.innerWidth - TOOLTIP_WIDTH - 8))
-    : rawLeft
+  const left = Math.max(8, Math.min(rawLeft, window.innerWidth - TOOLTIP_W - 8))
+  const top  = Math.max(8, Math.min(rawTop,  window.innerHeight - TOOLTIP_H - 8))
 
   const atrs = c.dados_monstro
     ? [c.dados_monstro.forca, c.dados_monstro.destreza, c.dados_monstro.constituicao,
@@ -94,6 +79,7 @@ export function TooltipCombatente({ combatente: c, children }: Props) {
     <>
       <span
         onMouseEnter={handleMouseEnter}
+        onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         className="inline-block"
       >
@@ -107,7 +93,7 @@ export function TooltipCombatente({ combatente: c, children }: Props) {
             top,
             left,
             zIndex: 9999,
-            width: `${TOOLTIP_WIDTH}px`,
+            width: `${TOOLTIP_W}px`,
             pointerEvents: 'none',
           }}
           className="bg-[var(--bg3)]/95 border border-[var(--border2)] rounded-lg shadow-2xl backdrop-blur-sm"

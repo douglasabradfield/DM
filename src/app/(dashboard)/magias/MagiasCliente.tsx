@@ -204,7 +204,7 @@ export function MagiasCliente() {
                 <BotaoAdicionarPersonagem
                   tipo="magia"
                   nome={selecionada.name_pt}
-                  dadosExtras={{ magia_id: selecionada.id, nivel: selecionada.level, escola: selecionada.school_pt }}
+                  dadosExtras={{ spell_id: selecionada.id, nivel: selecionada.level, escola: selecionada.school_pt }}
                 />
               </div>
             </div>

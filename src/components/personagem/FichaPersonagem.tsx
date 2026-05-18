@@ -54,7 +54,8 @@ type TipoDefesa = 'resistencia' | 'imunidade' | 'vulnerabilidade'
 interface MagiaPersonagem {
   id: string
   personagem_id: string
-  magia_id: string
+  spell_id: number | null
+  magia_id: string | null
   spell: Spell
 }
 
@@ -258,16 +259,26 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     const supabase = createClient()
     const { data, error } = await supabase
       .from('magias_personagem')
-      .select('*, spell:spells(id, slug, name_pt, name_en, level, school_pt, casting_time_pt, range_pt, components_pt, duration_pt, concentration, ritual, description_pt, classes_pt)')
+      .select(`
+        id, preparada, classe_conjuradora, spell_id, magia_id,
+        spell:spells!spell_id(
+          id, slug, name_pt, name_en, level,
+          school_pt, casting_time_pt, range_pt,
+          components_pt, duration_pt,
+          concentration, ritual, description_pt, classes_pt
+        )
+      `)
       .eq('personagem_id', p.id)
+      .order('nivel')
     if (error) console.error('Erro ao carregar magias:', error)
-    if (data) setMagiasPersonagem(data as MagiaPersonagem[])
+    if (data) setMagiasPersonagem(data as unknown as MagiaPersonagem[])
   }, [p.id])
 
   useEffect(() => { carregarMagias() }, [carregarMagias])
 
   async function adicionarMagia(magia: Spell) {
-    if (magiasPersonagem.some(m => m.magia_id === magia.id)) {
+    const spellIdNum = Number(magia.id)
+    if (magiasPersonagem.some(m => m.spell_id === spellIdNum || m.spell?.id === magia.id)) {
       toast.error('Magia já adicionada')
       return
     }
@@ -276,7 +287,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       .from('magias_personagem')
       .insert({
         personagem_id: p.id,
-        magia_id: magia.id,
+        spell_id: spellIdNum,
+        magia_id: null,
         nome: magia.name_pt,
         nivel: magia.level,
         preparada: false,

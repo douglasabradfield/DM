@@ -65,12 +65,13 @@ export function BotaoAdicionarPersonagem({ tipo, nome, dadosExtras }: BotaoAdici
     try {
       const supabase = createClient()
 
-      if (tipo === 'magia' && dadosExtras?.magia_id) {
+      if (tipo === 'magia' && (dadosExtras?.spell_id ?? dadosExtras?.magia_id)) {
+        const spellId = Number(dadosExtras.spell_id ?? dadosExtras.magia_id)
         const jaExiste = await supabase
           .from('magias_personagem')
           .select('id')
           .eq('personagem_id', personagem.id)
-          .eq('magia_id', dadosExtras.magia_id as string)
+          .eq('spell_id', spellId)
           .maybeSingle()
 
         if (jaExiste.data) {
@@ -80,7 +81,8 @@ export function BotaoAdicionarPersonagem({ tipo, nome, dadosExtras }: BotaoAdici
 
         const { error } = await supabase.from('magias_personagem').insert({
           personagem_id: personagem.id,
-          magia_id: dadosExtras.magia_id as string,
+          spell_id: spellId,
+          magia_id: null,
           nome,
           nivel: (dadosExtras.nivel as number) ?? 0,
           preparada: false,
