@@ -338,6 +338,38 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     return acc
   }, {})
 
+  const [testeMorte, setTesteMorte] = useState({ sucessos: 0, falhas: 0 })
+  const [modalCopiar, setModalCopiar] = useState(false)
+  const [campanhasDisponiveis, setCampanhasDisponiveis] = useState<{ id: string; nome: string }[]>([])
+
+  async function abrirModalCopiar() {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data } = await supabase
+      .from('campanhas')
+      .select('id, nome')
+      .eq('dm_id', user.id)
+      .eq('ativa', true)
+      .neq('id', dados.campanha_id)
+      .order('nome')
+    setCampanhasDisponiveis((data ?? []) as { id: string; nome: string }[])
+    setModalCopiar(true)
+  }
+
+  async function copiarParaCampanha(campId: string) {
+    const supabase = createClient()
+    const { id: _id, criado_em: _c, atualizado_em: _a, campanha_id: _camp, ...resto } = dados
+    const { error } = await supabase.from('personagens').insert({
+      ...resto,
+      campanha_id: campId,
+      inventario,
+    })
+    if (error) { toast.error('Erro ao copiar personagem'); return }
+    toast.success(`${dados.nome} copiado!`)
+    setModalCopiar(false)
+  }
+
   return (
     <div className="max-w-4xl mx-auto">
       {/* Cabeçalho */}
@@ -359,6 +391,12 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
             </button>
           ))}
           <button
+            onClick={abrirModalCopiar}
+            className="font-cinzel text-xs px-3 py-1.5 rounded border border-[#4a3060] text-[#8870a8] hover:border-[#6b4890] transition-colors"
+          >
+            Copiar
+          </button>
+          <button
             onClick={voltar}
             className="font-cinzel text-xs px-3 py-1.5 rounded border border-[#4a3060] text-[#8870a8] hover:border-[#6b4890] transition-colors"
           >
@@ -371,119 +409,170 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       </div>
 
       {pagina === 1 && (
-        <div className="grid grid-cols-3 gap-4">
-          {/* Coluna 1 — Atributos em coluna vertical */}
-          <div className="space-y-2">
-            {ATRIBUTOS.map(({ key, label }) => (
-              <AtributoCard
-                key={key}
-                label={label}
-                value={dados[key as keyof Personagem] as number}
-                onChange={v => atualizar(key, v)}
-              />
-            ))}
+        <div className="space-y-3">
+          {/* Header linha 1: Nome | Classe+Nível | Antecedente | Jogador */}
+          <div className="grid grid-cols-4 gap-2">
+            <div>
+              <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Nome</label>
+              <input type="text" value={dados.nome ?? ''} onChange={e => atualizar('nome', e.target.value)} className="w-full input-dd" />
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              <div>
+                <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Classe</label>
+                <input type="text" value={dados.classe ?? ''} onChange={e => atualizar('classe', e.target.value)} className="w-full input-dd" />
+              </div>
+              <div>
+                <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Nível</label>
+                <input type="number" value={dados.nivel} onChange={e => atualizar('nivel', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" />
+              </div>
+            </div>
+            <div>
+              <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Antecedente</label>
+              <input type="text" value={dados.antecedente ?? ''} onChange={e => atualizar('antecedente', e.target.value)} className="w-full input-dd" />
+            </div>
+            <div>
+              <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Jogador</label>
+              <input type="text" value={dados.jogador_nome ?? ''} onChange={e => atualizar('jogador_nome', e.target.value)} className="w-full input-dd" />
+            </div>
           </div>
 
-          {/* Coluna 2 — Informações + Salvaguardas + Combate + Ataques */}
-          <div className="space-y-3">
-            <PainelGrimorio titulo="Informações" compacto>
-              <div className="space-y-2">
-                {[
-                  { label: 'Nome', key: 'nome', type: 'text' },
-                  { label: 'Jogador', key: 'jogador_nome', type: 'text' },
-                  { label: 'Classe', key: 'classe', type: 'text' },
-                  { label: 'Nível', key: 'nivel', type: 'number' },
-                  { label: 'Raça', key: 'raca', type: 'text' },
-                  { label: 'Antecedente', key: 'antecedente', type: 'text' },
-                ].map(({ label, key, type }) => (
-                  <div key={key}>
-                    <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">{label}</label>
-                    <input
-                      type={type}
-                      value={(dados[key as keyof Personagem] as string | number) ?? ''}
-                      onChange={e => atualizar(key as keyof Personagem, type === 'number' ? parseInt(e.target.value) || 1 : e.target.value as never)}
-                      className="w-full input-dd"
-                    />
+          {/* Header linha 2: Inspiração | Raça | Tendência | XP */}
+          <div className="grid grid-cols-4 gap-2 items-start">
+            <InspiracaoHeroica
+              valor={typeof dados.inspiracao === 'number' ? dados.inspiracao : 0}
+              onChange={val => atualizar('inspiracao', val as never)}
+            />
+            <div>
+              <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Raça</label>
+              <input type="text" value={dados.raca ?? ''} onChange={e => atualizar('raca', e.target.value)} className="w-full input-dd" />
+            </div>
+            <div>
+              <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Tendência</label>
+              <input type="text" value={dados.alinhamento ?? ''} onChange={e => atualizar('alinhamento', e.target.value)} className="w-full input-dd" />
+            </div>
+            <div>
+              <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Pontos de Experiência</label>
+              <InputNumerico
+                value={dados.pontos_experiencia ?? 0}
+                onChange={novaXP => {
+                  const nivelAtual = dados.nivel || 1
+                  const novoNivel = getNivelPorXP(novaXP)
+                  if (novoNivel.nivel > nivelAtual) {
+                    setLevelUp({ novoNivel: novoNivel.nivel, novaProf: novoNivel.bonusProficiencia })
+                    atualizar('nivel', novoNivel.nivel)
+                    atualizar('bonus_proficiencia', novoNivel.bonusProficiencia)
+                  }
+                  atualizar('pontos_experiencia', novaXP)
+                }}
+                className="w-full input-dd"
+              />
+              {(() => {
+                const xp = dados.pontos_experiencia ?? 0
+                const prog = getProgressoXP(xp)
+                if (!prog.proximoNivel) {
+                  return <p className="text-[9px] text-[#d4a843] font-cinzel mt-0.5">⭐ Nível máximo!</p>
+                }
+                const xpFaltando = prog.proximoNivel.xpNecessario - xp
+                return (
+                  <div className="mt-0.5 space-y-0.5">
+                    <div className="h-1.5 bg-[#1e1525] rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-[#9b59b6] to-[#d4a843] rounded-full transition-all" style={{ width: `${prog.percentual}%` }} />
+                    </div>
+                    <div className="flex justify-between text-[9px] text-[#8870a8]">
+                      <span>Nv{prog.nivelAtual.nivel}</span>
+                      <span className="text-[#d4a843]">−{xpFaltando.toLocaleString('pt-BR')} XP</span>
+                      <span>Nv{prog.proximoNivel.nivel}</span>
+                    </div>
                   </div>
-                ))}
-                <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Pontos de Experiência</label>
-                  <InputNumerico
-                    value={dados.pontos_experiencia ?? 0}
-                    onChange={novaXP => {
-                      const nivelAtual = dados.nivel || 1
-                      const novoNivel = getNivelPorXP(novaXP)
-                      if (novoNivel.nivel > nivelAtual) {
-                        setLevelUp({ novoNivel: novoNivel.nivel, novaProf: novoNivel.bonusProficiencia })
-                        atualizar('nivel', novoNivel.nivel)
-                        atualizar('bonus_proficiencia', novoNivel.bonusProficiencia)
-                      }
-                      atualizar('pontos_experiencia', novaXP)
-                    }}
-                    className="w-full input-dd"
-                  />
-                  {(() => {
-                    const xp = dados.pontos_experiencia ?? 0
-                    const prog = getProgressoXP(xp)
-                    if (!prog.proximoNivel) {
-                      return <p className="text-[9px] text-[#d4a843] font-cinzel mt-0.5">⭐ Nível máximo!</p>
-                    }
-                    const xpTotalProximo = prog.proximoNivel.xpNecessario
-                    const xpFaltando = xpTotalProximo - xp
+                )
+              })()}
+            </div>
+          </div>
+
+          {/* Corpo: 3 colunas */}
+          <div className="grid grid-cols-3 gap-3">
+            {/* Col 1 — Atributos + Percepção Passiva + Idiomas */}
+            <div className="space-y-2">
+              {ATRIBUTOS.map(({ key, label }) => (
+                <AtributoCard
+                  key={key}
+                  label={label}
+                  value={dados[key as keyof Personagem] as number}
+                  onChange={v => atualizar(key, v)}
+                />
+              ))}
+              <div className="flex items-center justify-between px-2 py-1.5 bg-[var(--bg3)] rounded border border-[var(--border)]">
+                <span className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Percepção Passiva</span>
+                <span className="text-[var(--gold)] font-cinzel font-bold text-sm">{percepcaoPassiva}</span>
+              </div>
+              <PainelGrimorio titulo="Idiomas & Proficiências" compacto>
+                <textarea
+                  value={dados.outras_proficiencias ?? ''}
+                  onChange={e => atualizar('outras_proficiencias', e.target.value)}
+                  rows={4}
+                  className="w-full input-dd resize-none text-sm"
+                  placeholder="Armaduras leves, espadas longas, Élfico, Comum..."
+                />
+              </PainelGrimorio>
+            </div>
+
+            {/* Col 2 — Combate + Perícias + Inventário */}
+            <div className="space-y-2">
+              {/* Bônus de Proficiência */}
+              <div className="flex items-center justify-between px-2 py-1.5 bg-[var(--bg3)] rounded border border-[var(--border)]">
+                <span className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Bônus de Proficiência</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[var(--gold)] font-cinzel font-bold text-sm">+</span>
+                  <input type="number" value={dados.bonus_proficiencia} onChange={e => atualizar('bonus_proficiencia', parseInt(e.target.value) || 2)} className="w-10 input-dd text-center text-sm font-bold" />
+                </div>
+              </div>
+
+              {/* Salvaguardas */}
+              <PainelGrimorio titulo="Salvaguardas" compacto>
+                <div className="space-y-0.5">
+                  {ATRIBUTOS.map(({ key, label }) => {
+                    const temProf = dados.salvaguardas?.[key] ?? false
+                    const mod = mods[key as keyof typeof mods] ?? 0
+                    const valorFinal = mod + (temProf ? dados.bonus_proficiencia : 0)
                     return (
-                      <div className="mt-1 space-y-0.5">
-                        <div className="flex justify-between text-[9px] text-[#8870a8]">
-                          <span className="font-cinzel">Nv{prog.nivelAtual.nivel}</span>
-                          <span>{xp.toLocaleString('pt-BR')} / {xpTotalProximo.toLocaleString('pt-BR')} XP</span>
-                          <span className="font-cinzel">Nv{prog.proximoNivel.nivel}</span>
-                        </div>
-                        <div className="h-1.5 bg-[#1e1525] rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-[#9b59b6] to-[#d4a843] rounded-full transition-all duration-500"
-                            style={{ width: `${prog.percentual}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-[9px] text-[#8870a8]">
-                          <span>Faltam <span className="text-[#d4a843]">{xpFaltando.toLocaleString('pt-BR')}</span> XP</span>
-                          <span>No nível: <span className="text-[#b8a8cc]">{prog.xpAtual.toLocaleString('pt-BR')}</span> XP</span>
-                        </div>
+                      <div key={key} className="flex items-center gap-1.5">
+                        <input type="checkbox" checked={temProf} onChange={e => atualizar('salvaguardas', { ...dados.salvaguardas, [key]: e.target.checked })} className="w-3 h-3 accent-[var(--accent)] flex-shrink-0" />
+                        <span className="text-[var(--gold)] text-xs font-cinzel font-bold w-6 text-right flex-shrink-0">{valorFinal >= 0 ? `+${valorFinal}` : `${valorFinal}`}</span>
+                        <span className="text-[var(--text2)] text-xs font-crimson">{label}</span>
                       </div>
                     )
-                  })()}
+                  })}
                 </div>
-                <InspiracaoHeroica
-                  valor={typeof dados.inspiracao === 'number' ? dados.inspiracao : 0}
-                  onChange={val => atualizar('inspiracao', val as never)}
-                />
-              </div>
-            </PainelGrimorio>
+              </PainelGrimorio>
 
-            <PainelGrimorio titulo="Salvaguardas" compacto>
-              <div className="space-y-1">
-                {ATRIBUTOS.map(({ key, label }) => {
-                  const temProf = dados.salvaguardas?.[key] ?? false
-                  const mod = mods[key as keyof typeof mods] ?? 0
-                  const valorFinal = mod + (temProf ? dados.bonus_proficiencia : 0)
-                  return (
-                    <div key={key} className="flex items-center gap-1.5">
-                      <input
-                        type="checkbox"
-                        checked={temProf}
-                        onChange={e => atualizar('salvaguardas', { ...dados.salvaguardas, [key]: e.target.checked })}
-                        className="w-3 h-3 accent-[var(--accent)] flex-shrink-0"
-                      />
-                      <span className="text-[var(--gold)] text-xs font-cinzel font-bold w-6 text-right flex-shrink-0">
-                        {valorFinal >= 0 ? `+${valorFinal}` : `${valorFinal}`}
-                      </span>
-                      <span className="text-[var(--text2)] text-xs font-crimson">{label}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </PainelGrimorio>
+              {/* Perícias */}
+              <PainelGrimorio titulo="Perícias" compacto>
+                <div className="space-y-0.5">
+                  {PERICIAS.map(({ nome, atributo }) => {
+                    const temProf = dados.pericias?.[nome] ?? false
+                    const modBase = (mods[atributo as keyof typeof mods] ?? 0) + (temProf ? dados.bonus_proficiencia : 0)
+                    const ajuste = ajustesPericias[nome] ?? 0
+                    const valorFinal = modBase + ajuste
+                    return (
+                      <div key={nome} className="flex items-center gap-1 py-0.5">
+                        <input type="checkbox" checked={temProf} onChange={e => atualizar('pericias', { ...dados.pericias, [nome]: e.target.checked })} className="w-3 h-3 accent-[var(--accent)] flex-shrink-0" />
+                        <span className="text-[var(--gold)] text-xs font-cinzel font-bold w-6 text-right flex-shrink-0">{valorFinal >= 0 ? `+${valorFinal}` : `${valorFinal}`}</span>
+                        <span className="text-[var(--text2)] text-xs flex-1 font-crimson truncate">{nome}</span>
+                        <span className="text-[var(--text3)] text-[8px] font-cinzel flex-shrink-0">{atributo.slice(0,3).toUpperCase()}</span>
+                        <button onClick={() => ajustarPericia(nome, -1)} className="w-4 h-4 text-[10px] bg-[var(--bg3)] rounded hover:bg-[var(--surface)] text-[var(--text2)] leading-none flex items-center justify-center flex-shrink-0">−</button>
+                        <span className="text-[8px] text-[var(--text3)] w-5 text-center flex-shrink-0">{ajuste !== 0 ? (ajuste > 0 ? `+${ajuste}` : `${ajuste}`) : '±0'}</span>
+                        <button onClick={() => ajustarPericia(nome, +1)} className="w-4 h-4 text-[10px] bg-[var(--bg3)] rounded hover:bg-[var(--surface)] text-[var(--text2)] leading-none flex items-center justify-center flex-shrink-0">+</button>
+                        {ajuste !== 0 && (
+                          <button onClick={() => resetarAjuste(nome)} className="text-[var(--accent)] text-[9px] hover:text-[var(--accent2)] transition-colors flex-shrink-0" title="Resetar ajuste">↺</button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </PainelGrimorio>
 
-            <PainelGrimorio titulo="Combate" compacto>
-              <div className="grid grid-cols-2 gap-2 mb-2">
+              {/* CA / Iniciativa / Deslocamento */}
+              <div className="grid grid-cols-3 gap-1">
                 <div>
                   <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">CA</label>
                   <input type="number" value={dados.ca} onChange={e => atualizar('ca', parseInt(e.target.value) || 10)} className="w-full input-dd text-center" />
@@ -496,12 +585,10 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                   <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Desl. (m)</label>
                   <input type="number" value={dados.deslocamento} onChange={e => atualizar('deslocamento', parseInt(e.target.value) || 9)} className="w-full input-dd text-center" />
                 </div>
-                <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Prof. Bônus</label>
-                  <input type="number" value={dados.bonus_proficiencia} onChange={e => atualizar('bonus_proficiencia', parseInt(e.target.value) || 2)} className="w-full input-dd text-center" />
-                </div>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+
+              {/* Pontos de Vida */}
+              <div className="grid grid-cols-3 gap-1">
                 <div>
                   <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Máx</label>
                   <input type="number" value={dados.pv_maximo} onChange={e => atualizar('pv_maximo', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" />
@@ -515,263 +602,208 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                   <input type="number" value={dados.pv_temporarios} onChange={e => atualizar('pv_temporarios', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" />
                 </div>
               </div>
-              <div className="mt-2 flex items-center justify-between px-2 py-1.5 bg-[var(--bg3)] rounded border border-[var(--border)]">
-                <span className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Percepção Passiva</span>
-                <span className="text-[var(--gold)] font-cinzel font-bold text-sm">{percepcaoPassiva}</span>
-              </div>
-            </PainelGrimorio>
 
-            <PainelGrimorio titulo="Ataques" compacto>
-              <div className="space-y-1">
-                {(dados.ataques ?? []).map((atq, i) => (
-                  <div key={i} className="grid grid-cols-3 gap-1 text-xs">
-                    <input value={atq.nome} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], nome: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="Nome" />
-                    <input value={atq.bonus_ataque} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], bonus_ataque: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="+5" />
-                    <input value={atq.dano} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], dano: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="1d8+3" />
+              {/* Dados de Vida & Teste de Morte */}
+              <PainelGrimorio titulo="Dados de Vida & Morte" compacto>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Dado de Vida</label>
+                    <input type="text" value={dados.dado_vida ?? ''} onChange={e => atualizar('dado_vida', e.target.value)} className="w-full input-dd text-center" placeholder="d8" />
                   </div>
-                ))}
-                <button
-                  onClick={() => atualizar('ataques', [...dados.ataques, { nome: '', bonus_ataque: '', dano: '', tipo_dano: '', notas: '' }])}
-                  className="text-xs text-[#9b59b6] hover:text-[#c39bd3] transition-colors mt-1"
-                >
-                  + Adicionar ataque
-                </button>
-              </div>
-            </PainelGrimorio>
-          </div>
-
-          {/* Coluna 3 — Perícias + Traços + Defesas */}
-          <div className="space-y-3">
-            <PainelGrimorio titulo="Perícias" compacto>
-              <div className="space-y-0.5 max-h-80 overflow-y-auto pr-1">
-                {PERICIAS.map(({ nome, atributo }) => {
-                  const temProf = dados.pericias?.[nome] ?? false
-                  const modBase = (mods[atributo as keyof typeof mods] ?? 0) + (temProf ? dados.bonus_proficiencia : 0)
-                  const ajuste = ajustesPericias[nome] ?? 0
-                  const valorFinal = modBase + ajuste
-                  return (
-                    <div key={nome} className="flex items-center gap-1 py-0.5">
-                      <input
-                        type="checkbox"
-                        checked={temProf}
-                        onChange={e => atualizar('pericias', { ...dados.pericias, [nome]: e.target.checked })}
-                        className="w-3 h-3 accent-[var(--accent)] flex-shrink-0"
-                      />
-                      <span className="text-[var(--gold)] text-xs font-cinzel font-bold w-6 text-right flex-shrink-0">
-                        {valorFinal >= 0 ? `+${valorFinal}` : `${valorFinal}`}
-                      </span>
-                      <span className="text-[var(--text2)] text-xs flex-1 font-crimson truncate">{nome}</span>
-                      <span className="text-[var(--text3)] text-[8px] font-cinzel flex-shrink-0">{atributo.slice(0,3).toUpperCase()}</span>
-                      <button
-                        onClick={() => ajustarPericia(nome, -1)}
-                        className="w-4 h-4 text-[10px] bg-[var(--bg3)] rounded hover:bg-[var(--surface)] text-[var(--text2)] leading-none flex items-center justify-center flex-shrink-0"
-                      >−</button>
-                      <span className="text-[8px] text-[var(--text3)] w-5 text-center flex-shrink-0">
-                        {ajuste !== 0 ? (ajuste > 0 ? `+${ajuste}` : `${ajuste}`) : '±0'}
-                      </span>
-                      <button
-                        onClick={() => ajustarPericia(nome, +1)}
-                        className="w-4 h-4 text-[10px] bg-[var(--bg3)] rounded hover:bg-[var(--surface)] text-[var(--text2)] leading-none flex items-center justify-center flex-shrink-0"
-                      >+</button>
-                      {ajuste !== 0 && (
-                        <button
-                          onClick={() => resetarAjuste(nome)}
-                          className="text-[var(--accent)] text-[9px] hover:text-[var(--accent2)] transition-colors flex-shrink-0"
-                          title="Resetar ajuste"
-                        >↺</button>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </PainelGrimorio>
-
-            <PainelGrimorio titulo="Traços de Personalidade" compacto>
-              <div className="space-y-2">
-                {[
-                  { label: 'Traços', key: 'tracos_personalidade' },
-                  { label: 'Ideais', key: 'ideais' },
-                  { label: 'Vínculos', key: 'vinculos' },
-                  { label: 'Fraquezas', key: 'fraquezas' },
-                ].map(({ label, key }) => (
-                  <div key={key}>
-                    <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">{label}</label>
-                    <textarea
-                      value={(dados[key as keyof Personagem] as string) ?? ''}
-                      onChange={e => atualizar(key as keyof Personagem, e.target.value as never)}
-                      rows={2}
-                      className="w-full input-dd resize-none text-xs"
-                    />
-                  </div>
-                ))}
-              </div>
-            </PainelGrimorio>
-
-            <PainelGrimorio titulo="Defesas" compacto>
-              <div className="space-y-1">
-                {TIPOS_DANO.map(({ id, nome, icone }) => {
-                  const defesa = getDefesa(id)
-                  return (
-                    <div key={id} className="flex items-center gap-1.5 text-[10px]">
-                      <span className="w-4">{icone}</span>
-                      <span className="text-[#b8a8cc] flex-1 font-crimson">{nome}</span>
-                      {(['resistencia', 'imunidade', 'vulnerabilidade'] as TipoDefesa[]).map(d => (
-                        <button
-                          key={d}
-                          onClick={() => setDefesa(id, defesa === d ? null : d)}
-                          className={`px-1 py-0.5 rounded text-[9px] font-cinzel border transition-colors ${
-                            defesa === d
-                              ? d === 'resistencia' ? 'bg-[#3498db]/30 border-[#3498db] text-[#3498db]'
-                              : d === 'imunidade' ? 'bg-[#27ae60]/30 border-[#27ae60] text-[#27ae60]'
-                              : 'bg-[#e74c3c]/30 border-[#e74c3c] text-[#e74c3c]'
-                              : 'border-[#4a3060] text-[#4a3060] hover:border-[#6b4890]'
-                          }`}
-                          title={{ resistencia: '🛡️ Resistência', imunidade: '🚫 Imunidade', vulnerabilidade: '⚡ Vulnerabilidade' }[d]}
-                        >
-                          {d === 'resistencia' ? '🛡' : d === 'imunidade' ? '🚫' : '⚡'}
-                        </button>
+                  <div>
+                    <label className="text-[#8870a8] text-[9px] font-cinzel uppercase mb-1 block">Teste de Morte</label>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-[#27ae60] text-[9px] font-cinzel w-12">Sucesso</span>
+                      {[0, 1, 2].map(i => (
+                        <button key={i} onClick={() => setTesteMorte(prev => ({ ...prev, sucessos: prev.sucessos === i + 1 ? i : i + 1 }))} className={`w-4 h-4 rounded-full border transition-colors ${testeMorte.sucessos > i ? 'bg-[#27ae60] border-[#27ae60]' : 'border-[#4a3060] hover:border-[#27ae60]'}`} />
                       ))}
                     </div>
-                  )
-                })}
-              </div>
-            </PainelGrimorio>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[#e74c3c] text-[9px] font-cinzel w-12">Falha</span>
+                      {[0, 1, 2].map(i => (
+                        <button key={i} onClick={() => setTesteMorte(prev => ({ ...prev, falhas: prev.falhas === i + 1 ? i : i + 1 }))} className={`w-4 h-4 rounded-full border transition-colors ${testeMorte.falhas > i ? 'bg-[#e74c3c] border-[#e74c3c]' : 'border-[#4a3060] hover:border-[#e74c3c]'}`} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </PainelGrimorio>
+
+              {/* Ataques */}
+              <PainelGrimorio titulo="Ataques" compacto>
+                <div className="space-y-1">
+                  {(dados.ataques ?? []).map((atq, i) => (
+                    <div key={i} className="grid grid-cols-3 gap-1 text-xs">
+                      <input value={atq.nome} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], nome: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="Nome" />
+                      <input value={atq.bonus_ataque} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], bonus_ataque: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="+5" />
+                      <input value={atq.dano} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], dano: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="1d8+3" />
+                    </div>
+                  ))}
+                  <button onClick={() => atualizar('ataques', [...dados.ataques, { nome: '', bonus_ataque: '', dano: '', tipo_dano: '', notas: '' }])} className="text-xs text-[#9b59b6] hover:text-[#c39bd3] transition-colors mt-1">+ Adicionar ataque</button>
+                </div>
+              </PainelGrimorio>
+
+              {/* Moedas */}
+              <PainelGrimorio titulo="Moedas" compacto>
+                <div className="grid grid-cols-3 gap-1 text-center">
+                  {([
+                    { key: 'pc', label: 'PC', cor: 'text-[#adb5bd]' },
+                    { key: 'pp', label: 'PP', cor: 'text-[#c0c0c0]' },
+                    { key: 'po', label: 'PO', cor: 'text-[var(--gold)]' },
+                    { key: 'pe', label: 'PE', cor: 'text-[#3498db]' },
+                    { key: 'pl', label: 'PL', cor: 'text-[var(--accent2)]' },
+                  ] as const).map(({ key, label, cor }) => (
+                    <div key={key}>
+                      <label className={`${cor} text-[9px] font-cinzel uppercase`}>{label}</label>
+                      <InputNumerico value={dados.moedas?.[key] ?? 0} onChange={val => atualizar('moedas', { ...(dados.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, pl: 0, custom: 0 }), [key]: val })} className="w-full input-dd text-center text-xs mt-0.5" />
+                    </div>
+                  ))}
+                  <div>
+                    <label className="text-[var(--accent)] text-[9px] font-cinzel uppercase">{moedaCustomNome}</label>
+                    <InputNumerico value={dados.moedas?.custom ?? 0} onChange={val => atualizar('moedas', { ...(dados.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, pl: 0, custom: 0 }), custom: val })} className="w-full input-dd text-center text-xs mt-0.5" />
+                  </div>
+                </div>
+              </PainelGrimorio>
+
+              {/* Inventário */}
+              <PainelGrimorio titulo="Inventário" compacto>
+                {inventario.length === 0 ? (
+                  <p className="text-[var(--border)] text-sm font-crimson text-center py-2">Inventário vazio</p>
+                ) : (
+                  <div className="space-y-1">
+                    {inventario.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-2 px-2 py-1 bg-[var(--bg3)] rounded">
+                        <button onClick={() => setItemPopup(item)} className="flex-1 text-left min-w-0">
+                          <span className="text-[var(--text)] text-sm font-crimson truncate block">{item.nome}</span>
+                          {item.raridade && <span className="text-[var(--text3)] text-[10px] font-cinzel">{item.raridade}</span>}
+                        </button>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button onClick={() => alterarQuantidade(idx, -1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">−</button>
+                          <span className="text-[var(--text)] text-xs w-5 text-center font-cinzel">{item.quantidade}</span>
+                          <button onClick={() => alterarQuantidade(idx, 1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">+</button>
+                        </div>
+                        <button onClick={() => removerItem(idx)} className="text-[var(--border)] hover:text-[var(--red2)] transition-colors flex-shrink-0">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[var(--text3)] text-[10px] font-cinzel mt-2 text-right">{inventario.length} ite{inventario.length === 1 ? 'm' : 'ns'}</p>
+              </PainelGrimorio>
+
+              {/* Defesas */}
+              <PainelGrimorio titulo="Defesas" compacto>
+                <div className="space-y-1">
+                  {TIPOS_DANO.map(({ id, nome, icone }) => {
+                    const defesa = getDefesa(id)
+                    return (
+                      <div key={id} className="flex items-center gap-1.5 text-[10px]">
+                        <span className="w-4">{icone}</span>
+                        <span className="text-[#b8a8cc] flex-1 font-crimson">{nome}</span>
+                        {(['resistencia', 'imunidade', 'vulnerabilidade'] as TipoDefesa[]).map(d => (
+                          <button
+                            key={d}
+                            onClick={() => setDefesa(id, defesa === d ? null : d)}
+                            className={`px-1 py-0.5 rounded text-[9px] font-cinzel border transition-colors ${
+                              defesa === d
+                                ? d === 'resistencia' ? 'bg-[#3498db]/30 border-[#3498db] text-[#3498db]'
+                                : d === 'imunidade' ? 'bg-[#27ae60]/30 border-[#27ae60] text-[#27ae60]'
+                                : 'bg-[#e74c3c]/30 border-[#e74c3c] text-[#e74c3c]'
+                                : 'border-[#4a3060] text-[#4a3060] hover:border-[#6b4890]'
+                            }`}
+                            title={{ resistencia: '🛡️ Resistência', imunidade: '🚫 Imunidade', vulnerabilidade: '⚡ Vulnerabilidade' }[d]}
+                          >
+                            {d === 'resistencia' ? '🛡' : d === 'imunidade' ? '🚫' : '⚡'}
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              </PainelGrimorio>
+            </div>
+
+            {/* Col 3 — Traços + Características */}
+            <div className="space-y-2">
+              {[
+                { label: 'Traços de Personalidade', key: 'tracos_personalidade', rows: 3 },
+                { label: 'Ideais', key: 'ideais', rows: 2 },
+                { label: 'Vínculos', key: 'vinculos', rows: 2 },
+                { label: 'Defeitos', key: 'fraquezas', rows: 2 },
+                { label: 'Características & Talentos', key: 'caracteristicas_talentos', rows: 6 },
+              ].map(({ label, key, rows }) => (
+                <div key={key}>
+                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">{label}</label>
+                  <textarea
+                    value={(dados[key as keyof Personagem] as string) ?? ''}
+                    onChange={e => atualizar(key as keyof Personagem, e.target.value as never)}
+                    rows={rows}
+                    className="w-full input-dd resize-none text-xs"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
       {pagina === 2 && (
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-3">
-            <PainelGrimorio titulo="Aparência Física" compacto>
-              <div className="mb-2">
-                <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">URL da Imagem</label>
-                <input
-                  type="url"
-                  value={dados.imagem_url ?? ''}
-                  onChange={e => atualizar('imagem_url', e.target.value)}
-                  className="w-full input-dd text-sm mt-1"
-                  placeholder="https://..."
-                />
-                {dados.imagem_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={dados.imagem_url} alt={dados.nome} className="w-full h-28 object-cover rounded mt-2 border border-[var(--border)]" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-                )}
+        <div className="space-y-3">
+          {/* Header: 6 atributos físicos em grid 3×2 */}
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: 'Idade', key: 'idade' },
+              { label: 'Altura', key: 'altura' },
+              { label: 'Peso', key: 'peso' },
+              { label: 'Olhos', key: 'cor_olhos' },
+              { label: 'Pele', key: 'cor_pele' },
+              { label: 'Cabelo', key: 'cor_cabelo' },
+            ].map(({ label, key }) => (
+              <div key={key}>
+                <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">{label}</label>
+                <input type="text" value={(dados[key as keyof Personagem] as string) ?? ''} onChange={e => atualizar(key as keyof Personagem, e.target.value as never)} className="w-full input-dd text-sm" />
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: 'Idade', key: 'idade' },
-                  { label: 'Altura', key: 'altura' },
-                  { label: 'Peso', key: 'peso' },
-                  { label: 'Olhos', key: 'cor_olhos' },
-                  { label: 'Pele', key: 'cor_pele' },
-                  { label: 'Cabelo', key: 'cor_cabelo' },
-                ].map(({ label, key }) => (
-                  <div key={key}>
-                    <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">{label}</label>
-                    <input type="text" value={(dados[key as keyof Personagem] as string) ?? ''} onChange={e => atualizar(key as keyof Personagem, e.target.value as never)} className="w-full input-dd text-sm" />
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2">
-                <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Aparência</label>
-                <textarea value={dados.aparencia ?? ''} onChange={e => atualizar('aparencia', e.target.value)} rows={2} className="w-full input-dd resize-none text-sm" />
-              </div>
-            </PainelGrimorio>
-
-            {/* Moedas */}
-            <PainelGrimorio titulo="Moedas" compacto>
-              <div className="grid grid-cols-3 gap-1 text-center">
-                {([
-                  { key: 'pc', label: 'PC', cor: 'text-[#adb5bd]' },
-                  { key: 'pp', label: 'PP', cor: 'text-[#c0c0c0]' },
-                  { key: 'po', label: 'PO', cor: 'text-[var(--gold)]' },
-                  { key: 'pe', label: 'PE', cor: 'text-[#3498db]' },
-                  { key: 'pl', label: 'PL', cor: 'text-[var(--accent2)]' },
-                ] as const).map(({ key, label, cor }) => (
-                  <div key={key}>
-                    <label className={`${cor} text-[9px] font-cinzel uppercase`}>{label}</label>
-                    <InputNumerico
-                      value={dados.moedas?.[key] ?? 0}
-                      onChange={val => atualizar('moedas', { ...(dados.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, pl: 0, custom: 0 }), [key]: val })}
-                      className="w-full input-dd text-center text-xs mt-0.5"
-                    />
-                  </div>
-                ))}
-                <div>
-                  <label className="text-[var(--accent)] text-[9px] font-cinzel uppercase">{moedaCustomNome}</label>
-                  <InputNumerico
-                    value={dados.moedas?.custom ?? 0}
-                    onChange={val => atualizar('moedas', { ...(dados.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, pl: 0, custom: 0 }), custom: val })}
-                    className="w-full input-dd text-center text-xs mt-0.5"
-                  />
-                </div>
-              </div>
-            </PainelGrimorio>
-
-            <PainelGrimorio titulo="Proficiências & Idiomas" compacto>
-              <textarea
-                value={dados.outras_proficiencias ?? ''}
-                onChange={e => atualizar('outras_proficiencias', e.target.value)}
-                rows={4}
-                className="w-full input-dd resize-none text-sm"
-                placeholder="Armaduras leves, espadas longas, Élfico, Comum..."
-              />
-            </PainelGrimorio>
-
-            <PainelGrimorio titulo="Aliados & Organizações" compacto>
-              <textarea value={dados.aliados_organizacoes ?? ''} onChange={e => atualizar('aliados_organizacoes', e.target.value)} rows={3} className="w-full input-dd resize-none text-sm" />
-            </PainelGrimorio>
+            ))}
           </div>
 
-          <div className="space-y-3">
-            <PainelGrimorio titulo="História do Personagem" compacto>
-              <textarea value={dados.historia ?? ''} onChange={e => atualizar('historia', e.target.value)} rows={8} className="w-full input-dd resize-none text-sm" />
-            </PainelGrimorio>
-
-            <PainelGrimorio titulo="Características e Tesouros" compacto>
-              <div className="space-y-2">
-                <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Características & Talentos</label>
-                  <textarea value={dados.caracteristicas_talentos ?? ''} onChange={e => atualizar('caracteristicas_talentos', e.target.value)} rows={3} className="w-full input-dd resize-none text-sm" />
+          {/* Corpo: 2 colunas */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Col 1 — Aparência + História */}
+            <div className="space-y-3">
+              <PainelGrimorio titulo="Aparência Física" compacto>
+                <div className="mb-2">
+                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">URL da Imagem</label>
+                  <input type="url" value={dados.imagem_url ?? ''} onChange={e => atualizar('imagem_url', e.target.value)} className="w-full input-dd text-sm mt-1" placeholder="https://..." />
+                  {dados.imagem_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={dados.imagem_url} alt={dados.nome} className="w-full h-28 object-cover rounded mt-2 border border-[var(--border)]" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                  )}
                 </div>
                 <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Tesouros</label>
-                  <textarea value={dados.tesouros ?? ''} onChange={e => atualizar('tesouros', e.target.value)} rows={3} className="w-full input-dd resize-none text-sm" />
+                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Descrição da Aparência</label>
+                  <textarea value={dados.aparencia ?? ''} onChange={e => atualizar('aparencia', e.target.value)} rows={3} className="w-full input-dd resize-none text-sm" />
                 </div>
-              </div>
-            </PainelGrimorio>
+              </PainelGrimorio>
 
-            <PainelGrimorio titulo="Inventário" compacto>
-              {inventario.length === 0 ? (
-                <p className="text-[var(--border)] text-sm font-crimson text-center py-2">Inventário vazio</p>
-              ) : (
-                <div className="space-y-1">
-                  {inventario.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2 px-2 py-1 bg-[var(--bg3)] rounded">
-                      <button
-                        onClick={() => setItemPopup(item)}
-                        className="flex-1 text-left min-w-0"
-                      >
-                        <span className="text-[var(--text)] text-sm font-crimson truncate block">{item.nome}</span>
-                        {item.raridade && (
-                          <span className="text-[var(--text3)] text-[10px] font-cinzel">{item.raridade}</span>
-                        )}
-                      </button>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <button onClick={() => alterarQuantidade(idx, -1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">−</button>
-                        <span className="text-[var(--text)] text-xs w-5 text-center font-cinzel">{item.quantidade}</span>
-                        <button onClick={() => alterarQuantidade(idx, 1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">+</button>
-                      </div>
-                      <button onClick={() => removerItem(idx)} className="text-[var(--border)] hover:text-[var(--red2)] transition-colors flex-shrink-0">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <p className="text-[var(--text3)] text-[10px] font-cinzel mt-2 text-right">{inventario.length} ite{inventario.length === 1 ? 'm' : 'ns'}</p>
-            </PainelGrimorio>
+              <PainelGrimorio titulo="História do Personagem" compacto>
+                <textarea value={dados.historia ?? ''} onChange={e => atualizar('historia', e.target.value)} rows={10} className="w-full input-dd resize-none text-sm" />
+              </PainelGrimorio>
+            </div>
+
+            {/* Col 2 — Aliados + Outras Características + Tesouros */}
+            <div className="space-y-3">
+              <PainelGrimorio titulo="Aliados & Organizações" compacto>
+                <textarea value={dados.aliados_organizacoes ?? ''} onChange={e => atualizar('aliados_organizacoes', e.target.value)} rows={5} className="w-full input-dd resize-none text-sm" />
+              </PainelGrimorio>
+
+              <PainelGrimorio titulo="Outras Características" compacto>
+                <textarea value={dados.equipamento ?? ''} onChange={e => atualizar('equipamento', e.target.value)} rows={5} className="w-full input-dd resize-none text-sm" placeholder="Características especiais, habilidades de raça/classe..." />
+              </PainelGrimorio>
+
+              <PainelGrimorio titulo="Tesouros" compacto>
+                <textarea value={dados.tesouros ?? ''} onChange={e => atualizar('tesouros', e.target.value)} rows={5} className="w-full input-dd resize-none text-sm" />
+              </PainelGrimorio>
+            </div>
           </div>
         </div>
       )}
@@ -930,6 +962,42 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               <p className="text-[var(--text2)] text-sm font-crimson leading-relaxed whitespace-pre-wrap">{itemPopup.descricao}</p>
             ) : (
               <p className="text-[var(--border)] text-sm font-crimson italic">Sem descrição disponível.</p>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {modalCopiar && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={() => setModalCopiar(false)}
+        >
+          <div
+            className="bg-[var(--bg2)] border border-[var(--border)] rounded p-5 max-w-sm w-full mx-4 shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-cinzel text-[var(--gold)] text-base">Copiar Personagem</h3>
+              <button onClick={() => setModalCopiar(false)} className="text-[var(--border)] hover:text-[var(--text)] transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-[var(--text3)] text-xs font-crimson mb-3">Selecione a campanha de destino para <span className="text-[var(--text)]">{dados.nome}</span>:</p>
+            {campanhasDisponiveis.length === 0 ? (
+              <p className="text-[var(--border)] text-sm font-crimson text-center py-3">Nenhuma outra campanha disponível</p>
+            ) : (
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {campanhasDisponiveis.map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => copiarParaCampanha(c.id)}
+                    className="w-full text-left px-3 py-2 bg-[var(--bg3)] hover:bg-[var(--surface)] border border-[var(--border)] rounded transition-colors"
+                  >
+                    <span className="font-cinzel text-[var(--text)] text-sm">{c.nome}</span>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         </div>,

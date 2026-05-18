@@ -381,7 +381,15 @@ function AbaArmaduras() {
                 <BotaoAdicionarPersonagem
                   tipo="item"
                   nome={selecionado.name_pt}
-                  dadosExtras={{ item_id: selecionado.id, tipo: 'armadura', descricao: null }}
+                  dadosExtras={{
+                    item_id: selecionado.id,
+                    tipo: 'armadura',
+                    descricao: [
+                      selecionado.base_ac_formula_pt,
+                      selecionado.stealth_disadvantage ? 'Desvantagem em Furtividade' : null,
+                      selecionado.strength_requirement ? `Força mínima ${selecionado.strength_requirement}` : null,
+                    ].filter(Boolean).join(' · ') || null,
+                  }}
                 />
               </div>
             </div>

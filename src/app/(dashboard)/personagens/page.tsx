@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useCampanha } from '@/store/campanha'
@@ -8,7 +9,7 @@ import type { Personagem } from '@/types/dnd'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoImportarFicha } from '@/components/personagem/BotaoImportarFicha'
-import { Plus, RefreshCw, Users, Download } from 'lucide-react'
+import { Plus, RefreshCw, Users, Download, MoreVertical, X, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getPlano } from '@/lib/planos'
 
@@ -38,83 +39,129 @@ function estiloTipo(tipo: string | null) {
   }
 }
 
-function CardPersonagem({ p }: { p: Personagem }) {
+interface CardPersonagemProps {
+  p: Personagem
+  isDm: boolean
+  menuAberto: boolean
+  onToggleMenu: () => void
+  onInativar: () => void
+  onDeletar: () => void
+  inativo?: boolean
+  onReativar?: () => void
+}
+
+function CardPersonagem({ p, isDm, menuAberto, onToggleMenu, onInativar, onDeletar, inativo, onReativar }: CardPersonagemProps) {
   const estilo = estiloTipo(p.tipo_personagem)
   const pct = p.pv_maximo > 0 ? (p.pv_atual / p.pv_maximo) * 100 : 0
   const corPV = pct > 50 ? 'var(--green2)' : pct > 25 ? '#f59e0b' : 'var(--red2)'
+  const menuRef = useRef<HTMLDivElement>(null)
 
   return (
-    <Link href={`/personagens/${p.id}`}>
-      <div className={`bg-[var(--surface)] border-2 rounded-xl overflow-hidden hover:opacity-90 transition-all cursor-pointer ${estilo.borda}`}>
-        <div className={`${estilo.header} px-4 py-3 flex items-start justify-between`}>
-          <div className="min-w-0 flex-1">
-            <h3 className={`font-cinzel font-bold text-base leading-tight truncate ${estilo.texto}`}>
-              {p.nome}
-            </h3>
-            {p.classe && (
-              <p className="text-[var(--text2)] text-sm mt-0.5">
-                {p.raca ? `${p.raca} · ` : ''}{p.classe} Nv{p.nivel || 1}
-              </p>
-            )}
-            <p className="text-[var(--text3)] text-xs mt-0.5">{p.jogador_nome}</p>
+    <div className="relative">
+      <Link href={inativo ? '#' : `/personagens/${p.id}`} onClick={e => inativo && e.preventDefault()}>
+        <div className={`bg-[var(--surface)] border-2 rounded-xl overflow-hidden transition-all cursor-pointer ${inativo ? 'opacity-50 grayscale' : 'hover:opacity-90'} ${estilo.borda}`}>
+          <div className={`${estilo.header} px-4 py-3 flex items-start justify-between`}>
+            <div className="min-w-0 flex-1">
+              <h3 className={`font-cinzel font-bold text-base leading-tight truncate ${estilo.texto}`}>
+                {p.nome}
+                {inativo && <span className="ml-2 text-[10px] text-[var(--text3)] font-normal font-crimson">(inativo)</span>}
+              </h3>
+              {p.classe && (
+                <p className="text-[var(--text2)] text-sm mt-0.5">
+                  {p.raca ? `${p.raca} · ` : ''}{p.classe} Nv{p.nivel || 1}
+                </p>
+              )}
+              <p className="text-[var(--text3)] text-xs mt-0.5">{p.jogador_nome}</p>
+            </div>
+            <div className="text-right ml-3 flex-shrink-0 pr-6">
+              <p className="text-[var(--text3)] text-xs font-cinzel">CA</p>
+              <p className={`font-cinzel font-bold text-xl leading-none ${estilo.texto}`}>{p.ca || 10}</p>
+            </div>
           </div>
-          <div className="text-right ml-3 flex-shrink-0">
-            <p className="text-[var(--text3)] text-xs font-cinzel">CA</p>
-            <p className={`font-cinzel font-bold text-xl leading-none ${estilo.texto}`}>{p.ca || 10}</p>
-          </div>
-        </div>
 
-        <div className="px-4 py-3">
-          <div className="mb-3">
-            <div className="flex justify-between text-xs mb-1">
-              <span className="text-[var(--text3)] font-cinzel">PV</span>
-              <span className="font-bold" style={{ color: corPV }}>
-                {p.pv_atual}/{p.pv_maximo}
+          <div className="px-4 py-3">
+            <div className="mb-3">
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-[var(--text3)] font-cinzel">PV</span>
+                <span className="font-bold" style={{ color: corPV }}>{p.pv_atual}/{p.pv_maximo}</span>
+              </div>
+              <div className="h-2 bg-[var(--bg3)] rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(0, Math.min(100, pct))}%`, backgroundColor: corPV }} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-6 gap-1 text-center">
+              {[
+                { label: 'FOR', val: p.forca },
+                { label: 'DES', val: p.destreza },
+                { label: 'CON', val: p.constituicao },
+                { label: 'INT', val: p.inteligencia },
+                { label: 'SAB', val: p.sabedoria },
+                { label: 'CAR', val: p.carisma },
+              ].map(({ label, val }) => {
+                const mod = Math.floor(((val || 10) - 10) / 2)
+                return (
+                  <div key={label} className="bg-[var(--bg3)] rounded p-1">
+                    <p className="text-[var(--text3)] text-[9px] font-cinzel">{label}</p>
+                    <p className="text-[var(--text)] text-sm font-bold">{val || 10}</p>
+                    <p className="text-[var(--text2)] text-[10px]">{mod >= 0 ? `+${mod}` : mod}</p>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="mt-2 flex items-center justify-between">
+              <span className={`text-[10px] px-2 py-0.5 border rounded font-cinzel ${estilo.tag}`}>
+                {p.tipo_personagem === 'monstro' ? '👹 Monstro' :
+                 p.tipo_personagem === 'npc' ? '🧙 NPC' : '👤 Jogador'}
               </span>
+              {inativo && onReativar && (
+                <button
+                  onClick={e => { e.preventDefault(); onReativar() }}
+                  className="text-[10px] px-2 py-0.5 border border-[var(--green2)] text-[var(--green2)] rounded font-cinzel hover:bg-[var(--green2)]/10 transition-colors"
+                >
+                  Reativar
+                </button>
+              )}
             </div>
-            <div className="h-2 bg-[var(--bg3)] rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all"
-                style={{ width: `${Math.max(0, Math.min(100, pct))}%`, backgroundColor: corPV }}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-6 gap-1 text-center">
-            {[
-              { label: 'FOR', val: p.forca },
-              { label: 'DES', val: p.destreza },
-              { label: 'CON', val: p.constituicao },
-              { label: 'INT', val: p.inteligencia },
-              { label: 'SAB', val: p.sabedoria },
-              { label: 'CAR', val: p.carisma },
-            ].map(({ label, val }) => {
-              const mod = Math.floor(((val || 10) - 10) / 2)
-              return (
-                <div key={label} className="bg-[var(--bg3)] rounded p-1">
-                  <p className="text-[var(--text3)] text-[9px] font-cinzel">{label}</p>
-                  <p className="text-[var(--text)] text-sm font-bold">{val || 10}</p>
-                  <p className="text-[var(--text2)] text-[10px]">{mod >= 0 ? `+${mod}` : mod}</p>
-                </div>
-              )
-            })}
-          </div>
-
-          <div className="mt-2">
-            <span className={`text-[10px] px-2 py-0.5 border rounded font-cinzel ${estilo.tag}`}>
-              {p.tipo_personagem === 'monstro' ? '👹 Monstro' :
-               p.tipo_personagem === 'npc' ? '🧙 NPC' : '👤 Jogador'}
-            </span>
           </div>
         </div>
-      </div>
-    </Link>
+      </Link>
+
+      {isDm && !inativo && (
+        <div ref={menuRef} className="absolute top-2 right-2 z-10">
+          <button
+            onClick={e => { e.preventDefault(); e.stopPropagation(); onToggleMenu() }}
+            className="w-6 h-6 rounded flex items-center justify-center text-[var(--text3)] hover:text-[var(--text)] hover:bg-[var(--surface)] transition-colors"
+          >
+            <MoreVertical className="w-3.5 h-3.5" />
+          </button>
+          {menuAberto && (
+            <div className="absolute right-0 top-full mt-1 w-36 bg-[var(--bg2)] border border-[var(--border)] rounded shadow-xl z-50">
+              <button
+                onClick={e => { e.preventDefault(); e.stopPropagation(); onInativar() }}
+                className="w-full text-left px-3 py-2 text-xs font-crimson text-[var(--text2)] hover:bg-[var(--surface)] transition-colors flex items-center gap-2"
+              >
+                <EyeOff className="w-3 h-3" /> Inativar
+              </button>
+              <button
+                onClick={e => { e.preventDefault(); e.stopPropagation(); onDeletar() }}
+                className="w-full text-left px-3 py-2 text-xs font-crimson text-[var(--red2)] hover:bg-[var(--red2)]/10 transition-colors flex items-center gap-2"
+              >
+                <X className="w-3 h-3" /> Excluir permanentemente
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
 export default function PersonagensPage() {
   const { campanhaAtiva, papelPorCampanha } = useCampanha()
   const [personagens, setPersonagens] = useState<Personagem[]>([])
+  const [personagensInativos, setPersonagensInativos] = useState<Personagem[]>([])
   const [carregando, setCarregando] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
   const [nomeUsuario, setNomeUsuario] = useState('')
@@ -125,6 +172,9 @@ export default function PersonagensPage() {
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
   const [ordenacao, setOrdenacao] = useState<Ordenacao>('nome')
   const [plano, setPlano] = useState<string>('free')
+  const [menuAberto, setMenuAberto] = useState<string | null>(null)
+  const [confirmarDeletar, setConfirmarDeletar] = useState<string | null>(null)
+  const [mostrarInativos, setMostrarInativos] = useState(false)
 
   const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
 
@@ -209,6 +259,47 @@ export default function PersonagensPage() {
     }
   }
 
+  async function carregarInativos() {
+    if (!campanhaAtiva?.id) return
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('personagens')
+      .select('*')
+      .eq('campanha_id', campanhaAtiva.id)
+      .eq('ativo', false)
+      .order('nome')
+    setPersonagensInativos((data ?? []) as Personagem[])
+  }
+
+  async function inativarPersonagem(id: string) {
+    setMenuAberto(null)
+    const supabase = createClient()
+    const { error } = await supabase.from('personagens').update({ ativo: false }).eq('id', id)
+    if (error) { toast.error('Erro ao inativar personagem'); return }
+    toast.success('Personagem inativado')
+    setPersonagens(prev => prev.filter(p => p.id !== id))
+    if (mostrarInativos) carregarInativos()
+  }
+
+  async function deletarPersonagem(id: string) {
+    setConfirmarDeletar(null)
+    const supabase = createClient()
+    const { error } = await supabase.from('personagens').delete().eq('id', id)
+    if (error) { toast.error('Erro ao excluir personagem'); return }
+    toast.success('Personagem excluído permanentemente')
+    setPersonagens(prev => prev.filter(p => p.id !== id))
+    setPersonagensInativos(prev => prev.filter(p => p.id !== id))
+  }
+
+  async function reativarPersonagem(id: string) {
+    const supabase = createClient()
+    const { error } = await supabase.from('personagens').update({ ativo: true }).eq('id', id)
+    if (error) { toast.error('Erro ao reativar personagem'); return }
+    toast.success('Personagem reativado')
+    setPersonagensInativos(prev => prev.filter(p => p.id !== id))
+    carregar()
+  }
+
   const filtrados = personagens.filter(p => {
     if (filtroTipo === 'todos') return true
     return (p.tipo_personagem || 'jogador') === filtroTipo
@@ -266,6 +357,19 @@ export default function PersonagensPage() {
           <BotaoRunico variante="secundario" tamanho="sm" onClick={carregar}>
             <RefreshCw className="w-3 h-3" />
           </BotaoRunico>
+          {!ehJogador && (
+            <button
+              onClick={() => {
+                const next = !mostrarInativos
+                setMostrarInativos(next)
+                if (next) carregarInativos()
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 border rounded text-xs font-cinzel transition-colors ${mostrarInativos ? 'border-[var(--accent2)] text-[var(--accent2)]' : 'border-[var(--border)] text-[var(--text3)] hover:border-[var(--gold)] hover:text-[var(--gold)]'}`}
+            >
+              {mostrarInativos ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+              {mostrarInativos ? 'Ocultar inativos' : 'Ver inativos'}
+            </button>
+          )}
           <a
             href="/ficha-dnd5e-pt.pdf"
             download
@@ -343,6 +447,11 @@ export default function PersonagensPage() {
         </PainelGrimorio>
       )}
 
+      {/* Fechar menu ao clicar fora */}
+      {menuAberto && (
+        <div className="fixed inset-0 z-[5]" onClick={() => setMenuAberto(null)} />
+      )}
+
       {carregando ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -361,8 +470,84 @@ export default function PersonagensPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-          {ordenados.map(p => <CardPersonagem key={p.id} p={p} />)}
+          {ordenados.map(p => (
+            <CardPersonagem
+              key={p.id}
+              p={p}
+              isDm={!ehJogador}
+              menuAberto={menuAberto === p.id}
+              onToggleMenu={() => setMenuAberto(menuAberto === p.id ? null : p.id)}
+              onInativar={() => inativarPersonagem(p.id)}
+              onDeletar={() => { setMenuAberto(null); setConfirmarDeletar(p.id) }}
+            />
+          ))}
         </div>
+      )}
+
+      {/* Seção de personagens inativos */}
+      {mostrarInativos && personagensInativos.length > 0 && (
+        <div className="mt-6">
+          <h3 className="font-cinzel text-[var(--text3)] text-sm mb-3 flex items-center gap-2">
+            <EyeOff className="w-3.5 h-3.5" /> Personagens Inativos ({personagensInativos.length})
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            {personagensInativos.map(p => (
+              <CardPersonagem
+                key={p.id}
+                p={p}
+                isDm={!ehJogador}
+                menuAberto={false}
+                onToggleMenu={() => {}}
+                onInativar={() => {}}
+                onDeletar={() => setConfirmarDeletar(p.id)}
+                inativo
+                onReativar={() => reativarPersonagem(p.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {mostrarInativos && personagensInativos.length === 0 && (
+        <div className="mt-6 text-center py-4">
+          <p className="text-[var(--border)] text-sm font-crimson">Nenhum personagem inativo</p>
+        </div>
+      )}
+
+      {/* Modal de confirmação de exclusão permanente */}
+      {confirmarDeletar && typeof window !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+          onClick={() => setConfirmarDeletar(null)}
+        >
+          <div
+            className="bg-[var(--bg2)] border border-[var(--red2)] rounded-lg p-5 max-w-sm w-full mx-4 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="font-cinzel text-[var(--red2)] text-base font-bold mb-2">Excluir Permanentemente?</h3>
+            <p className="text-[var(--text2)] text-sm font-crimson mb-1">
+              Você está prestes a excluir <span className="text-[var(--text)] font-bold">
+                {[...personagens, ...personagensInativos].find(p => p.id === confirmarDeletar)?.nome ?? 'este personagem'}
+              </span>.
+            </p>
+            <p className="text-[var(--text3)] text-xs font-crimson mb-4">Esta ação é irreversível. Todos os dados do personagem serão apagados.</p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setConfirmarDeletar(null)}
+                className="px-3 py-1.5 text-xs font-cinzel text-[var(--text2)] border border-[var(--border)] rounded hover:border-[var(--text)] transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => deletarPersonagem(confirmarDeletar)}
+                className="px-3 py-1.5 text-xs font-cinzel text-white bg-[var(--red2)] rounded hover:opacity-90 transition-colors"
+              >
+                Excluir permanentemente
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   )
