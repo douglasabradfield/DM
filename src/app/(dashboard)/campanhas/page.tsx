@@ -430,6 +430,11 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
         <MembrosSecao campanhaId={campanha.id} ehDm={ehDm} />
       </PainelGrimorio>
 
+      {/* Jogadores com Plano Efetivo */}
+      {ehDm && ['mesa_pro', 'guild_master'].includes(userPlano) && (
+        <SecaoMembrosEfetivos campanhaId={campanha.id} userPlano={userPlano} />
+      )}
+
       {/* Zona de Perigo */}
       {ehDm && userPlano === 'guild_master' && (
         <div className="pt-4 border-t border-[var(--border)]">
@@ -468,6 +473,156 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
         </div>
       )}
     </div>
+  )
+}
+
+function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; userPlano: string }) {
+  const [membros, setMembros] = useState<Array<{
+    id: string; email: string; status: string; plano_efetivo: string; criado_em: string
+  }>>([])
+  const [emailConvite, setEmailConvite] = useState('')
+  const [linkConvite, setLinkConvite] = useState('')
+  const [convidando, setConvidando] = useState(false)
+  const [gerandoLink, setGerandoLink] = useState(false)
+
+  const carregar = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('campanha_membros')
+      .select('id, email, status, plano_efetivo, criado_em')
+      .eq('campanha_id', campanhaId)
+      .in('status', ['convidado', 'ativo'])
+      .order('criado_em', { ascending: false })
+    setMembros(data ?? [])
+  }, [campanhaId])
+
+  useEffect(() => { carregar() }, [carregar])
+
+  async function convidarPorEmail() {
+    if (!emailConvite.trim()) return
+    setConvidando(true)
+    try {
+      const res = await fetch('/api/campanha/convidar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campanhaId, email: emailConvite.trim() }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.erro)
+      toast.success('Convite gerado! Compartilhe o link com o jogador.')
+      setLinkConvite(d.link)
+      setEmailConvite('')
+      await carregar()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao convidar')
+    } finally {
+      setConvidando(false)
+    }
+  }
+
+  async function gerarLinkConvite() {
+    setGerandoLink(true)
+    try {
+      const res = await fetch('/api/campanha/link-convite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campanhaId }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.erro)
+      setLinkConvite(d.link)
+      toast.success('Link de convite gerado!')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao gerar link')
+    } finally {
+      setGerandoLink(false)
+    }
+  }
+
+  async function removerMembro(id: string) {
+    if (!confirm('Remover este jogador da campanha?')) return
+    const supabase = createClient()
+    await supabase.from('campanha_membros').update({ status: 'removido' }).eq('id', id)
+    await carregar()
+    toast.success('Jogador removido')
+  }
+
+  return (
+    <PainelGrimorio titulo="👥 Jogadores da Campanha" compacto>
+      <div className="space-y-3">
+        <p className="text-[var(--text3)] text-xs font-crimson">
+          Jogadores convidados herdam o plano{' '}
+          <span className="text-[var(--accent2)]">{userPlano === 'guild_master' ? 'Guild Master' : 'Mesa Pro'}</span>{' '}
+          enquanto estiverem na campanha.
+        </p>
+
+        {/* Lista de membros */}
+        {membros.length > 0 && (
+          <div className="space-y-1.5">
+            {membros.map(m => (
+              <div key={m.id} className="flex items-center justify-between bg-[var(--bg3)] rounded px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-[var(--text)] text-sm font-crimson truncate">{m.email}</p>
+                  <p className="text-[var(--text3)] text-[10px]">
+                    {m.status === 'convidado' ? '⏳ Convite pendente' : '✅ Ativo'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => removerMembro(m.id)}
+                  className="text-[var(--red2)] text-[10px] hover:opacity-80 font-cinzel flex-shrink-0 ml-2"
+                >
+                  Remover
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Convidar por email */}
+        <div className="flex gap-2">
+          <input
+            type="email"
+            value={emailConvite}
+            onChange={e => setEmailConvite(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && convidarPorEmail()}
+            placeholder="email@jogador.com"
+            className="input-dd flex-1 text-sm"
+          />
+          <button
+            onClick={convidarPorEmail}
+            disabled={!emailConvite.trim() || convidando}
+            className="flex items-center gap-1 px-3 py-1.5 bg-[var(--accent)] text-white rounded font-cinzel text-xs disabled:opacity-50 hover:opacity-90 transition-opacity"
+          >
+            <UserPlus className="w-3.5 h-3.5" /> {convidando ? '...' : 'Convidar'}
+          </button>
+        </div>
+
+        {/* Link de convite aberto */}
+        <div className="flex gap-2 items-center">
+          <button
+            onClick={gerarLinkConvite}
+            disabled={gerandoLink}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--surface)] border border-[var(--border)] text-[var(--text2)] rounded font-cinzel text-xs hover:border-[var(--border2)] transition-colors disabled:opacity-50"
+          >
+            <Link2 className="w-3.5 h-3.5" /> {gerandoLink ? '...' : 'Gerar link aberto'}
+          </button>
+          {linkConvite && (
+            <button
+              onClick={() => { navigator.clipboard.writeText(linkConvite); toast.success('Link copiado!') }}
+              className="text-[var(--accent)] text-xs hover:underline font-cinzel"
+            >
+              Copiar link
+            </button>
+          )}
+        </div>
+
+        {linkConvite && (
+          <div className="bg-[var(--surface)] border border-[var(--accent)]/40 rounded p-2">
+            <p className="text-[var(--text)] text-xs font-mono break-all">{linkConvite}</p>
+          </div>
+        )}
+      </div>
+    </PainelGrimorio>
   )
 }
 
