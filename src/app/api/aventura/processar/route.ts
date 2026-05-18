@@ -1,27 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 
-// pdf-parse usa require (serverExternalPackage) — evita problema de default export no ESM
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require('pdf-parse') as (buffer: Buffer) => Promise<{ text: string; numpages: number }>
-
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
+  console.log('=== INICIO PROCESSAR AVENTURA ===')
   try {
+    console.log('1. Verificando API key...')
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
       return NextResponse.json({ erro: 'ANTHROPIC_API_KEY não configurada no Vercel' }, { status: 500 })
     }
 
+    console.log('2. Verificando autenticação...')
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
 
+    console.log('3. Lendo body...')
     const { storagePath, campanhaId } = await req.json()
     if (!storagePath) return NextResponse.json({ erro: 'storagePath obrigatório' }, { status: 400 })
 
-    // 1. Baixar PDF do Supabase Storage (server-to-server, sem limite de tamanho)
+    console.log('4. Baixando arquivo do Storage:', storagePath)
     const admin = createAdminClient()
     const { data: fileData, error: downloadError } = await admin.storage
       .from('aventuras')
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ erro: 'Erro ao baixar arquivo do Storage' }, { status: 500 })
     }
 
-    // 2. Extrair texto conforme o formato do arquivo
+    console.log('5. Extraindo texto...')
     const ext = storagePath.split('.').pop()?.toLowerCase() ?? ''
 
     let textoAventura: string
@@ -40,39 +40,41 @@ export async function POST(req: NextRequest) {
     let formatoDesc: string
 
     if (ext === 'pdf') {
+      console.log('5a. Importando pdf-parse...')
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const pdfParse = require('pdf-parse') as (buffer: Buffer) => Promise<{ text: string; numpages: number }>
       const buffer = Buffer.from(await fileData.arrayBuffer())
       const pdf = await pdfParse(buffer)
       textoAventura = pdf.text
       totalPaginas = pdf.numpages
       formatoDesc = `PDF (${totalPaginas} páginas)`
     } else {
-      // .md ou .txt — leitura direta, sem biblioteca
       textoAventura = await fileData.text()
       totalPaginas = 1
       formatoDesc = ext === 'md' ? 'Markdown' : 'texto simples'
     }
 
-    // Limitar a 400K chars (≈100K tokens — cobre aventuras de até ~160 páginas de texto denso)
     const MAX_CHARS = 400_000
     const truncado = textoAventura.length > MAX_CHARS
     if (truncado) textoAventura = textoAventura.slice(0, MAX_CHARS)
 
-    // Normalizar texto
     textoAventura = textoAventura
       .replace(/\r\n/g, '\n')
       .replace(/\n{4,}/g, '\n\n\n')
       .trim()
 
-    console.log(`Arquivo: ${formatoDesc}, ${textoAventura.length} chars${truncado ? ' (TRUNCADO)' : ''}`)
+    console.log(`6. Arquivo: ${formatoDesc}, ${textoAventura.length} chars${truncado ? ' (TRUNCADO)' : ''}`)
 
     if (!textoAventura || textoAventura.length < 100) {
       return NextResponse.json({ erro: ext === 'pdf' ? 'PDF sem texto extraível (pode ser digitalizado como imagem)' : 'Arquivo sem conteúdo suficiente para processar' }, { status: 422 })
     }
 
-    // 3. Enviar texto ao Claude com prompt robusto
+    console.log('7. Importando Anthropic SDK...')
     const { default: Anthropic } = await import('@anthropic-ai/sdk')
-    const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    console.log('8. Criando cliente Anthropic...')
+    const claude = new Anthropic({ apiKey })
 
+    console.log('9. Chamando API Claude...')
     const resposta = await claude.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 8096,
@@ -170,9 +172,8 @@ Formato de saída (APENAS JSON válido):
       }],
     })
 
+    console.log('10. Resposta recebida, fazendo parse...')
     const jsonStr = resposta.content[0].type === 'text' ? resposta.content[0].text : ''
-
-    // 4. Parse do JSON — limpar markdown se Claude não obedecer
     let conteudo
     try {
       const jsonLimpo = jsonStr
@@ -186,6 +187,7 @@ Formato de saída (APENAS JSON válido):
       return NextResponse.json({ erro: 'Erro ao interpretar estrutura retornada pela IA' }, { status: 500 })
     }
 
+    console.log('11. JSON parseado, salvando no banco...')
     // 5. Resolver campanha
     let campId = campanhaId
     if (!campId) {
@@ -252,6 +254,7 @@ Formato de saída (APENAS JSON válido):
     const totalLocais = (conteudo.capitulos as Array<{ locais?: unknown[] }> | undefined)
       ?.reduce((acc, cap) => acc + (cap.locais?.length ?? 0), 0) ?? 0
 
+    console.log('12. Concluído com sucesso:', conteudo.titulo)
     return NextResponse.json({
       sucesso: true,
       titulo: conteudo.titulo,
@@ -262,7 +265,7 @@ Formato de saída (APENAS JSON válido):
 
   } catch (err: unknown) {
     const e = err as { message?: string; stack?: string }
-    console.error('Erro ao processar aventura:', err)
+    console.error('ERRO DETALHADO:', e?.message, e?.stack)
     return NextResponse.json({
       erro: e?.message || String(err),
       stack: e?.stack?.slice(0, 500),
