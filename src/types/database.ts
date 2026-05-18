@@ -35,6 +35,7 @@ export interface Campanha {
   criado_em: string
   resumo_final?: string | null
   moeda_custom_nome?: string | null
+  aventura_bloqueada_ate?: string | null
 }
 
 export interface Aventura {

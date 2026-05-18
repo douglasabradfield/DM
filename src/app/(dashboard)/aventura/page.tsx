@@ -9,6 +9,8 @@ import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { DivisorOrnamentado } from '@/components/ui/DivisorOrnamentado'
 import { Upload, Copy, ScrollText, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getPlano } from '@/lib/planos'
+import { BloqueioPlano } from '@/components/ui/BloqueioPlano'
 
 interface Local {
   codigo: string
@@ -59,6 +61,18 @@ export default function AventuraPage() {
   const [progresso, setProgresso] = useState<'idle' | 'enviando' | 'processando'>('idle')
   const [arquivo, setArquivo] = useState<File | null>(null)
   const [confirmandoApagar, setConfirmandoApagar] = useState(false)
+  const [plano, setPlano] = useState<string>('free')
+
+  useEffect(() => {
+    async function fetchPlano() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase.from('profiles').select('plano').eq('id', user.id).single()
+      if (data?.plano) setPlano(data.plano)
+    }
+    fetchPlano()
+  }, [])
 
   useEffect(() => {
     if (!campanhaAtiva?.id) {
@@ -160,6 +174,11 @@ export default function AventuraPage() {
 
   async function enviarAventura() {
     if (!arquivo || !campanhaAtiva?.id) return
+    const limiteAventura = getPlano(plano).limites.aventura
+    if (limiteAventura === 'bloqueado') {
+      toast.error('Upload de aventura não está disponível no seu plano. Faça upgrade para continuar.')
+      return
+    }
     const MAX_MB = 150
     if (arquivo.size > MAX_MB * 1024 * 1024) {
       toast.error(`Arquivo muito grande (${(arquivo.size / 1024 / 1024).toFixed(0)} MB). Limite: ${MAX_MB} MB.`)
@@ -171,6 +190,22 @@ export default function AventuraPage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+
+      if (limiteAventura === 'limitado') {
+        const { data: camp } = await supabase
+          .from('campanhas')
+          .select('aventura_bloqueada_ate')
+          .eq('id', campanhaAtiva.id)
+          .single()
+        if (camp?.aventura_bloqueada_ate && new Date(camp.aventura_bloqueada_ate) > new Date()) {
+          const ate = new Date(camp.aventura_bloqueada_ate)
+          const meses = getPlano(plano).limites.aventura_cooldown_meses ?? 3
+          toast.error(`No plano ${getPlano(plano).nome} você pode processar uma aventura a cada ${meses} meses. Próximo upload disponível em ${ate.toLocaleDateString('pt-BR')}.`)
+          setEnviando(false)
+          setProgresso('idle')
+          return
+        }
+      }
 
       const nomeArquivo = `${Date.now()}_${arquivo.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
       const storagePath = `${user.id}/${nomeArquivo}`
@@ -193,6 +228,15 @@ export default function AventuraPage() {
       toast.success('Aventura processada com sucesso!')
       setArquivo(null)
       setProgresso('idle')
+      if (limiteAventura === 'limitado') {
+        const cooldownMeses = getPlano(plano).limites.aventura_cooldown_meses ?? 3
+        const bloqueadaAte = new Date()
+        bloqueadaAte.setMonth(bloqueadaAte.getMonth() + cooldownMeses)
+        await supabase
+          .from('campanhas')
+          .update({ aventura_bloqueada_ate: bloqueadaAte.toISOString() })
+          .eq('id', campanhaAtiva.id)
+      }
       carregar()
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Erro ao processar aventura')
@@ -234,6 +278,10 @@ export default function AventuraPage() {
   }
 
   if (!aventura) {
+    const limiteAventura = getPlano(plano).limites.aventura
+    if (limiteAventura === 'bloqueado') {
+      return <BloqueioPlano recurso="Upload de Aventura" planoNecessario="DM Solo" className="h-full" />
+    }
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
         <p className="text-5xl">📖</p>
@@ -333,10 +381,12 @@ export default function AventuraPage() {
 
             {/* Enriquecer / Apagar */}
             <div className="px-3 py-3 mt-1 border-t border-[var(--border)] space-y-2">
+              {getPlano(plano).limites.aventura !== 'bloqueado' && (
               <label className="flex items-center gap-1.5 px-3 py-1.5 border border-[var(--border)] rounded-lg text-[var(--text2)] text-xs cursor-pointer hover:bg-[var(--surface)] transition-colors font-cinzel">
                 ✨ Enriquecer com IA
                 <input type="file" accept=".pdf,.md,.txt" onChange={e => setArquivo(e.target.files?.[0] ?? null)} className="hidden" />
               </label>
+              )}
               {arquivo && (
                 <BotaoRunico variante="ouro" tamanho="sm" className="w-full" onClick={enviarAventura} disabled={enviando}>
                   {progresso === 'enviando' ? 'Enviando...' : progresso === 'processando' ? 'Processando...' : 'Processar'}

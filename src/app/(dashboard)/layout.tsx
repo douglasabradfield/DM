@@ -29,7 +29,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="flex h-screen overflow-hidden bg-[var(--bg)]">
-      <Sidebar isAdmin={profile?.is_admin === true} />
+      <Sidebar isAdmin={profile?.is_admin === true} plano={profile?.plano} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header
           titulo="Dungeon Desk"
@@ -39,7 +39,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {children}
         </main>
       </div>
-      <BottomNav isAdmin={profile?.is_admin === true} />
+      <BottomNav isAdmin={profile?.is_admin === true} plano={profile?.plano} />
     </div>
   )
 }

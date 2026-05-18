@@ -10,25 +10,31 @@ import type { Campanha } from '@/types/database'
 import {
   Swords, Users, Wand2, Package,
   Map, BookMarked, Bot, Shield,
-  ChevronRight, Skull, ChevronDown, Plus, X, ImageIcon, Compass, ShieldCheck, Scroll,
+  ChevronRight, Skull, ChevronDown, Plus, X, ImageIcon, Compass, ShieldCheck, Scroll, Lock,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { planoSuficiente, type PlanoId } from '@/lib/planos'
 
-const itensNav = [
+type ItemNav = {
+  href: string; icone: React.ElementType; label: string; cor: string
+  dmOnly?: boolean; planoMinimo?: PlanoId
+}
+
+const itensNav: ItemNav[] = [
   { href: '/batalha',       icone: Swords,     label: 'Batalha',       cor: '#e74c3c', dmOnly: true  },
   { href: '/personagens',   icone: Users,       label: 'Personagens',   cor: '#3498db'                },
   { href: '/bestiario',     icone: Skull,       label: 'Bestiário',     cor: '#9b59b6', dmOnly: true  },
   { href: '/magias',        icone: Wand2,       label: 'Magias',        cor: '#c39bd3'                },
   { href: '/itens',         icone: Package,     label: 'Itens',         cor: '#d4a843'                },
-  { href: '/aventura',      icone: Map,         label: 'Aventura',      cor: '#27ae60', dmOnly: true  },
-  { href: '/diario',        icone: BookMarked,  label: 'Diário',        cor: '#f39c12'                },
+  { href: '/aventura',      icone: Map,         label: 'Aventura',      cor: '#27ae60', dmOnly: true,  planoMinimo: 'solo'  },
+  { href: '/diario',        icone: BookMarked,  label: 'Diário',        cor: '#f39c12',                planoMinimo: 'heroi' },
   { href: '/imagens',       icone: ImageIcon,   label: 'Imagens',       cor: '#e91e63'                },
   { href: '/mapas',         icone: Compass,     label: 'Mapas',         cor: '#00bcd4'                },
-  { href: '/ia',            icone: Bot,         label: 'Assistente IA', cor: '#1abc9c', dmOnly: true  },
+  { href: '/ia',            icone: Bot,         label: 'Assistente IA', cor: '#1abc9c', dmOnly: true,  planoMinimo: 'solo'  },
   { href: '/campanhas',     icone: Scroll,      label: 'Campanhas',     cor: '#d4a843'                },
 ]
 
-export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
+export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string }) {
   const pathname = usePathname()
   const { campanhaAtiva, campanhas, setCampanhaAtiva, setCampanhas, carregarCampanhas, papelPorCampanha } = useCampanha()
   const [dropdownAberto, setDropdownAberto] = useState(false)
@@ -135,8 +141,22 @@ export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
 
         {/* Navegação */}
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-          {itensVisiveis.map(({ href, icone: Icone, label, cor }) => {
+          {itensVisiveis.map(({ href, icone: Icone, label, cor, planoMinimo }) => {
             const ativo = pathname === href || pathname.startsWith(href + '/')
+            const bloqueado = !!planoMinimo && !planoSuficiente(plano, planoMinimo)
+            if (bloqueado) {
+              return (
+                <div
+                  key={href}
+                  title={`Disponível no plano ${planoMinimo === 'heroi' ? 'Herói' : 'DM Solo'} ou superior`}
+                  className="flex items-center gap-3 px-3 py-2 rounded text-base font-crimson opacity-40 cursor-not-allowed select-none"
+                >
+                  <Icone className="w-4 h-4 flex-shrink-0 text-[var(--text3)]" />
+                  <span className="text-[var(--text3)]">{label}</span>
+                  <Lock className="w-3 h-3 ml-auto text-[var(--text3)]" />
+                </div>
+              )
+            }
             return (
               <Link
                 key={href}
@@ -266,7 +286,7 @@ export function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
   )
 }
 
-export function BottomNav({ isAdmin }: { isAdmin?: boolean }) {
+export function BottomNav({ isAdmin, plano: _plano }: { isAdmin?: boolean; plano?: string }) {
   const pathname = usePathname()
   const { campanhaAtiva, papelPorCampanha } = useCampanha()
 

@@ -10,6 +10,7 @@ import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoImportarFicha } from '@/components/personagem/BotaoImportarFicha'
 import { Plus, RefreshCw, Users, Download } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getPlano } from '@/lib/planos'
 
 type FiltroTipo = 'todos' | 'jogador' | 'npc' | 'monstro'
 type Ordenacao = 'nome' | 'nivel' | 'xp' | 'ca' | 'pv'
@@ -123,6 +124,7 @@ export default function PersonagensPage() {
   const [tipoNovo, setTipoNovo] = useState<'jogador' | 'npc' | 'monstro'>('jogador')
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
   const [ordenacao, setOrdenacao] = useState<Ordenacao>('nome')
+  const [plano, setPlano] = useState<string>('free')
 
   const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
 
@@ -132,8 +134,9 @@ export default function PersonagensPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       setUserId(user.id)
-      const { data: profile } = await supabase.from('profiles').select('nome').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('nome, plano').eq('id', user.id).single()
       if (profile?.nome) setNomeUsuario(profile.nome)
+      if (profile?.plano) setPlano(profile.plano)
     }
     getUser()
   }, [])
@@ -168,6 +171,11 @@ export default function PersonagensPage() {
   async function criarPersonagem(e: React.FormEvent) {
     e.preventDefault()
     if (!campanhaAtiva?.id) { toast.error('Selecione uma campanha primeiro'); return }
+    const limites = getPlano(plano).limites
+    if (limites.personagens !== 'ilimitado' && personagens.length >= limites.personagens) {
+      toast.error(`Limite de ${limites.personagens} personagens atingido no plano ${getPlano(plano).nome}. Faça upgrade para continuar.`)
+      return
+    }
     try {
       const supabase = createClient()
       const novoPersonagem: Record<string, unknown> = {
@@ -242,7 +250,17 @@ export default function PersonagensPage() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="font-cinzel text-[var(--gold)] text-xl font-bold">Personagens</h2>
-          <p className="text-[var(--text3)] text-sm font-crimson">{ordenados.length} de {personagens.length} personagens · {campanhaAtiva.nome}</p>
+          <p className="text-[var(--text3)] text-sm font-crimson">
+            {ordenados.length} de {personagens.length} personagens · {campanhaAtiva.nome}
+            {(() => {
+              const lim = getPlano(plano).limites.personagens
+              if (typeof lim === 'number') return (
+                <span className={`ml-2 text-xs font-cinzel ${personagens.length >= lim ? 'text-[var(--red2)]' : 'text-[var(--text3)]'}`}>
+                  ({personagens.length}/{lim})
+                </span>
+              )
+            })()}
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <BotaoRunico variante="secundario" tamanho="sm" onClick={carregar}>
