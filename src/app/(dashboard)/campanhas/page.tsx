@@ -589,24 +589,21 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
         .eq('user_id', perfil.id)
         .maybeSingle()
 
-      if (jaExiste && jaExiste.status !== 'removido') {
+      if (jaExiste && jaExiste.status === 'ativo') {
         toast(`@${username} já está na campanha!`, { icon: 'ℹ️' })
         return
       }
 
-      if (jaExiste && jaExiste.status === 'removido') {
-        await supabase.from('campanha_membros').update({ status: 'ativo', plano_efetivo: planoEfetivo }).eq('id', jaExiste.id)
-      } else {
-        const { error } = await supabase.from('campanha_membros').insert({
-          campanha_id: campanhaId,
-          user_id: perfil.id,
-          email: perfil.email || '',
-          papel: 'jogador',
-          plano_efetivo: planoEfetivo,
-          status: 'ativo',
-        })
-        if (error) throw error
-      }
+      const { error } = await supabase.from('campanha_membros').upsert({
+        campanha_id: campanhaId,
+        user_id: perfil.id,
+        email: perfil.email || '',
+        papel: 'jogador',
+        plano_efetivo: planoEfetivo,
+        status: 'ativo',
+        aceito_em: new Date().toISOString(),
+      }, { onConflict: 'campanha_id,user_id' })
+      if (error) throw error
 
       const { data: campanha } = await supabase.from('campanhas').select('nome').eq('id', campanhaId).single()
       await supabase.from('notificacoes').insert({
