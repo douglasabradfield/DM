@@ -6,10 +6,14 @@ import type { MagicItem, EquipmentWeapon, EquipmentArmor, EquipmentGear } from '
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoAdicionarPersonagem } from '@/components/ui/BotaoAdicionarPersonagem'
 import { BotaoReportar } from '@/components/ui/BotaoReportar'
-import { Search } from 'lucide-react'
+import { BloqueioPlano } from '@/components/ui/BloqueioPlano'
+import { Search, Plus, X, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getPlano } from '@/lib/planos'
+import toast from 'react-hot-toast'
 
 type AbaId = 'magicos' | 'armas' | 'armaduras' | 'equipamentos'
+type AbaTotal = AbaId | 'personalizado'
 
 const RARIDADE_PT: Record<string, string> = {
   common: 'Comum',
@@ -515,6 +519,198 @@ function AbaEquipamentos() {
   )
 }
 
+// ─── Aba Personalizado ───────────────────────────────────────────────────────
+
+interface ItemPersonalizado {
+  id: string
+  nome: string
+  dados: {
+    tipo_item: string
+    raridade: string
+    descricao: string
+    propriedades: string
+  }
+}
+
+function AbaPersonalizadoItens({ userId }: { userId: string }) {
+  const [lista, setLista] = useState<ItemPersonalizado[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [selecionado, setSelecionado] = useState<ItemPersonalizado | null>(null)
+  const [modalAberto, setModalAberto] = useState(false)
+  const [salvando, setSalvando] = useState(false)
+  const [form, setForm] = useState({
+    nome: '', tipo_item: 'Item Mágico', raridade: 'common', descricao: '', propriedades: '',
+  })
+
+  useEffect(() => {
+    async function carregar() {
+      setCarregando(true)
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('conteudo_personalizado')
+        .select('id, nome, dados')
+        .eq('user_id', userId)
+        .eq('tipo', 'item')
+        .order('nome')
+      setLista((data ?? []) as ItemPersonalizado[])
+      setCarregando(false)
+    }
+    carregar()
+  }, [userId])
+
+  async function salvar() {
+    if (!form.nome.trim()) return
+    setSalvando(true)
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase.from('conteudo_personalizado').insert({
+        user_id: userId,
+        tipo: 'item',
+        nome: form.nome.trim(),
+        dados: { tipo_item: form.tipo_item, raridade: form.raridade, descricao: form.descricao, propriedades: form.propriedades },
+        publico: false,
+      }).select('id, nome, dados').single()
+      if (error) throw error
+      setLista(l => [...l, data as ItemPersonalizado].sort((a, b) => a.nome.localeCompare(b.nome)))
+      setModalAberto(false)
+      setForm({ nome: '', tipo_item: 'Item Mágico', raridade: 'common', descricao: '', propriedades: '' })
+      toast.success(`Item "${form.nome.trim()}" criado!`)
+    } catch {
+      toast.error('Erro ao salvar item')
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function excluir(id: string, nome: string) {
+    if (!confirm(`Excluir o item "${nome}"?`)) return
+    const supabase = createClient()
+    await supabase.from('conteudo_personalizado').delete().eq('id', id)
+    setLista(l => l.filter(i => i.id !== id))
+    if (selecionado?.id === id) setSelecionado(null)
+    toast.success('Item excluído')
+  }
+
+  return (
+    <>
+      <ListaDetalhe
+        carregando={carregando}
+        carregandoDetalhe={false}
+        total={lista.length}
+        filtrados={lista.length}
+        filtros={
+          <button
+            onClick={() => setModalAberto(true)}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-[var(--accent2)]/10 border border-[var(--accent2)]/40 text-[var(--accent2)] rounded text-sm font-cinzel hover:bg-[var(--accent2)]/20 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> Criar Novo Item
+          </button>
+        }
+        busca=""
+        onBusca={() => {}}
+        placeholder="Buscar item personalizado..."
+        itens={lista.map(i => ({
+          id: i.id,
+          principal: i.nome,
+          secundario: `${i.dados.tipo_item} · ${RARIDADE_PT[i.dados.raridade] ?? i.dados.raridade}`,
+          badge: i.dados.raridade ? (
+            <span className={`text-[10px] px-1 border rounded font-cinzel ${COR_RARIDADE[i.dados.raridade] ?? ''}`}>
+              {RARIDADE_PT[i.dados.raridade] ?? i.dados.raridade}
+            </span>
+          ) : null,
+          ativo: selecionado?.id === i.id,
+          onClick: () => setSelecionado(i),
+        }))}
+        detalhe={
+          !selecionado ? null : (
+            <div className="max-w-2xl">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="font-cinzel text-[var(--gold)] text-2xl font-bold">{selecionado.nome}</h2>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="text-[var(--text2)] text-sm">{selecionado.dados.tipo_item}</span>
+                    {selecionado.dados.raridade && (
+                      <span className={`text-sm px-2 py-0.5 border rounded font-cinzel ${COR_RARIDADE[selecionado.dados.raridade] ?? ''}`}>
+                        {RARIDADE_PT[selecionado.dados.raridade] ?? selecionado.dados.raridade}
+                      </span>
+                    )}
+                    <span className="text-[10px] px-1.5 py-0.5 border border-[var(--accent2)] text-[var(--accent2)] rounded font-cinzel">✨ Personalizado</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => excluir(selecionado.id, selecionado.nome)}
+                  className="p-2 text-[var(--red2)] hover:bg-[var(--red2)]/10 rounded transition-colors"
+                  title="Excluir item"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+              {selecionado.dados.descricao && (
+                <PainelGrimorio titulo="Descrição" compacto className="mb-3">
+                  <p className="text-[var(--text2)] font-crimson whitespace-pre-wrap leading-relaxed">{selecionado.dados.descricao}</p>
+                </PainelGrimorio>
+              )}
+              {selecionado.dados.propriedades && (
+                <PainelGrimorio titulo="Propriedades" compacto>
+                  <p className="text-[var(--text2)] font-crimson whitespace-pre-wrap leading-relaxed">{selecionado.dados.propriedades}</p>
+                </PainelGrimorio>
+              )}
+            </div>
+          )
+        }
+        placeholderDetalhe="Selecione um item para ver detalhes"
+      />
+
+      {modalAberto && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[var(--bg3)] border border-[var(--border2)] rounded-lg w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
+              <h2 className="font-cinzel text-[var(--gold)] font-bold">✨ Novo Item</h2>
+              <button onClick={() => setModalAberto(false)} className="text-[var(--border)] hover:text-[var(--red2)]"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Nome do Item *</label>
+                <input type="text" value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Espada dos Reis..." className="w-full input-dd mt-1" autoFocus />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Tipo de Item</label>
+                  <input type="text" value={form.tipo_item} onChange={e => setForm(f => ({ ...f, tipo_item: e.target.value }))} className="w-full input-dd mt-1 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Raridade</label>
+                  <select value={form.raridade} onChange={e => setForm(f => ({ ...f, raridade: e.target.value }))} className="w-full input-dd mt-1 text-sm">
+                    {Object.entries(RARIDADE_PT).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Descrição</label>
+                <textarea value={form.descricao} onChange={e => setForm(f => ({ ...f, descricao: e.target.value }))} rows={3} className="w-full input-dd mt-1 text-sm resize-none" placeholder="Descrição do item..." />
+              </div>
+              <div>
+                <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Propriedades / Mecânicas</label>
+                <textarea value={form.propriedades} onChange={e => setForm(f => ({ ...f, propriedades: e.target.value }))} rows={3} className="w-full input-dd mt-1 text-sm resize-none" placeholder="Efeitos mecânicos, bônus, habilidades..." />
+              </div>
+              <div className="flex gap-2 justify-end pt-2">
+                <button onClick={() => setModalAberto(false)} className="px-3 py-1.5 text-xs font-cinzel text-[var(--text3)] border border-[var(--border)] rounded hover:border-[var(--border2)] transition-colors">Cancelar</button>
+                <button
+                  onClick={salvar}
+                  disabled={!form.nome.trim() || salvando}
+                  className="px-3 py-1.5 text-xs font-cinzel text-[var(--gold)] bg-[var(--surface)] border border-[#d4a843]/50 rounded hover:bg-[#d4a843]/10 transition-colors disabled:opacity-50"
+                >
+                  {salvando ? 'Salvando...' : 'Criar Item'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 // ─── Layout compartilhado Lista/Detalhe ──────────────────────────────────────
 
 interface ItemLista {
@@ -626,17 +822,36 @@ const ABAS: { id: AbaId; label: string }[] = [
 ]
 
 export function ItensCliente() {
-  const [aba, setAba] = useState<AbaId>('magicos')
+  const [aba, setAba] = useState<AbaTotal>('magicos')
+  const [userPlano, setUserPlano] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) { setUserPlano('free'); return }
+      setUserId(user.id)
+      supabase.from('profiles').select('plano').eq('id', user.id).single()
+        .then(({ data }) => setUserPlano(data?.plano ?? 'free'))
+    })
+  }, [])
+
+  if (userPlano === null) return null
+
+  const plano = getPlano(userPlano)
+
+  if (!plano.limites.magias_itens) {
+    return <BloqueioPlano recurso="Itens" planoNecessario="Herói" />
+  }
 
   return (
     <div className="flex flex-col h-full">
-      {/* Abas */}
-      <div className="bg-[var(--bg2)] border-b border-[var(--border)] flex">
+      <div className="bg-[var(--bg2)] border-b border-[var(--border)] flex overflow-x-auto">
         {ABAS.map(({ id, label }) => (
           <button
             key={id}
             onClick={() => setAba(id)}
-            className={`px-4 py-2 text-xs font-cinzel border-b-2 transition-colors ${
+            className={`px-4 py-2 text-xs font-cinzel border-b-2 transition-colors whitespace-nowrap ${
               aba === id
                 ? 'border-[var(--gold)] text-[var(--gold)]'
                 : 'border-transparent text-[var(--text3)] hover:text-[var(--text2)]'
@@ -645,13 +860,31 @@ export function ItensCliente() {
             {label}
           </button>
         ))}
+        {plano.limites.conteudo_personalizado && (
+          <button
+            onClick={() => setAba('personalizado')}
+            className={`px-4 py-2 text-xs font-cinzel border-b-2 transition-colors whitespace-nowrap ${
+              aba === 'personalizado'
+                ? 'border-[var(--accent2)] text-[var(--accent2)]'
+                : 'border-transparent text-[var(--text3)] hover:text-[var(--text2)]'
+            }`}
+          >
+            ✨ Personalizado
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-hidden">
-        {aba === 'magicos'      && <AbaMagicos />}
-        {aba === 'armas'        && <AbaArmas />}
-        {aba === 'armaduras'    && <AbaArmaduras />}
-        {aba === 'equipamentos' && <AbaEquipamentos />}
+        {aba === 'personalizado' && userId ? (
+          <AbaPersonalizadoItens userId={userId} />
+        ) : (
+          <>
+            {aba === 'magicos'      && <AbaMagicos />}
+            {aba === 'armas'        && <AbaArmas />}
+            {aba === 'armaduras'    && <AbaArmaduras />}
+            {aba === 'equipamentos' && <AbaEquipamentos />}
+          </>
+        )}
       </div>
     </div>
   )

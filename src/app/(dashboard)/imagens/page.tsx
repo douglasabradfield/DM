@@ -1,6 +1,18 @@
+import { createClient } from '@/lib/supabase/server'
+import { getPlano } from '@/lib/planos'
 import { GaleriaImagens } from '@/components/galeria/GaleriaImagens'
+import { BloqueioPlano } from '@/components/ui/BloqueioPlano'
 
-export default function ImagensPage() {
+export default async function ImagensPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: profile } = await supabase.from('profiles').select('plano').eq('id', user?.id ?? '').single()
+  const plano = getPlano(profile?.plano)
+
+  if (!plano.limites.imagens_mapas) {
+    return <BloqueioPlano recurso="Imagens" planoNecessario="Guilda" />
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--bg2)]">

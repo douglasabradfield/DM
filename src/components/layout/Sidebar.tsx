@@ -13,7 +13,7 @@ import {
   ChevronRight, Skull, ChevronDown, Plus, X, ImageIcon, Compass, ShieldCheck, Scroll, Lock,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { planoSuficiente, type PlanoId } from '@/lib/planos'
+import { planoSuficiente, getPlano, type PlanoId } from '@/lib/planos'
 
 type ItemNav = {
   href: string; icone: React.ElementType; label: string; cor: string
@@ -24,12 +24,12 @@ const itensNav: ItemNav[] = [
   { href: '/batalha',       icone: Swords,     label: 'Batalha',       cor: '#e74c3c', dmOnly: true  },
   { href: '/personagens',   icone: Users,       label: 'Personagens',   cor: '#3498db'                },
   { href: '/bestiario',     icone: Skull,       label: 'Bestiário',     cor: '#9b59b6', dmOnly: true  },
-  { href: '/magias',        icone: Wand2,       label: 'Magias',        cor: '#c39bd3'                },
-  { href: '/itens',         icone: Package,     label: 'Itens',         cor: '#d4a843'                },
+  { href: '/magias',        icone: Wand2,       label: 'Magias',        cor: '#c39bd3',                planoMinimo: 'solo'  },
+  { href: '/itens',         icone: Package,     label: 'Itens',         cor: '#d4a843',                planoMinimo: 'solo'  },
   { href: '/aventura',      icone: Map,         label: 'Aventura',      cor: '#27ae60', dmOnly: true,  planoMinimo: 'solo'  },
-  { href: '/diario',        icone: BookMarked,  label: 'Diário',        cor: '#f39c12',                planoMinimo: 'heroi' },
-  { href: '/imagens',       icone: ImageIcon,   label: 'Imagens',       cor: '#e91e63'                },
-  { href: '/mapas',         icone: Compass,     label: 'Mapas',         cor: '#00bcd4'                },
+  { href: '/diario',        icone: BookMarked,  label: 'Diário',        cor: '#f39c12',                planoMinimo: 'solo'  },
+  { href: '/imagens',       icone: ImageIcon,   label: 'Imagens',       cor: '#e91e63',                planoMinimo: 'guild_master' },
+  { href: '/mapas',         icone: Compass,     label: 'Mapas',         cor: '#00bcd4',                planoMinimo: 'guild_master' },
   { href: '/ia',            icone: Bot,         label: 'Assistente IA', cor: '#1abc9c', dmOnly: true,  planoMinimo: 'solo'  },
   { href: '/campanhas',     icone: Scroll,      label: 'Campanhas',     cor: '#d4a843'                },
 ]
@@ -148,7 +148,7 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
               return (
                 <div
                   key={href}
-                  title={`Disponível no plano ${planoMinimo === 'heroi' ? 'Herói' : 'DM Solo'} ou superior`}
+                  title={`Disponível no plano ${planoMinimo ? getPlano(planoMinimo).nome : ''} ou superior`}
                   className="flex items-center gap-3 px-3 py-2 rounded text-base font-crimson opacity-40 cursor-not-allowed select-none"
                 >
                   <Icone className="w-4 h-4 flex-shrink-0 text-[var(--text3)]" />

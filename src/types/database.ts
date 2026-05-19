@@ -2,7 +2,7 @@ export interface Profile {
   id: string
   email: string
   nome: string | null
-  plano: 'free' | 'heroi' | 'solo' | 'mesa_pro' | 'guild_master'
+  plano: 'free' | 'heroi' | 'solo' | 'mesa_pro' | 'guild_master' | 'dm_supremo'
   is_admin: boolean
   stripe_customer_id: string | null
   avatar_url: string | null
