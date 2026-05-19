@@ -28,6 +28,8 @@ export const useCampanha = create<EstadoCampanha>()(
       setCampanhas: (campanhas) => set({ campanhas }),
 
       carregarCampanhas: async () => {
+        set({ campanhas: [], campanhaAtiva: null, papelPorCampanha: {} })
+
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
@@ -76,6 +78,6 @@ export const useCampanha = create<EstadoCampanha>()(
         }
       },
     }),
-    { name: 'dungeon-desk-campanha' }
+    { name: 'dungeon-desk-campanha', partialize: () => ({}) }
   )
 )
