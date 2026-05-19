@@ -9,6 +9,11 @@ export function usePlanoEfetivo() {
   const [planoEfetivo, setPlanoEfetivo] = useState('free')
 
   useEffect(() => {
+    if (campanhaAtiva?.plano_efetivo) {
+      setPlanoEfetivo(campanhaAtiva.plano_efetivo)
+      return
+    }
+
     async function verificar() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
@@ -20,26 +25,10 @@ export function usePlanoEfetivo() {
         .eq('id', user.id)
         .single()
 
-      const planoProprio = perfil?.plano ?? 'free'
-
-      if (!campanhaAtiva?.id) { setPlanoEfetivo(planoProprio); return }
-
-      // DM usa sempre o plano próprio
-      if (campanhaAtiva.dm_id === user.id) { setPlanoEfetivo(planoProprio); return }
-
-      // Jogador convidado herda o plano_efetivo da campanha
-      const { data: membro } = await supabase
-        .from('campanha_membros')
-        .select('plano_efetivo, status')
-        .eq('campanha_id', campanhaAtiva.id)
-        .eq('user_id', user.id)
-        .eq('status', 'ativo')
-        .maybeSingle()
-
-      setPlanoEfetivo(membro?.plano_efetivo ?? planoProprio)
+      setPlanoEfetivo(perfil?.plano ?? 'free')
     }
     verificar()
-  }, [campanhaAtiva?.id])
+  }, [campanhaAtiva?.id, campanhaAtiva?.plano_efetivo])
 
   return planoEfetivo
 }

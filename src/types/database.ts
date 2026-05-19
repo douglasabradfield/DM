@@ -31,6 +31,7 @@ export interface Campanha {
   descricao: string | null
   sistema: string
   ativa: boolean
+  status?: string
   link_token: string | null
   criado_em: string
   resumo_final?: string | null
@@ -39,6 +40,8 @@ export interface Campanha {
   sessao_data?: string | null
   sessao_formato?: 'presencial' | 'online' | null
   sessao_local?: string | null
+  papel?: 'dm' | 'jogador'
+  plano_efetivo?: string
 }
 
 export interface Aventura {

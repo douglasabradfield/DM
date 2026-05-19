@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { planoSuficiente, getPlano, type PlanoId } from '@/lib/planos'
+import { usePlanoEfetivo } from '@/hooks/usePlanoEfetivo'
 
 type ItemNav = {
   href: string; icone: React.ElementType; label: string; cor: string
@@ -76,6 +77,7 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
     }
   }
 
+  const planoEfetivo = usePlanoEfetivo()
   const campanhasAtivas = campanhas.filter(c => c.ativa !== false)
   const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
   const itensVisiveis = itensNav.filter(item => !item.dmOnly || !ehJogador)
@@ -143,7 +145,7 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
           {itensVisiveis.map(({ href, icone: Icone, label, cor, planoMinimo }) => {
             const ativo = pathname === href || pathname.startsWith(href + '/')
-            const bloqueado = !!planoMinimo && !planoSuficiente(plano, planoMinimo)
+            const bloqueado = !!planoMinimo && !planoSuficiente(planoEfetivo, planoMinimo)
             if (bloqueado) {
               return (
                 <div
