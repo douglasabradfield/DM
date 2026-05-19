@@ -76,7 +76,11 @@ Se um campo não estiver na ficha, use valores padrão: strings vazias, números
   const texto = resposta.content[0].type === 'text' ? resposta.content[0].text : ''
 
   try {
-    const dados = JSON.parse(texto.trim())
+    const textoLimpo = texto
+      .replace(/```json/g, '')
+      .replace(/```/g, '')
+      .trim()
+    const dados = JSON.parse(textoLimpo)
     return NextResponse.json({ dados })
   } catch {
     return NextResponse.json({ erro: 'Não foi possível interpretar a ficha', raw: texto }, { status: 422 })
