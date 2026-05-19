@@ -34,7 +34,7 @@ export function PainelAdmin({ usuarios: inicial, adminAtualId }: PainelAdminProp
 
   const filtrados = usuarios.filter(u => {
     const q = busca.toLowerCase()
-    if (q && !u.email.toLowerCase().includes(q) && !(u.nome ?? '').toLowerCase().includes(q)) return false
+    if (q && !u.email.toLowerCase().includes(q) && !(u.nome ?? '').toLowerCase().includes(q) && !(u.username ?? '').toLowerCase().includes(q)) return false
     if (filtroPlan && u.plano !== filtroPlan) return false
     return true
   })
@@ -169,6 +169,7 @@ export function PainelAdmin({ usuarios: inicial, adminAtualId }: PainelAdminProp
             <thead className="bg-[var(--bg3)] border-b border-[var(--border)]">
               <tr className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider">
                 <th className="px-4 py-2.5 text-left">Nome</th>
+                <th className="px-4 py-2.5 text-left">@Username</th>
                 <th className="px-4 py-2.5 text-left">Email</th>
                 <th className="px-4 py-2.5 text-center">Plano</th>
                 <th className="px-4 py-2.5 text-center">Assinatura</th>
@@ -180,7 +181,7 @@ export function PainelAdmin({ usuarios: inicial, adminAtualId }: PainelAdminProp
             <tbody className="divide-y divide-[var(--bg3)]">
               {filtrados.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-[var(--border)] font-crimson">
+                  <td colSpan={8} className="px-4 py-8 text-center text-[var(--border)] font-crimson">
                     Nenhum usuário encontrado
                   </td>
                 </tr>
@@ -226,6 +227,14 @@ function LinhaUsuario({
             </span>
           )}
         </div>
+      </td>
+
+      {/* Username */}
+      <td className="px-4 py-2.5">
+        {u.username
+          ? <span className="text-[var(--accent)] text-sm font-cinzel">@{u.username}</span>
+          : <span className="text-[var(--text3)] text-xs italic">sem username</span>
+        }
       </td>
 
       {/* Email */}

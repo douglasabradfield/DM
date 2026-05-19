@@ -91,7 +91,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     pontos_experiencia: p.pontos_experiencia ?? 0,
     inspiracao: typeof p.inspiracao === 'number' ? p.inspiracao : 0,
     bonus_proficiencia: p.bonus_proficiencia ?? 2,
-    moedas: p.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, pl: 0, custom: 0 },
+    moedas: p.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, platina: 0, custom: 0 },
   })
   const [salvando, setSalvando] = useState(false)
   const [alterado, setAlterado] = useState(false)
@@ -122,6 +122,12 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     Array.isArray(p.inventario) ? (p.inventario as ItemInventario[]) : []
   )
   const [itemPopup, setItemPopup] = useState<ItemInventario | null>(null)
+  const [buscaInventario, setBuscaInventario] = useState('')
+  const [modalCompendio, setModalCompendio] = useState(false)
+  const [buscaCompendio, setBuscaCompendio] = useState('')
+  const [abaCompendio, setAbaCompendio] = useState<'magicos' | 'armas' | 'armaduras' | 'gear'>('gear')
+  const [itensCompendio, setItensCompendio] = useState<Record<string, unknown>[]>([])
+  const [buscandoCompendio, setBuscandoCompendio] = useState(false)
 
   function alterarQuantidade(idx: number, delta: number) {
     setInventario(prev => prev
@@ -134,6 +140,67 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   function removerItem(idx: number) {
     setInventario(prev => prev.filter((_, i) => i !== idx))
     setAlterado(true)
+  }
+
+  const buscarCompendio = useCallback(async (termo: string, aba: string) => {
+    if (!termo.trim()) { setItensCompendio([]); return }
+    setBuscandoCompendio(true)
+    try {
+      const tabelas: Record<string, { tabela: string; campos: string }> = {
+        magicos:   { tabela: 'magic_items',      campos: 'slug,name_pt,name_en,category,rarity,description_pt' },
+        armas:     { tabela: 'equipment_weapons', campos: 'slug,name_pt,name_en,damage_dice,damage_type_pt,properties_pt,weight_lb,cost_cp' },
+        armaduras: { tabela: 'equipment_armor',   campos: 'slug,name_pt,name_en,base_ac_formula_pt,stealth_disadvantage,strength_requirement,weight_lb,cost_cp,category_pt' },
+        gear:      { tabela: 'equipment_gear',    campos: 'slug,name_pt,name_en,category_pt,cost_gp,weight_lb,description_pt' },
+      }
+      const { tabela, campos } = tabelas[aba] ?? tabelas.gear
+      const supabase = createClient()
+      const { data } = await supabase
+        .from(tabela)
+        .select(campos)
+        .or(`name_pt.ilike.%${termo}%,name_en.ilike.%${termo}%`)
+        .limit(10)
+      setItensCompendio((data ?? []) as unknown as Record<string, unknown>[])
+    } finally {
+      setBuscandoCompendio(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const t = setTimeout(() => buscarCompendio(buscaCompendio, abaCompendio), 300)
+    return () => clearTimeout(t)
+  }, [buscaCompendio, abaCompendio, buscarCompendio])
+
+  function adicionarDoCompendio(item: Record<string, unknown>) {
+    const slug = item.slug as string
+    const namePt = item.name_pt as string
+
+    let novoItem: ItemInventario = { id: slug, nome: namePt, quantidade: 1, tipo: null, raridade: null, descricao: null }
+
+    if (abaCompendio === 'magicos') {
+      novoItem = { ...novoItem, tipo: 'magico', raridade: item.rarity as string, descricao: (item.description_pt as string) || '' }
+    } else if (abaCompendio === 'armas') {
+      novoItem = { ...novoItem, tipo: 'arma', descricao: `${item.damage_dice} ${item.damage_type_pt}${item.properties_pt ? ' · ' + item.properties_pt : ''}` }
+    } else if (abaCompendio === 'armaduras') {
+      novoItem = { ...novoItem, tipo: 'armadura', descricao: `${item.base_ac_formula_pt}${item.stealth_disadvantage ? ' · Desvantagem em Furtividade' : ''}${item.strength_requirement ? ` · Força mín. ${item.strength_requirement}` : ''}` }
+    } else {
+      novoItem = { ...novoItem, tipo: 'equipamento', descricao: (item.description_pt as string) || '' }
+    }
+
+    setInventario(prev => {
+      const idx = prev.findIndex(i => i.id === slug)
+      if (idx >= 0) {
+        const novo = [...prev]
+        novo[idx] = { ...novo[idx], quantidade: novo[idx].quantidade + 1 }
+        toast.success(`+1 ${namePt}`)
+        return novo
+      }
+      toast.success(`${namePt} adicionado!`)
+      return [...prev, novoItem]
+    })
+    setAlterado(true)
+    setModalCompendio(false)
+    setBuscaCompendio('')
+    setItensCompendio([])
   }
 
   // Magias
@@ -170,7 +237,14 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         pv_atual: parseInt(String(dados.pv_atual)) || 0,
         pv_temporarios: parseInt(String(dados.pv_temporarios)) || 0,
         imagem_url: dados.imagem_url ?? null,
-        moedas: dados.moedas ?? null,
+        moedas: dados.moedas ? {
+          pc:      Number(dados.moedas.pc)      || 0,
+          pp:      Number(dados.moedas.pp)      || 0,
+          pe:      Number(dados.moedas.pe)      || 0,
+          po:      Number(dados.moedas.po)      || 0,
+          platina: Number(dados.moedas.platina ?? dados.moedas.pl ?? 0) || 0,
+          custom:  Number(dados.moedas.custom)  || 0,
+        } : null,
         atualizado_em: new Date().toISOString(),
       }).eq('id', p.id)
       if (error) {
@@ -761,49 +835,78 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               <PainelGrimorio titulo="Moedas" compacto>
                 <div className="grid grid-cols-3 gap-1 text-center">
                   {([
-                    { key: 'pc', label: 'PC', cor: 'text-[#adb5bd]' },
-                    { key: 'pp', label: 'PP', cor: 'text-[#c0c0c0]' },
-                    { key: 'po', label: 'PO', cor: 'text-[var(--gold)]' },
-                    { key: 'pe', label: 'PE', cor: 'text-[#3498db]' },
-                    { key: 'pl', label: 'PL', cor: 'text-[var(--accent2)]' },
+                    { key: 'pc',      label: 'PC', cor: 'text-[#cd7f32]' },
+                    { key: 'pp',      label: 'PP', cor: 'text-[#c0c0c0]' },
+                    { key: 'po',      label: 'PO', cor: 'text-[var(--gold)]' },
+                    { key: 'pe',      label: 'PE', cor: 'text-[#50c878]' },
+                    { key: 'platina', label: 'PL', cor: 'text-[var(--accent2)]' },
                   ] as const).map(({ key, label, cor }) => (
                     <div key={key}>
                       <label className={`${cor} text-[9px] font-cinzel uppercase`}>{label}</label>
-                      <InputNumerico value={dados.moedas?.[key] ?? 0} onChange={val => atualizar('moedas', { ...(dados.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, pl: 0, custom: 0 }), [key]: val })} className="w-full input-dd text-center text-xs mt-0.5" />
+                      <InputNumerico
+                        value={(dados.moedas as unknown as Record<string, number>)?.[key] ?? 0}
+                        onChange={val => atualizar('moedas', { ...(dados.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, platina: 0, custom: 0 }), [key]: val })}
+                        className="w-full input-dd text-center text-xs mt-0.5"
+                      />
                     </div>
                   ))}
                   <div>
                     <label className="text-[var(--accent)] text-[9px] font-cinzel uppercase">{moedaCustomNome}</label>
-                    <InputNumerico value={dados.moedas?.custom ?? 0} onChange={val => atualizar('moedas', { ...(dados.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, pl: 0, custom: 0 }), custom: val })} className="w-full input-dd text-center text-xs mt-0.5" />
+                    <InputNumerico value={dados.moedas?.custom ?? 0} onChange={val => atualizar('moedas', { ...(dados.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, platina: 0, custom: 0 }), custom: val })} className="w-full input-dd text-center text-xs mt-0.5" />
                   </div>
                 </div>
               </PainelGrimorio>
 
               {/* Inventário */}
               <PainelGrimorio titulo="Inventário" compacto>
-                {inventario.length === 0 ? (
-                  <p className="text-[var(--border)] text-sm font-crimson text-center py-2">Inventário vazio</p>
+                <div className="relative mb-2">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text3)] text-xs pointer-events-none">
+                    <Search className="w-3 h-3" />
+                  </span>
+                  <input
+                    type="text"
+                    value={buscaInventario}
+                    onChange={e => setBuscaInventario(e.target.value)}
+                    placeholder="Buscar no inventário..."
+                    className="input-dd w-full pl-7 text-xs py-1.5"
+                  />
+                </div>
+                {inventario.filter(i => !buscaInventario || i.nome.toLowerCase().includes(buscaInventario.toLowerCase())).length === 0 ? (
+                  <p className="text-[var(--border)] text-sm font-crimson text-center py-2">
+                    {buscaInventario ? 'Nenhum item encontrado' : 'Inventário vazio'}
+                  </p>
                 ) : (
                   <div className="space-y-1">
-                    {inventario.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-2 px-2 py-1 bg-[var(--bg3)] rounded">
-                        <button onClick={() => setItemPopup(item)} className="flex-1 text-left min-w-0">
-                          <span className="text-[var(--text)] text-sm font-crimson truncate block">{item.nome}</span>
-                          {item.raridade && <span className="text-[var(--text3)] text-[10px] font-cinzel">{item.raridade}</span>}
-                        </button>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button onClick={() => alterarQuantidade(idx, -1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">−</button>
-                          <span className="text-[var(--text)] text-xs w-5 text-center font-cinzel">{item.quantidade}</span>
-                          <button onClick={() => alterarQuantidade(idx, 1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">+</button>
+                    {inventario.map((item, idx) => {
+                      if (buscaInventario && !item.nome.toLowerCase().includes(buscaInventario.toLowerCase())) return null
+                      return (
+                        <div key={idx} className="flex items-center gap-2 px-2 py-1 bg-[var(--bg3)] rounded">
+                          <button onClick={() => setItemPopup(item)} className="flex-1 text-left min-w-0">
+                            <span className="text-[var(--text)] text-sm font-crimson truncate block">{item.nome}</span>
+                            {item.raridade && <span className="text-[var(--text3)] text-[10px] font-cinzel">{item.raridade}</span>}
+                          </button>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button onClick={() => alterarQuantidade(idx, -1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">−</button>
+                            <span className="text-[var(--text)] text-xs w-5 text-center font-cinzel">{item.quantidade}</span>
+                            <button onClick={() => alterarQuantidade(idx, 1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">+</button>
+                          </div>
+                          <button onClick={() => removerItem(idx)} className="text-[var(--border)] hover:text-[var(--red2)] transition-colors flex-shrink-0">
+                            <X className="w-3 h-3" />
+                          </button>
                         </div>
-                        <button onClick={() => removerItem(idx)} className="text-[var(--border)] hover:text-[var(--red2)] transition-colors flex-shrink-0">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
-                <p className="text-[var(--text3)] text-[10px] font-cinzel mt-2 text-right">{inventario.length} ite{inventario.length === 1 ? 'm' : 'ns'}</p>
+                <div className="flex items-center justify-between mt-2">
+                  <button
+                    onClick={() => setModalCompendio(true)}
+                    className="text-[var(--accent)] text-[10px] hover:opacity-80 font-cinzel flex items-center gap-1"
+                  >
+                    + Compêndio
+                  </button>
+                  <p className="text-[var(--text3)] text-[10px] font-cinzel">{inventario.length} ite{inventario.length === 1 ? 'm' : 'ns'}</p>
+                </div>
               </PainelGrimorio>
 
             </div>
@@ -1130,6 +1233,108 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                   <p className="text-[var(--text2)] text-sm leading-relaxed whitespace-pre-wrap font-crimson">{magiaPopup.description_pt}</p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {modalCompendio && createPortal(
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70"
+          onClick={() => setModalCompendio(false)}
+        >
+          <div
+            className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-4 border-b border-[var(--border)] flex justify-between items-center">
+              <h3 className="font-cinzel text-[var(--gold)] font-bold">Adicionar do Compêndio</h3>
+              <button onClick={() => setModalCompendio(false)} className="text-[var(--text3)] hover:text-[var(--text)]">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex border-b border-[var(--border)]">
+              {([
+                { id: 'gear',      label: '🎒 Geral' },
+                { id: 'armas',     label: '⚔️ Armas' },
+                { id: 'armaduras', label: '🛡️ Armadura' },
+                { id: 'magicos',   label: '✨ Mágicos' },
+              ] as const).map(aba => (
+                <button
+                  key={aba.id}
+                  onClick={() => { setAbaCompendio(aba.id); setItensCompendio([]) }}
+                  className={`flex-1 py-2.5 text-xs font-cinzel transition-colors ${abaCompendio === aba.id ? 'text-[var(--gold)] border-b-2 border-[var(--gold)]' : 'text-[var(--text3)]'}`}
+                >
+                  {aba.label}
+                </button>
+              ))}
+            </div>
+            <div className="p-3 border-b border-[var(--border)]">
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text3)] pointer-events-none">
+                  <Search className="w-4 h-4" />
+                </span>
+                <input
+                  type="text"
+                  value={buscaCompendio}
+                  onChange={e => setBuscaCompendio(e.target.value)}
+                  placeholder="Buscar item..."
+                  className="input-dd w-full pl-9"
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              {buscandoCompendio && (
+                <p className="text-[var(--text3)] text-sm text-center py-4 animate-pulse">Buscando...</p>
+              )}
+              {!buscandoCompendio && buscaCompendio && itensCompendio.length === 0 && (
+                <p className="text-[var(--text3)] text-sm text-center py-4">Nenhum item encontrado</p>
+              )}
+              {!buscaCompendio && (
+                <p className="text-[var(--text3)] text-xs text-center py-4 italic">Digite para buscar...</p>
+              )}
+              {itensCompendio.map(item => (
+                <button
+                  key={item.slug as string}
+                  onClick={() => adicionarDoCompendio(item)}
+                  className="w-full text-left p-3 mb-1 border border-[var(--border)] rounded-lg hover:border-[var(--gold)] hover:bg-[var(--surface)] transition-all"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-cinzel text-[var(--text)] text-sm font-bold">{item.name_pt as string}</p>
+                      <p className="text-[var(--text3)] text-[10px] italic">{item.name_en as string}</p>
+                      {abaCompendio === 'armas' && (
+                        <p className="text-[var(--text3)] text-xs mt-0.5">
+                          {item.damage_dice as string} {item.damage_type_pt as string}
+                          {item.properties_pt ? ` · ${item.properties_pt as string}` : ''}
+                        </p>
+                      )}
+                      {abaCompendio === 'armaduras' && (
+                        <p className="text-[var(--text3)] text-xs mt-0.5">
+                          {item.base_ac_formula_pt as string}
+                          {item.stealth_disadvantage ? ' · ⚠️ Furtividade' : ''}
+                        </p>
+                      )}
+                      {abaCompendio === 'magicos' && (
+                        <p className={`text-xs mt-0.5 ${
+                          item.rarity === 'legendary' ? 'text-orange-400' :
+                          item.rarity === 'very_rare' ? 'text-purple-400' :
+                          item.rarity === 'rare'      ? 'text-blue-400' :
+                          item.rarity === 'uncommon'  ? 'text-green-400' : 'text-[var(--text3)]'
+                        }`}>
+                          {item.rarity === 'legendary' ? 'Lendário' : item.rarity === 'very_rare' ? 'Muito Raro' : item.rarity === 'rare' ? 'Raro' : item.rarity === 'uncommon' ? 'Incomum' : 'Comum'}
+                        </p>
+                      )}
+                      {abaCompendio === 'gear' && !!item.description_pt && (
+                        <p className="text-[var(--text3)] text-[10px] mt-0.5 line-clamp-1">{item.description_pt as string}</p>
+                      )}
+                    </div>
+                    <span className="text-[var(--accent)] text-lg flex-shrink-0">+</span>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>,

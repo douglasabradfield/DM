@@ -7,6 +7,7 @@ export interface UsuarioAdmin {
   id: string
   email: string
   nome: string | null
+  username: string | null
   plano: 'free' | 'heroi' | 'solo' | 'mesa_pro' | 'guild_master' | 'dm_supremo'
   is_admin: boolean
   criado_em: string
@@ -27,7 +28,7 @@ export default async function AdminPage() {
   const [perfisRes, assinaturasRes] = await Promise.all([
     admin
       .from('profiles')
-      .select('id, email, nome, plano, is_admin, criado_em')
+      .select('id, email, nome, username, plano, is_admin, criado_em')
       .order('criado_em', { ascending: false }),
     admin
       .from('assinaturas')
