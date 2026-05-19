@@ -213,10 +213,13 @@ export interface Moedas {
 export interface Personagem {
   id: string
   campanha_id: string
+  user_id?: string | null
   jogador_nome: string
   jogador_email: string | null
   nome: string
   tipo_personagem: 'jogador' | 'npc' | 'monstro' | null
+  visibilidade?: string | null
+  visibilidade_jogador_id?: string | null
   imagem_url: string | null
   classe: string | null
   nivel: number

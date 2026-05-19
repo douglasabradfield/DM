@@ -17,6 +17,12 @@ import { usePlanoEfetivo } from '@/hooks/usePlanoEfetivo'
 type FiltroTipo = 'todos' | 'jogador' | 'npc' | 'monstro'
 type Ordenacao = 'nome' | 'nivel' | 'xp' | 'ca' | 'pv'
 
+interface JogadorCampanha {
+  id: string
+  nome: string
+  username?: string | null
+}
+
 function estiloTipo(tipo: string | null) {
   switch (tipo) {
     case 'npc':     return {
@@ -49,9 +55,15 @@ interface CardPersonagemProps {
   onDeletar: () => void
   inativo?: boolean
   onReativar?: () => void
+  jogadoresCampanha?: JogadorCampanha[]
+  onAlterarVisibilidade?: (id: string, visibilidade: string) => void
+  onAlterarVisibilidadeJogador?: (id: string, jogadorId: string) => void
 }
 
-function CardPersonagem({ p, isDm, menuAberto, onToggleMenu, onInativar, onDeletar, inativo, onReativar }: CardPersonagemProps) {
+function CardPersonagem({
+  p, isDm, menuAberto, onToggleMenu, onInativar, onDeletar,
+  inativo, onReativar, jogadoresCampanha, onAlterarVisibilidade, onAlterarVisibilidadeJogador,
+}: CardPersonagemProps) {
   const estilo = estiloTipo(p.tipo_personagem)
   const pct = p.pv_maximo > 0 ? (p.pv_atual / p.pv_maximo) * 100 : 0
   const corPV = pct > 50 ? 'var(--green2)' : pct > 25 ? '#f59e0b' : 'var(--red2)'
@@ -125,6 +137,42 @@ function CardPersonagem({ p, isDm, menuAberto, onToggleMenu, onInativar, onDelet
                 </button>
               )}
             </div>
+
+            {isDm && !inativo && onAlterarVisibilidade && (
+              <div
+                className="flex items-center gap-1 mt-2 flex-wrap"
+                onClick={e => { e.preventDefault(); e.stopPropagation() }}
+              >
+                <span className="text-[9px] text-[var(--text3)] font-cinzel">Visível:</span>
+                {[
+                  { value: 'privado', label: '🔒 DM' },
+                  { value: 'grupo',   label: '👥 Grupo' },
+                ].map(op => (
+                  <button
+                    key={op.value}
+                    onClick={() => onAlterarVisibilidade(p.id, op.value)}
+                    className={`px-2 py-0.5 rounded text-[9px] font-cinzel border transition-all ${
+                      (p.visibilidade ?? 'grupo') === op.value
+                        ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                        : 'border-[var(--border)] text-[var(--text3)]'
+                    }`}
+                  >
+                    {op.label}
+                  </button>
+                ))}
+                <select
+                  value={p.visibilidade === 'jogador_especifico' ? (p.visibilidade_jogador_id || '') : ''}
+                  onChange={e => { if (e.target.value) onAlterarVisibilidadeJogador?.(p.id, e.target.value) }}
+                  onClick={e => e.stopPropagation()}
+                  className={`input-dd text-[9px] py-0.5 ${p.visibilidade === 'jogador_especifico' ? 'border-[var(--accent)]' : ''}`}
+                >
+                  <option value="">👤 Jogador...</option>
+                  {jogadoresCampanha?.map(j => (
+                    <option key={j.id} value={j.id}>{j.nome}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
       </Link>
@@ -163,6 +211,7 @@ export default function PersonagensPage() {
   const { campanhaAtiva, papelPorCampanha } = useCampanha()
   const [personagens, setPersonagens] = useState<Personagem[]>([])
   const [personagensInativos, setPersonagensInativos] = useState<Personagem[]>([])
+  const [jogadoresCampanha, setJogadoresCampanha] = useState<JogadorCampanha[]>([])
   const [carregando, setCarregando] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
   const [nomeUsuario, setNomeUsuario] = useState('')
@@ -215,6 +264,18 @@ export default function PersonagensPage() {
         .eq('ativo', true)
         .order('nome')
       setPersonagens((data ?? []) as Personagem[])
+
+      const { data: membrosData } = await supabase
+        .from('campanha_membros')
+        .select('user_id, profiles:user_id(id, nome, username)')
+        .eq('campanha_id', campanhaAtiva.id)
+        .eq('status', 'ativo')
+
+      const jogadores: JogadorCampanha[] = (membrosData ?? []).map(m => {
+        const prof = m.profiles as unknown as { id: string; nome: string; username?: string | null }
+        return { id: prof?.id || (m.user_id as string), nome: prof?.nome || 'Jogador', username: prof?.username }
+      })
+      setJogadoresCampanha(jogadores)
     } finally {
       setCarregando(false)
     }
@@ -302,6 +363,18 @@ export default function PersonagensPage() {
     carregar()
   }
 
+  async function alterarVisibilidade(personagemId: string, visibilidade: string) {
+    const supabase = createClient()
+    await supabase.from('personagens').update({ visibilidade, visibilidade_jogador_id: null }).eq('id', personagemId)
+    setPersonagens(prev => prev.map(p => p.id === personagemId ? { ...p, visibilidade, visibilidade_jogador_id: null } : p))
+  }
+
+  async function alterarVisibilidadeJogador(personagemId: string, jogadorId: string) {
+    const supabase = createClient()
+    await supabase.from('personagens').update({ visibilidade: 'jogador_especifico', visibilidade_jogador_id: jogadorId }).eq('id', personagemId)
+    setPersonagens(prev => prev.map(p => p.id === personagemId ? { ...p, visibilidade: 'jogador_especifico', visibilidade_jogador_id: jogadorId } : p))
+  }
+
   const filtrados = personagens.filter(p => {
     if (filtroTipo === 'todos') return true
     return (p.tipo_personagem || 'jogador') === filtroTipo
@@ -316,6 +389,14 @@ export default function PersonagensPage() {
       default: return a.nome.localeCompare(b.nome, 'pt-BR')
     }
   })
+
+  const personagensVisiveis = !ehJogador
+    ? ordenados
+    : ordenados.filter(p =>
+        (p.visibilidade ?? 'grupo') === 'grupo' ||
+        p.user_id === userId ||
+        (p.visibilidade === 'jogador_especifico' && p.visibilidade_jogador_id === userId)
+      )
 
   const labelFiltro: Record<FiltroTipo, string> = {
     todos: 'Todos',
@@ -344,7 +425,7 @@ export default function PersonagensPage() {
         <div>
           <h2 className="font-cinzel text-[var(--gold)] text-xl font-bold">Personagens</h2>
           <p className="text-[var(--text3)] text-sm font-crimson">
-            {ordenados.length} de {personagens.length} personagens · {campanhaAtiva.nome}
+            {personagensVisiveis.length} de {personagens.length} personagens · {campanhaAtiva.nome}
             {(() => {
               const lim = getPlano(plano).limites.personagens
               if (typeof lim === 'number') return (
@@ -468,7 +549,7 @@ export default function PersonagensPage() {
             <div key={i} className="h-52 bg-[var(--bg2)] border border-[var(--border)] rounded-xl animate-pulse" />
           ))}
         </div>
-      ) : ordenados.length === 0 ? (
+      ) : personagensVisiveis.length === 0 ? (
         <div className="text-center py-12">
           <p className="font-cinzel text-[var(--border)] text-lg mb-2">
             {filtroTipo !== 'todos' ? `Nenhum ${labelFiltro[filtroTipo]}` : 'Nenhum aventureiro'}
@@ -480,7 +561,7 @@ export default function PersonagensPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-          {ordenados.map(p => (
+          {personagensVisiveis.map(p => (
             <CardPersonagem
               key={p.id}
               p={p}
@@ -489,6 +570,9 @@ export default function PersonagensPage() {
               onToggleMenu={() => setMenuAberto(menuAberto === p.id ? null : p.id)}
               onInativar={() => inativarPersonagem(p.id)}
               onDeletar={() => { setMenuAberto(null); setConfirmarDeletar(p.id) }}
+              jogadoresCampanha={jogadoresCampanha}
+              onAlterarVisibilidade={alterarVisibilidade}
+              onAlterarVisibilidadeJogador={alterarVisibilidadeJogador}
             />
           ))}
         </div>
