@@ -33,7 +33,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header
           titulo="Dungeon Desk"
-          usuario={profile ? { nome: profile.nome, email: profile.email } : { nome: null, email: user.email ?? '' }}
+          usuario={profile ? { nome: profile.nome, email: profile.email, username: profile.username } : { nome: null, email: user.email ?? '' }}
         />
         <main className="flex-1 overflow-auto pb-16 md:pb-0">
           {children}

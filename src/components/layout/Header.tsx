@@ -10,7 +10,7 @@ import { useState, useEffect } from 'react'
 
 interface HeaderProps {
   titulo: string
-  usuario?: { nome: string | null; email: string }
+  usuario?: { nome: string | null; email: string; username?: string | null }
 }
 
 export function Header({ titulo, usuario }: HeaderProps) {
@@ -219,6 +219,9 @@ export function Header({ titulo, usuario }: HeaderProps) {
               <div className="absolute right-0 top-full mt-1 bg-[var(--surface)] border border-[var(--border)] rounded shadow-lg z-50 min-w-44">
                 <div className="px-3 py-2 border-b border-[var(--border)]">
                   <p className="text-xs font-medium text-[var(--text2)]">{usuario.nome || usuario.email}</p>
+                  {usuario.username && (
+                    <p className="text-xs text-[var(--gold)] font-cinzel">@{usuario.username}</p>
+                  )}
                   <p className="text-xs text-[var(--text3)] truncate">{usuario.email}</p>
                 </div>
                 <Link

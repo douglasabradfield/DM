@@ -542,50 +542,93 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
 }
 
 function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; userPlano: string }) {
-  const [membros, setMembros] = useState<Array<{
+  type Membro = {
     id: string; email: string; status: string; plano_efetivo: string; criado_em: string
-  }>>([])
-  const [emailConvite, setEmailConvite] = useState('')
+    user_id: string | null
+    profiles: { username: string | null; nome: string | null } | null
+  }
+  const [membros, setMembros] = useState<Membro[]>([])
+  const [usernameInput, setUsernameInput] = useState('')
   const [linkConvite, setLinkConvite] = useState('')
-  const [convidando, setConvidando] = useState(false)
+  const [adicionando, setAdicionando] = useState(false)
   const [gerandoLink, setGerandoLink] = useState(false)
+
+  const planoEfetivo = ['guild_master', 'dm_supremo'].includes(userPlano) ? 'guild_master' : 'mesa_pro'
 
   const carregar = useCallback(async () => {
     const supabase = createClient()
     const { data } = await supabase
       .from('campanha_membros')
-      .select('id, email, status, plano_efetivo, criado_em')
+      .select('id, email, status, plano_efetivo, criado_em, user_id, profiles:user_id(username, nome)')
       .eq('campanha_id', campanhaId)
       .in('status', ['convidado', 'ativo'])
       .order('criado_em', { ascending: false })
-    setMembros(data ?? [])
+    setMembros((data ?? []) as unknown as Membro[])
   }, [campanhaId])
 
   useEffect(() => { carregar() }, [carregar])
 
-  async function convidarPorEmail() {
-    if (!emailConvite.trim()) return
-    setConvidando(true)
+  async function adicionarPorUsername() {
+    const username = usernameInput.trim().toLowerCase().replace('@', '')
+    if (!username) return
+    setAdicionando(true)
     try {
-      const res = await fetch('/api/campanha/convidar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campanhaId, email: emailConvite.trim() }),
-      })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.erro)
-      if (d.jaTemConta) {
-        toast.success('Jogador adicionado! Notificação enviada.')
-      } else {
-        toast.success('Convite gerado! Compartilhe o link com o jogador.')
-        setLinkConvite(d.link)
+      const supabase = createClient()
+
+      const { data: perfil } = await supabase
+        .from('profiles')
+        .select('id, username, nome, email')
+        .eq('username', username)
+        .maybeSingle()
+
+      if (!perfil) {
+        toast.error(`Usuário @${username} não encontrado. Verifique o username.`)
+        return
       }
-      setEmailConvite('')
+
+      const { data: jaExiste } = await supabase
+        .from('campanha_membros')
+        .select('id, status')
+        .eq('campanha_id', campanhaId)
+        .eq('user_id', perfil.id)
+        .maybeSingle()
+
+      if (jaExiste && jaExiste.status !== 'removido') {
+        toast(`@${username} já está na campanha!`, { icon: 'ℹ️' })
+        return
+      }
+
+      if (jaExiste && jaExiste.status === 'removido') {
+        await supabase.from('campanha_membros').update({ status: 'ativo', plano_efetivo: planoEfetivo }).eq('id', jaExiste.id)
+      } else {
+        const { error } = await supabase.from('campanha_membros').insert({
+          campanha_id: campanhaId,
+          user_id: perfil.id,
+          email: perfil.email || '',
+          papel: 'jogador',
+          plano_efetivo: planoEfetivo,
+          status: 'ativo',
+        })
+        if (error) throw error
+      }
+
+      const { data: campanha } = await supabase.from('campanhas').select('nome').eq('id', campanhaId).single()
+      await supabase.from('notificacoes').insert({
+        user_id: perfil.id,
+        tipo: 'adicionado_campanha',
+        titulo: '🎲 Você foi adicionado a uma campanha!',
+        mensagem: `Você foi adicionado à campanha "${campanha?.nome}". Acesse agora!`,
+        link: '/batalha',
+        lida: false,
+      })
+
+      toast.success(`@${username} adicionado à campanha!`)
+      setUsernameInput('')
       await carregar()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao convidar')
+      toast.error(err instanceof Error ? err.message : 'Erro ao adicionar jogador')
     } finally {
-      setConvidando(false)
+      setAdicionando(false)
     }
   }
 
@@ -608,10 +651,23 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
     }
   }
 
-  async function removerMembro(id: string) {
+  async function removerMembro(id: string, userId: string | null) {
     if (!confirm('Remover este jogador da campanha?')) return
     const supabase = createClient()
     await supabase.from('campanha_membros').update({ status: 'removido' }).eq('id', id)
+
+    if (userId) {
+      const { data: campanha } = await supabase.from('campanhas').select('nome').eq('id', campanhaId).single()
+      await supabase.from('notificacoes').insert({
+        user_id: userId,
+        tipo: 'removido_campanha',
+        titulo: '👋 Removido de uma campanha',
+        mensagem: `Você foi removido da campanha "${campanha?.nome}".`,
+        link: '/batalha',
+        lida: false,
+      })
+    }
+
     await carregar()
     toast.success('Jogador removido')
   }
@@ -620,7 +676,7 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
     <PainelGrimorio titulo="👥 Jogadores da Campanha" compacto>
       <div className="space-y-3">
         <p className="text-[var(--text3)] text-xs font-crimson">
-          Jogadores convidados herdam o plano{' '}
+          Jogadores adicionados herdam o plano{' '}
           <span className="text-[var(--accent2)]">{userPlano === 'guild_master' ? 'Guild Master' : userPlano === 'dm_supremo' ? 'DM Supremo' : 'Mesa Pro'}</span>{' '}
           enquanto estiverem na campanha.
         </p>
@@ -631,13 +687,18 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
             {membros.map(m => (
               <div key={m.id} className="flex items-center justify-between bg-[var(--bg3)] rounded px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-[var(--text)] text-sm font-crimson truncate">{m.email}</p>
+                  <p className="text-[var(--text)] text-sm font-cinzel truncate">
+                    {m.profiles?.username ? `@${m.profiles.username}` : m.email}
+                  </p>
+                  {m.profiles?.nome && (
+                    <p className="text-[var(--text2)] text-xs font-crimson truncate">{m.profiles.nome}</p>
+                  )}
                   <p className="text-[var(--text3)] text-[10px]">
                     {m.status === 'convidado' ? '⏳ Convite pendente' : '✅ Ativo'}
                   </p>
                 </div>
                 <button
-                  onClick={() => removerMembro(m.id)}
+                  onClick={() => removerMembro(m.id, m.user_id)}
                   className="text-[var(--red2)] text-[10px] hover:opacity-80 font-cinzel flex-shrink-0 ml-2"
                 >
                   Remover
@@ -647,24 +708,28 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
           </div>
         )}
 
-        {/* Convidar por email */}
+        {/* Adicionar por username */}
         <div className="flex gap-2">
-          <input
-            type="email"
-            value={emailConvite}
-            onChange={e => setEmailConvite(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && convidarPorEmail()}
-            placeholder="email@jogador.com"
-            className="input-dd flex-1 text-sm"
-          />
+          <div className="relative flex-1">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text3)] text-sm pointer-events-none">@</span>
+            <input
+              type="text"
+              value={usernameInput}
+              onChange={e => setUsernameInput(e.target.value.replace('@', ''))}
+              onKeyDown={e => e.key === 'Enter' && adicionarPorUsername()}
+              placeholder="username_do_jogador"
+              className="input-dd w-full pl-7 text-sm"
+            />
+          </div>
           <button
-            onClick={convidarPorEmail}
-            disabled={!emailConvite.trim() || convidando}
+            onClick={adicionarPorUsername}
+            disabled={!usernameInput.trim() || adicionando}
             className="flex items-center gap-1 px-3 py-1.5 bg-[var(--accent)] text-white rounded font-cinzel text-xs disabled:opacity-50 hover:opacity-90 transition-opacity"
           >
-            <UserPlus className="w-3.5 h-3.5" /> {convidando ? '...' : 'Convidar'}
+            <UserPlus className="w-3.5 h-3.5" /> {adicionando ? '...' : 'Adicionar'}
           </button>
         </div>
+        <p className="text-[var(--text3)] text-[10px]">Peça o @ do jogador. Ex: @tobias_guerreiro</p>
 
         {/* Link de convite aberto */}
         <div className="flex gap-2 items-center">

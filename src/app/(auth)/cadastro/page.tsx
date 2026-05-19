@@ -12,6 +12,7 @@ import toast from 'react-hot-toast'
 export default function CadastroPage() {
   const router = useRouter()
   const [nome, setNome] = useState('')
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [carregando, setCarregando] = useState(false)
@@ -22,15 +23,40 @@ export default function CadastroPage() {
       toast.error('A senha deve ter pelo menos 6 caracteres')
       return
     }
+    if (username.length < 3) {
+      toast.error('O nome de usuário deve ter pelo menos 3 caracteres')
+      return
+    }
     setCarregando(true)
     try {
       const supabase = createClient()
-      const { error } = await supabase.auth.signUp({
+
+      const { data: usernameExiste } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', username)
+        .maybeSingle()
+      if (usernameExiste) {
+        toast.error('Este username já está em uso. Escolha outro.')
+        return
+      }
+
+      const { data, error } = await supabase.auth.signUp({
         email,
         password: senha,
         options: { data: { nome } }
       })
       if (error) throw error
+
+      if (data.user) {
+        await supabase.from('profiles').upsert({
+          id: data.user.id,
+          email: email.toLowerCase().trim(),
+          nome: nome.trim(),
+          username: username.toLowerCase().trim(),
+        })
+      }
+
       toast.success('Conta criada! Verifique seu email.')
       router.push('/login')
     } catch (err: unknown) {
@@ -65,6 +91,25 @@ export default function CadastroPage() {
                 placeholder="Mestre das Dungeons"
                 required
               />
+            </div>
+            <div>
+              <label className="block text-[#b8a8cc] text-sm mb-1 font-cinzel text-xs uppercase tracking-wider">
+                Nome de Usuário
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8870a8]">@</span>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                  className="w-full input-dd pl-7"
+                  placeholder="seu_usuario"
+                  required
+                  minLength={3}
+                  maxLength={30}
+                />
+              </div>
+              <p className="text-[#8870a8] text-[10px] mt-1">Apenas letras minúsculas, números e _ (sem espaços)</p>
             </div>
             <div>
               <label className="block text-[#b8a8cc] text-sm mb-1 font-cinzel text-xs uppercase tracking-wider">

@@ -51,6 +51,20 @@ export default function ContaPage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+
+      if (username.trim()) {
+        const { data: existente } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', username.trim())
+          .neq('id', user.id)
+          .maybeSingle()
+        if (existente) {
+          toast.error('Este username já está em uso. Escolha outro.')
+          return
+        }
+      }
+
       const { error } = await supabase.from('profiles').update({
         nome: nome.trim() || null,
         username: username.trim() || null,
