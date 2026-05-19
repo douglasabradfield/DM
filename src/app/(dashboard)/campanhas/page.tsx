@@ -573,19 +573,15 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
     if (!username) return
     setAdicionando(true)
     try {
-      const supabase = createClient()
+      const resp = await fetch(`/api/usuarios/buscar?username=${encodeURIComponent(username)}`)
+      const { encontrado, perfil } = await resp.json()
 
-      const { data: perfil } = await supabase
-        .from('profiles')
-        .select('id, username, nome, email')
-        .ilike('username', username)
-        .maybeSingle()
-
-      if (!perfil) {
+      if (!encontrado || !perfil) {
         toast.error(`Usuário @${username} não encontrado. Verifique o username.`)
         return
       }
 
+      const supabase = createClient()
       const { data: jaExiste } = await supabase
         .from('campanha_membros')
         .select('id, status')
