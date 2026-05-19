@@ -569,7 +569,7 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
   useEffect(() => { carregar() }, [carregar])
 
   async function adicionarPorUsername() {
-    const username = usernameInput.trim().toLowerCase().replace('@', '')
+    const username = usernameInput.trim().toLowerCase().replace('@', '').replace(/\s/g, '')
     if (!username) return
     setAdicionando(true)
     try {
@@ -578,7 +578,7 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
       const { data: perfil } = await supabase
         .from('profiles')
         .select('id, username, nome, email')
-        .eq('username', username)
+        .ilike('username', username)
         .maybeSingle()
 
       if (!perfil) {
