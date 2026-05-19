@@ -461,12 +461,12 @@ export default function PersonagensPage() {
             <Download className="w-3 h-3" /> Ficha Oficial
           </a>
           <BotaoImportarFicha />
-          {ehJogador && !!campanhaAtiva && (
+          {!!campanhaAtiva && (
             <Link
               href="/personagens/criar"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--accent2)] text-[var(--bg)] rounded text-xs font-cinzel hover:opacity-90 transition-opacity"
+              className="flex items-center gap-2 px-4 py-2 border border-[var(--accent)] text-[var(--accent)] rounded-xl font-cinzel text-sm hover:bg-[var(--accent)] hover:text-white transition-all"
             >
-              ✨ Criar Personagem
+              ✨ Criar com Assistente
             </Link>
           )}
           <BotaoRunico variante="ouro" tamanho="sm" onClick={() => setCriando(true)}>
