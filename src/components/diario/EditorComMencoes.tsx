@@ -141,6 +141,7 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
             width: 224,
           }}
           className="bg-[var(--bg2)] border border-[var(--border)] rounded shadow-xl"
+          onMouseDown={(e) => e.preventDefault()}
         >
           <div className="px-2 py-1 border-b border-[var(--border)]">
             <span className="text-[var(--text3)] text-[10px] font-cinzel uppercase">Personagens</span>

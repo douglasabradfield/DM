@@ -69,7 +69,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
   }
 
   function selecionarArquivo(file: File) {
-    if (file.size > 2 * 1024 * 1024) { toast.error('Arquivo muito grande. Máximo: 2 MB'); return }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Arquivo muito grande. Máximo: 5 MB'); return }
     if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
       toast.error('Formato não suportado. Use JPEG, PNG, GIF ou WebP'); return
     }

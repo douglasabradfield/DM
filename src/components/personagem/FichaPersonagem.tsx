@@ -16,7 +16,7 @@ import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
 import { ESPACOS_MAGIA } from '@/lib/dados-dnd/espacos-magia'
 import { getNivelPorXP, getProgressoXP } from '@/lib/dados-dnd/xp-niveis'
 import type { TipoDano } from '@/types/dnd'
-import { Search, X } from 'lucide-react'
+import { Search, X, MoreVertical } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const PERICIAS = [
@@ -390,6 +390,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const [testeMorte, setTesteMorte] = useState({ sucessos: 0, falhas: 0 })
   const [modalCopiar, setModalCopiar] = useState(false)
   const [campanhasDisponiveis, setCampanhasDisponiveis] = useState<{ id: string; nome: string }[]>([])
+  const [menuAberto, setMenuAberto] = useState(false)
 
   async function abrirModalCopiar() {
     const supabase = createClient()
@@ -462,12 +463,24 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               Página {n}
             </button>
           ))}
-          <button
-            onClick={abrirModalCopiar}
-            className="font-cinzel text-xs px-3 py-1.5 rounded border border-[#4a3060] text-[#8870a8] hover:border-[#6b4890] transition-colors"
-          >
-            Copiar
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setMenuAberto(v => !v)}
+              className="font-cinzel text-xs px-2 py-1.5 rounded border border-[#4a3060] text-[#8870a8] hover:border-[#6b4890] transition-colors"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            {menuAberto && (
+              <div className="absolute right-0 top-full mt-1 bg-[#1a1025] border border-[#4a3060] rounded shadow-xl z-50 min-w-[140px]">
+                <button
+                  onClick={() => { setMenuAberto(false); abrirModalCopiar() }}
+                  className="w-full text-left px-3 py-2 text-xs font-cinzel text-[#8870a8] hover:bg-[#261a2e] hover:text-[#d4a843] transition-colors"
+                >
+                  Copiar personagem
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={voltar}
             className="font-cinzel text-xs px-3 py-1.5 rounded border border-[#4a3060] text-[#8870a8] hover:border-[#6b4890] transition-colors"

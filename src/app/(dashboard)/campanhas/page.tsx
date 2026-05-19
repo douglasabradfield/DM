@@ -4,11 +4,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { useCampanha } from '@/store/campanha'
-import type { Campanha, CampaignMember, CampaignInvite } from '@/types/database'
+import type { Campanha } from '@/types/database'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { cn } from '@/lib/utils'
-import { Plus, X, BookOpen, UserPlus, Users, ChevronLeft, Link2 } from 'lucide-react'
+import { Plus, X, BookOpen, UserPlus, ChevronLeft, Link2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const SISTEMAS = ['D&D 5e', 'Pathfinder', 'Call of Cthulhu', 'Tormenta', 'Vampiro: A Máscara', 'Outro']
@@ -495,18 +495,13 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
         </PainelGrimorio>
       )}
 
-      {/* Membros */}
-      <PainelGrimorio titulo="Membros & Convites" compacto>
-        <MembrosSecao campanhaId={campanha.id} ehDm={ehDm} />
-      </PainelGrimorio>
-
       {/* Jogadores com Plano Efetivo */}
-      {ehDm && ['mesa_pro', 'guild_master'].includes(userPlano) && (
+      {ehDm && ['mesa_pro', 'guild_master', 'dm_supremo'].includes(userPlano) && (
         <SecaoMembrosEfetivos campanhaId={campanha.id} userPlano={userPlano} />
       )}
 
       {/* Zona de Perigo */}
-      {ehDm && userPlano === 'guild_master' && (
+      {ehDm && ['guild_master', 'dm_supremo'].includes(userPlano) && (
         <div className="pt-4 border-t border-[var(--border)]">
           {!confirmandoApagar ? (
             <button
@@ -579,8 +574,12 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.erro)
-      toast.success('Convite gerado! Compartilhe o link com o jogador.')
-      setLinkConvite(d.link)
+      if (d.jaTemConta) {
+        toast.success('Jogador adicionado! Notificação enviada.')
+      } else {
+        toast.success('Convite gerado! Compartilhe o link com o jogador.')
+        setLinkConvite(d.link)
+      }
       setEmailConvite('')
       await carregar()
     } catch (err: unknown) {
@@ -622,7 +621,7 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
       <div className="space-y-3">
         <p className="text-[var(--text3)] text-xs font-crimson">
           Jogadores convidados herdam o plano{' '}
-          <span className="text-[var(--accent2)]">{userPlano === 'guild_master' ? 'Guild Master' : 'Mesa Pro'}</span>{' '}
+          <span className="text-[var(--accent2)]">{userPlano === 'guild_master' ? 'Guild Master' : userPlano === 'dm_supremo' ? 'DM Supremo' : 'Mesa Pro'}</span>{' '}
           enquanto estiverem na campanha.
         </p>
 
@@ -696,196 +695,3 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
   )
 }
 
-function MembrosSecao({ campanhaId, ehDm }: { campanhaId: string; ehDm: boolean }) {
-  const [membros, setMembros] = useState<CampaignMember[]>([])
-  const [convites, setConvites] = useState<CampaignInvite[]>([])
-  const [email, setEmail] = useState('')
-  const [convidando, setConvidando] = useState(false)
-  const [linkConvite, setLinkConvite] = useState('')
-  const [linkEntrada, setLinkEntrada] = useState<string | null>(null)
-  const [gerandoLink, setGerandoLink] = useState(false)
-  const [carregando, setCarregando] = useState(true)
-
-  const carregar = useCallback(async () => {
-    if (!ehDm) {
-      setCarregando(false)
-      return
-    }
-    setCarregando(true)
-    try {
-      const res = await fetch(`/api/campanhas/${campanhaId}/membros`)
-      if (res.ok) {
-        const dados = await res.json()
-        setMembros(dados.membros ?? [])
-        setConvites(dados.convites ?? [])
-        if (dados.link_token) {
-          setLinkEntrada(`${window.location.origin}/entrar?c=${dados.link_token}`)
-        }
-      }
-    } finally {
-      setCarregando(false)
-    }
-  }, [campanhaId, ehDm])
-
-  useEffect(() => { carregar() }, [carregar])
-
-  async function convidar(e: React.FormEvent) {
-    e.preventDefault()
-    if (!email.trim()) return
-    setConvidando(true)
-    try {
-      const res = await fetch(`/api/campanhas/${campanhaId}/convidar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      })
-      const dados = await res.json()
-      if (!res.ok) throw new Error(dados.erro)
-      setLinkConvite(dados.link)
-      setEmail('')
-      toast.success('Convite gerado!')
-      await carregar()
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao convidar')
-    } finally {
-      setConvidando(false)
-    }
-  }
-
-  async function remover(userId: string) {
-    if (!confirm('Remover este membro?')) return
-    const res = await fetch(`/api/campanhas/${campanhaId}/membros?user_id=${userId}`, { method: 'DELETE' })
-    if (res.ok) { toast.success('Membro removido'); await carregar() }
-    else toast.error('Erro ao remover')
-  }
-
-  async function gerarLink() {
-    setGerandoLink(true)
-    try {
-      const res = await fetch(`/api/campanhas/${campanhaId}/link-entrada`, { method: 'POST' })
-      const dados = await res.json()
-      if (!res.ok) throw new Error(dados.erro)
-      setLinkEntrada(dados.link)
-      toast.success('Link gerado!')
-    } catch { toast.error('Erro ao gerar link') }
-    finally { setGerandoLink(false) }
-  }
-
-  async function revogarLink() {
-    if (!confirm('Revogar o link de entrada? Quem tiver o link antigo não conseguirá mais entrar.')) return
-    const res = await fetch(`/api/campanhas/${campanhaId}/link-entrada`, { method: 'DELETE' })
-    if (res.ok) { setLinkEntrada(null); toast.success('Link revogado') }
-    else toast.error('Erro ao revogar link')
-  }
-
-  if (!ehDm) {
-    return (
-      <div className="flex items-center gap-2 text-[var(--text3)] text-sm font-crimson">
-        <Users className="w-4 h-4" />
-        <span>Membros gerenciados pelo DM</span>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-3">
-      <form onSubmit={convidar} className="flex gap-2">
-        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@jogador.com" className="flex-1 input-dd text-sm" />
-        <button type="submit" disabled={!email.trim() || convidando} className="flex items-center gap-1 px-3 py-1.5 bg-[var(--accent)] text-[var(--bg)] rounded font-cinzel text-xs disabled:opacity-50 hover:opacity-90 transition-opacity">
-          <UserPlus className="w-3.5 h-3.5" /> {convidando ? '...' : 'Convidar'}
-        </button>
-      </form>
-
-      {linkConvite && (
-        <div className="bg-[var(--surface)] border border-[var(--accent)]/40 rounded p-3 space-y-1">
-          <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase">Link gerado · válido por 7 dias</p>
-          <div className="flex gap-2 items-center">
-            <p className="text-[var(--text)] text-xs font-mono truncate flex-1 bg-[var(--bg3)] px-2 py-1 rounded">{linkConvite}</p>
-            <button onClick={() => { navigator.clipboard.writeText(linkConvite); toast.success('Copiado!') }} className="text-xs px-2 py-1 border border-[var(--border)] text-[var(--text2)] rounded hover:bg-[var(--surface2)] flex-shrink-0">Copiar</button>
-          </div>
-        </div>
-      )}
-
-      {carregando ? (
-        <p className="text-[var(--text3)] text-sm animate-pulse">Carregando...</p>
-      ) : (
-        <>
-          {membros.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider">Membros ({membros.length})</p>
-              {membros.map(m => (
-                <div key={m.id} className="flex items-center justify-between bg-[var(--surface)] border border-[var(--border)] rounded px-3 py-1.5">
-                  <div className="min-w-0">
-                    <p className="text-[var(--text)] text-sm font-crimson truncate">{m.profiles?.nome || m.profiles?.email}</p>
-                    {m.profiles?.nome && <p className="text-[var(--text3)] text-[10px] truncate">{m.profiles.email}</p>}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-cinzel border ${m.papel === 'dm' ? 'border-[var(--gold)] text-[var(--gold)]' : 'border-[var(--accent2)] text-[var(--accent2)]'}`}>
-                      {m.papel === 'dm' ? 'DM' : 'Jogador'}
-                    </span>
-                    {m.papel !== 'dm' && (
-                      <button onClick={() => remover(m.user_id)} className="text-[10px] px-1.5 py-0.5 border border-[var(--red2)] text-[var(--red2)] rounded hover:bg-[var(--red2)]/10">
-                        Remover
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {convites.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider">Convites pendentes ({convites.length})</p>
-              {convites.map(c => (
-                <div key={c.id} className="flex items-center justify-between bg-[var(--surface)] border border-[var(--border)] rounded px-3 py-1.5 opacity-60">
-                  <p className="text-[var(--text)] text-sm font-crimson">{c.email}</p>
-                  <span className="text-[10px] text-[var(--text3)] font-cinzel">exp. {new Date(c.expires_at).toLocaleDateString('pt-BR')}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {membros.length === 0 && convites.length === 0 && (
-            <p className="text-[var(--text3)] text-sm font-crimson">Nenhum membro ainda. Convide jogadores pelo email ou gere um link de entrada.</p>
-          )}
-        </>
-      )}
-
-      {/* Link de Entrada */}
-      <div className="border-t border-[var(--border)] pt-3 mt-1">
-        <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider mb-1">Link de Entrada</p>
-        <p className="text-[var(--text2)] text-xs font-crimson mb-2">
-          Qualquer pessoa com este link pode entrar como jogador.
-        </p>
-        {linkEntrada ? (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <p className="text-[var(--text)] text-xs font-mono truncate flex-1 bg-[var(--bg3)] px-2 py-1 rounded">{linkEntrada}</p>
-              <button
-                onClick={() => { navigator.clipboard.writeText(linkEntrada); toast.success('Copiado!') }}
-                className="text-xs px-2 py-1 border border-[var(--border)] text-[var(--text2)] rounded hover:bg-[var(--surface2)] flex-shrink-0"
-              >
-                Copiar
-              </button>
-            </div>
-            <button
-              onClick={revogarLink}
-              className="text-xs text-[var(--red2)] hover:underline font-cinzel"
-            >
-              Revogar link
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={gerarLink}
-            disabled={gerandoLink}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--surface)] border border-[var(--border)] text-[var(--text2)] rounded font-cinzel text-xs hover:border-[var(--border2)] transition-colors disabled:opacity-50"
-          >
-            <Link2 className="w-3.5 h-3.5" /> {gerandoLink ? '...' : 'Gerar Link de Entrada'}
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}

@@ -35,6 +35,44 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ erro: 'Sem permissão' }, { status: 403 })
   }
 
+  const emailNormalizado = email.trim().toLowerCase()
+  const planoEfetivo = perfil!.plano === 'guild_master' ? 'guild_master' : 'mesa_pro'
+
+  const { data: usuarioExistente } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('email', emailNormalizado)
+    .maybeSingle()
+
+  if (usuarioExistente) {
+    const { error } = await supabase
+      .from('campanha_membros')
+      .upsert(
+        {
+          campanha_id: campanhaId,
+          email: emailNormalizado,
+          papel: 'jogador',
+          plano_efetivo: planoEfetivo,
+          status: 'ativo',
+          user_id: usuarioExistente.id,
+        },
+        { onConflict: 'campanha_id,email' }
+      )
+
+    if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
+
+    await supabase.from('notificacoes').insert({
+      user_id: usuarioExistente.id,
+      tipo: 'convite_campanha',
+      titulo: '🎲 Convite para campanha',
+      mensagem: `Você foi adicionado à campanha "${campanha.nome}".`,
+      link: '/campanhas',
+      lida: false,
+    })
+
+    return NextResponse.json({ sucesso: true, jaTemConta: true })
+  }
+
   const token = randomBytes(32).toString('hex')
 
   const { error } = await supabase
@@ -42,10 +80,11 @@ export async function POST(req: NextRequest) {
     .upsert(
       {
         campanha_id: campanhaId,
-        email: email.trim().toLowerCase(),
+        email: emailNormalizado,
         papel: 'jogador',
-        plano_efetivo: perfil!.plano === 'guild_master' ? 'guild_master' : 'mesa_pro',
+        plano_efetivo: planoEfetivo,
         status: 'convidado',
+        user_id: null,
         token_convite: token,
       },
       { onConflict: 'campanha_id,email' }
@@ -56,32 +95,5 @@ export async function POST(req: NextRequest) {
   const origin = req.headers.get('origin') ?? req.nextUrl.origin
   const linkConvite = `${origin}/convite/${token}`
 
-  // Verificar se o usuário convidado já tem conta e criar notificação
-  const { data: usuarioExistente } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('email', email.trim().toLowerCase())
-    .maybeSingle()
-
-  if (usuarioExistente) {
-    await supabase.from('campanha_membros')
-      .update({ user_id: usuarioExistente.id })
-      .eq('token_convite', token)
-
-    await supabase.from('notificacoes').insert({
-      user_id: usuarioExistente.id,
-      tipo: 'convite_campanha',
-      titulo: '🎲 Convite para campanha!',
-      mensagem: `Você foi convidado para participar de "${campanha.nome}". Clique para aceitar.`,
-      link: `/convite/${token}`,
-      lida: false,
-    })
-  }
-
-  return NextResponse.json({
-    sucesso: true,
-    link: linkConvite,
-    jaTemConta: !!usuarioExistente,
-    mensagem: usuarioExistente ? 'Notificação enviada ao jogador!' : 'Convite gerado! Compartilhe o link.',
-  })
+  return NextResponse.json({ sucesso: true, jaTemConta: false, link: linkConvite })
 }
