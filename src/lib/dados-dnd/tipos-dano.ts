@@ -8,20 +8,19 @@ export interface InfoTipoDano {
 }
 
 export const TIPOS_DANO: InfoTipoDano[] = [
-  { id: 'acido',          nome: 'Ácido',           icone: '🧪', cor: '#a8e063' },
-  { id: 'frio',           nome: 'Frio',             icone: '❄️', cor: '#89d4e3' },
-  { id: 'fogo',           nome: 'Fogo',             icone: '🔥', cor: '#f4a261' },
-  { id: 'forca',          nome: 'Força',            icone: '✨', cor: '#e9c46a' },
-  { id: 'corte',          nome: 'Cortante',         icone: '⚔️', cor: '#e63946' },
-  { id: 'trovejante',     nome: 'Trovejante',       icone: '🌩️', cor: '#adb5bd' },
-  { id: 'eletrico',       nome: 'Elétrico',         icone: '⚡', cor: '#ffd166' },
-  { id: 'necrotico',      nome: 'Necrótico',        icone: '💀', cor: '#6d2b8f' },
-  { id: 'perfurante',     nome: 'Perfurante',       icone: '🗡️', cor: '#e63946' },
-  { id: 'veneno',         nome: 'Veneno',           icone: '☠️', cor: '#57cc99' },
-  { id: 'psiquico',       nome: 'Psíquico',         icone: '🧠', cor: '#c77dff' },
-  { id: 'radiante',       nome: 'Radiante',         icone: '☀️', cor: '#ffdd57' },
-  { id: 'contundente',    nome: 'Contundente',      icone: '🔨', cor: '#adb5bd' },
-  { id: 'deslumbramento', nome: 'Deslumbramento',   icone: '😵', cor: '#ffd166' },
+  { id: 'acido',       nome: 'Ácido',        icone: '🧪', cor: '#a8e063' },
+  { id: 'contundente', nome: 'Contundente',  icone: '🔨', cor: '#adb5bd' },
+  { id: 'cortante',    nome: 'Cortante',     icone: '⚔️', cor: '#e63946' },
+  { id: 'eletrico',    nome: 'Elétrico',     icone: '⚡', cor: '#ffd166' },
+  { id: 'fogo',        nome: 'Fogo',         icone: '🔥', cor: '#f4a261' },
+  { id: 'forca',       nome: 'Força',        icone: '✨', cor: '#e9c46a' },
+  { id: 'frio',        nome: 'Frio',         icone: '❄️', cor: '#89d4e3' },
+  { id: 'necrotico',   nome: 'Necrótico',    icone: '💀', cor: '#6d2b8f' },
+  { id: 'perfurante',  nome: 'Perfurante',   icone: '🗡️', cor: '#e63946' },
+  { id: 'psiquico',    nome: 'Psíquico',     icone: '🧠', cor: '#c77dff' },
+  { id: 'radiante',    nome: 'Radiante',     icone: '☀️', cor: '#ffdd57' },
+  { id: 'trovejante',  nome: 'Trovejante',   icone: '🌩️', cor: '#adb5bd' },
+  { id: 'veneno',      nome: 'Veneno',       icone: '☠️', cor: '#57cc99' },
 ]
 
 export function getTipoDano(id: TipoDano): InfoTipoDano {

@@ -3,9 +3,10 @@ import type { TipoDano } from './dnd'
 export type TipoCombatente = 'jogador' | 'monstro' | 'npc'
 
 export type TipoCondicao =
-  | 'Agarrado' | 'Amedrontado' | 'Atordoado' | 'Cego' | 'Caído'
-  | 'Concentrado' | 'Encantado' | 'Envenenado' | 'Exausto' | 'Incapacitado'
-  | 'Inconsciente' | 'Invisível' | 'Paralisado' | 'Petrificado' | 'Retido'
+  | 'Agarrado' | 'Amedrontado' | 'Atordoado' | 'Caído' | 'Cego'
+  | 'Enfeitiçado' | 'Envenenado' | 'Exaustão' | 'Impedido' | 'Incapacitado'
+  | 'Inconsciente' | 'Invisível' | 'Paralisado' | 'Petrificado'
+  | 'Surdo' | 'Desacordado'
 
 export interface EspacosMagiaBatalha {
   [nivel: number]: { total: number; utilizados: number }

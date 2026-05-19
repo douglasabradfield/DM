@@ -19,6 +19,7 @@ import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { getEspacosMagia } from '@/lib/dados-dnd/espacos-magia'
 import { createClient } from '@/lib/supabase/client'
 import { getNivelPorXP } from '@/lib/dados-dnd/xp-niveis'
+import { TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
 import { calcularDificuldade, xpParaCR, type NivelDificuldade } from '@/lib/dados-dnd/xp-encontro'
 import type { Personagem } from '@/types/dnd'
 import {
@@ -41,6 +42,13 @@ export function TabelaCombate() {
   const { campanhaAtiva } = useCampanha()
 
   const [aba, setAba] = useState<'combate' | 'dados' | 'log' | 'monstros'>('combate')
+  const [condicoesDisponiveis, setCondicoesDisponiveis] = useState<string[]>(TODAS_CONDICOES)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.from('condicoes').select('nome').order('nome')
+      .then(({ data }) => { if (data?.length) setCondicoesDisponiveis(data.map(c => c.nome)) })
+  }, [])
   const [modalXP, setModalXP] = useState(false)
   const [modalInspiracao, setModalInspiracao] = useState(false)
   const [modalIniciar, setModalIniciar] = useState(false)
@@ -342,6 +350,7 @@ export function TabelaCombate() {
                               combatente={c}
                               ativo={estaAtivo}
                               indice={i}
+                              condicoesDisponiveis={condicoesDisponiveis}
                             />
                           )
                         })}

@@ -1,7 +1,7 @@
 export type TipoDano =
-  | 'acido' | 'frio' | 'fogo' | 'forca' | 'corte'
+  | 'acido' | 'frio' | 'fogo' | 'forca' | 'cortante'
   | 'trovejante' | 'eletrico' | 'necrotico' | 'perfurante'
-  | 'veneno' | 'psiquico' | 'radiante' | 'contundente' | 'deslumbramento'
+  | 'veneno' | 'psiquico' | 'radiante' | 'contundente'
 
 export type Alinhamento =
   | 'Leal e Bom' | 'Neutro e Bom' | 'Caótico e Bom'

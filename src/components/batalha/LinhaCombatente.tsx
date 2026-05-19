@@ -13,7 +13,6 @@ import { EspacosMagia } from './EspacosMagia'
 import { PopupCondicao } from './PopupCondicao'
 import { SeletorTipoDano } from './SeletorTipoDano'
 import { TooltipCombatente } from './TooltipCombatente'
-import { TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
 import { cn } from '@/lib/utils'
 import { Trash2, Plus, GripVertical, X } from 'lucide-react'
 import type { TipoDano } from '@/types/dnd'
@@ -22,9 +21,10 @@ interface LinhaCombatenteProps {
   combatente: Combatente
   ativo: boolean
   indice: number
+  condicoesDisponiveis: string[]
 }
 
-export function LinhaCombatente({ combatente: c, ativo, indice }: LinhaCombatenteProps) {
+export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponiveis }: LinhaCombatenteProps) {
   const router = useRouter()
   const {
     toggleMorto, removerCombatente,
@@ -330,7 +330,7 @@ export function LinhaCombatente({ combatente: c, ativo, indice }: LinhaCombatent
                   style={{ position: 'fixed', top: posCondicoes.top, left: posCondicoes.left, zIndex: 9998 }}
                   className="bg-[var(--surface)] border border-[var(--border)] rounded shadow-xl w-40 max-h-48 overflow-y-auto"
                 >
-                  {TODAS_CONDICOES.filter(cond => !c.condicoes.includes(cond)).map(cond => (
+                  {condicoesDisponiveis.filter(cond => !c.condicoes.includes(cond as TipoCondicao)).map(cond => (
                     <button
                       key={cond}
                       onClick={() => { adicionarCondicao(c.id, cond as TipoCondicao); setMostraCondicoes(false) }}

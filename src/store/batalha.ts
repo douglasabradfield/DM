@@ -366,7 +366,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         id: gerarId(),
         batalha_id: state.batalhaId ?? '',
         dano_input: 0,
-        dano_tipo: 'corte',
+        dano_tipo: 'cortante',
         dano_total: 0,
         cura_total: 0,
         flash: null,

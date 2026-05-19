@@ -358,6 +358,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     setMagiasPersonagem(prev => prev.filter(m => m.id !== id))
   }
 
+  const [percepcaoPassivaOverride, setPercepcaoPassivaOverride] = useState<number | null>(null)
   const [ajustesPericias, setAjustesPericias] = useState<Record<string, number>>({})
 
   function ajustarPericia(nome: string, delta: number) {
@@ -375,7 +376,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const modSab = calcularModificadorAtributo(dados.sabedoria)
   const modCar = calcularModificadorAtributo(dados.carisma)
   const mods = { forca: modFor, destreza: modDes, constituicao: modCon, inteligencia: modInt, sabedoria: modSab, carisma: modCar }
-  const percepcaoPassiva = 10 + modSab + ((dados.pericias?.['Percepção'] ?? false) ? dados.bonus_proficiencia : 0)
+  const percepcaoPassivaCalculada = 10 + modSab + ((dados.pericias?.['Percepção'] ?? false) ? dados.bonus_proficiencia : 0)
+  const percepcaoPassiva = percepcaoPassivaOverride ?? percepcaoPassivaCalculada
 
   // Magias agrupadas por nível
   const magiasPorNivel = magiasPersonagem.reduce<Record<number, MagiaPersonagem[]>>((acc, m) => {
@@ -580,7 +582,18 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                 <div className="flex flex-col gap-2 flex-1 min-w-0">
                   <div className="border border-[var(--border)] rounded-xl p-2 text-center">
                     <p className="text-[var(--text3)] text-[8px] uppercase font-cinzel leading-tight">Bônus de Proficiência</p>
-                    <p className="font-cinzel font-bold text-[var(--gold)] text-xl mt-0.5">+{dados.bonus_proficiencia || 2}</p>
+                    <div className="flex items-center justify-center gap-0.5 mt-0.5">
+                      <span className="font-cinzel font-bold text-[var(--gold)] text-xl leading-none">+</span>
+                      <input
+                        type="number"
+                        min={2}
+                        max={6}
+                        value={dados.bonus_proficiencia || 2}
+                        onChange={e => atualizar('bonus_proficiencia', parseInt(e.target.value) || 2)}
+                        onFocus={e => e.target.select()}
+                        className="w-8 font-cinzel font-bold text-[var(--gold)] text-xl bg-transparent border-none outline-none text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      />
+                    </div>
                   </div>
 
                   <PainelGrimorio titulo="Salvaguardas" compacto>
@@ -629,9 +642,22 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
               <div className="flex items-center gap-2 px-2 py-1.5 bg-[var(--bg3)] rounded border border-[var(--border)]">
                 <div className="w-8 h-8 rounded-full border border-[var(--border)] bg-[var(--bg)] flex items-center justify-center flex-shrink-0">
-                  <span className="font-cinzel font-bold text-sm text-[var(--text)]">{percepcaoPassiva}</span>
+                  <input
+                    type="number"
+                    value={percepcaoPassiva}
+                    onChange={e => setPercepcaoPassivaOverride(parseInt(e.target.value) || 0)}
+                    onFocus={e => e.target.select()}
+                    className="w-7 text-center font-cinzel font-bold text-sm text-[var(--text)] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  />
                 </div>
-                <p className="text-[var(--text3)] text-[9px] uppercase font-cinzel">Sabedoria Passiva (Percepção)</p>
+                <p className="text-[var(--text3)] text-[9px] uppercase font-cinzel flex-1">Sabedoria Passiva (Percepção)</p>
+                {percepcaoPassivaOverride !== null && (
+                  <button
+                    onClick={() => setPercepcaoPassivaOverride(null)}
+                    className="text-[var(--accent)] text-[9px] hover:text-[var(--accent2)] transition-colors flex-shrink-0"
+                    title="Resetar para valor calculado"
+                  >↺</button>
+                )}
               </div>
 
               <PainelGrimorio titulo="Idiomas & Proficiências" compacto>
@@ -767,6 +793,28 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                 <p className="text-[var(--text3)] text-[10px] font-cinzel mt-2 text-right">{inventario.length} ite{inventario.length === 1 ? 'm' : 'ns'}</p>
               </PainelGrimorio>
 
+            </div>
+
+            {/* Col 3 — Traços + Características + Defesas */}
+            <div className="space-y-2">
+              {[
+                { label: 'Traços de Personalidade', key: 'tracos_personalidade', rows: 3 },
+                { label: 'Ideais', key: 'ideais', rows: 2 },
+                { label: 'Vínculos', key: 'vinculos', rows: 2 },
+                { label: 'Defeitos', key: 'fraquezas', rows: 2 },
+                { label: 'Características & Talentos', key: 'caracteristicas_talentos', rows: 6 },
+              ].map(({ label, key, rows }) => (
+                <div key={key}>
+                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">{label}</label>
+                  <textarea
+                    value={(dados[key as keyof Personagem] as string) ?? ''}
+                    onChange={e => atualizar(key as keyof Personagem, e.target.value as never)}
+                    rows={rows}
+                    className="w-full input-dd resize-none text-xs"
+                  />
+                </div>
+              ))}
+
               {/* Defesas */}
               <PainelGrimorio titulo="Defesas" compacto>
                 <div className="space-y-1">
@@ -797,27 +845,6 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                   })}
                 </div>
               </PainelGrimorio>
-            </div>
-
-            {/* Col 3 — Traços + Características */}
-            <div className="space-y-2">
-              {[
-                { label: 'Traços de Personalidade', key: 'tracos_personalidade', rows: 3 },
-                { label: 'Ideais', key: 'ideais', rows: 2 },
-                { label: 'Vínculos', key: 'vinculos', rows: 2 },
-                { label: 'Defeitos', key: 'fraquezas', rows: 2 },
-                { label: 'Características & Talentos', key: 'caracteristicas_talentos', rows: 6 },
-              ].map(({ label, key, rows }) => (
-                <div key={key}>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">{label}</label>
-                  <textarea
-                    value={(dados[key as keyof Personagem] as string) ?? ''}
-                    onChange={e => atualizar(key as keyof Personagem, e.target.value as never)}
-                    rows={rows}
-                    className="w-full input-dd resize-none text-xs"
-                  />
-                </div>
-              ))}
             </div>
           </div>
         </div>

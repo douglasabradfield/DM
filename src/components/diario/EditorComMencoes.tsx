@@ -77,7 +77,7 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
     onChange(texto)
 
     const anteCursor = texto.slice(0, cursor)
-    const match = anteCursor.match(/@(\w*)$/)
+    const match = anteCursor.match(/@([^\s@]*)$/)
     if (match) {
       setQueryMencao(match[1])
       setIndiceSelecionado(0)
@@ -108,7 +108,7 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
     const pos = textarea.selectionStart
     const antes = value.slice(0, pos)
     const depois = value.slice(pos)
-    const novosAntes = antes.replace(/@\w*$/, `@${nome}`)
+    const novosAntes = antes.replace(/@[^\s@]*$/, `@${nome}`)
     onChange(`${novosAntes} ${depois}`)
     setQueryMencao(null)
     setSugestoes([])

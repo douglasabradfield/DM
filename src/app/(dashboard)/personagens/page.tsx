@@ -380,7 +380,7 @@ export default function PersonagensPage() {
             <Download className="w-3 h-3" /> Ficha Oficial
           </a>
           <BotaoImportarFicha />
-          {ehJogador && planoEfetivo === 'guild_master' && (
+          {ehJogador && !!campanhaAtiva && (
             <Link
               href="/personagens/criar"
               className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--accent2)] text-[var(--bg)] rounded text-xs font-cinzel hover:opacity-90 transition-opacity"

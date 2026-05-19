@@ -18,9 +18,9 @@ export async function POST(req: NextRequest) {
     .eq('id', user.id)
     .single()
 
-  if (!['mesa_pro', 'guild_master'].includes(perfil?.plano || '')) {
+  if (!['mesa_pro', 'guild_master', 'dm_supremo'].includes(perfil?.plano || '')) {
     return NextResponse.json(
-      { erro: 'Plano Mesa Pro ou Guild Master necessário para convidar jogadores' },
+      { erro: 'Plano Mesa Pro ou superior necessário para convidar jogadores' },
       { status: 403 }
     )
   }
