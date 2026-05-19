@@ -36,6 +36,7 @@ export const useCampanha = create<EstadoCampanha>()(
         const { data: todas } = await supabase
           .from('campanhas')
           .select('*')
+          .eq('status', 'ativa')
           .order('criado_em', { ascending: false })
 
         const papelPorCampanha: Record<string, 'dm' | 'jogador'> = {}
