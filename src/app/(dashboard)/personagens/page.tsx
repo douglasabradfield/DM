@@ -272,10 +272,7 @@ export default function PersonagensPage() {
 
       if (ehJogadorNaCampanha && jogadorAtual) {
         query = query.or(
-          `visibilidade.eq.grupo,` +
-          `and(visibilidade.eq.jogador_especifico,visibilidade_jogador_id.eq.${jogadorAtual}),` +
-          `and(visibilidade.eq.privado,user_id.eq.${jogadorAtual}),` +
-          `user_id.eq.${jogadorAtual}`
+          `visibilidade.eq.grupo,and(visibilidade.eq.jogador_especifico,visibilidade_jogador_id.eq.${jogadorAtual}),user_id.eq.${jogadorAtual}`
         )
       }
 
