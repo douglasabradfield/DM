@@ -142,6 +142,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const [resultadosBusca, setResultadosBusca] = useState<Spell[]>([])
   const [buscandoMagia, setBuscandoMagia] = useState(false)
   const [espacosUtilizados, setEspacosUtilizados] = useState<Record<number, number>>({})
+  const [magiaPopup, setMagiaPopup] = useState<Spell | null>(null)
 
   function atualizar<K extends keyof Personagem>(campo: K, valor: Personagem[K]) {
     setDados(prev => ({ ...prev, [campo]: valor }))
@@ -180,6 +181,18 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       toast.success('Personagem salvo!')
       setAlterado(false)
       onAtualizar?.(dados)
+
+      // Notificar DM sobre level-up (somente jogadores)
+      if (!isDM && dados.nivel > p.nivel && campanhaAtiva?.dm_id) {
+        await supabase.from('notificacoes').insert({
+          user_id: campanhaAtiva.dm_id,
+          tipo: 'level_up',
+          titulo: '⬆️ Personagem subiu de nível!',
+          mensagem: `${dados.nome} chegou ao nível ${dados.nivel}!`,
+          link: `/personagens/${p.id}`,
+          lida: false,
+        })
+      }
       // Sincroniza com a batalha se o personagem estiver em combate
       atualizarCombatentePorPersonagem(p.id, {
         ca: parseInt(String(dados.ca)) || 10,
@@ -548,20 +561,79 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
           {/* Corpo: 3 colunas */}
           <div className="grid grid-cols-3 gap-3">
-            {/* Col 1 — Atributos + Percepção Passiva + Idiomas */}
+            {/* Col 1 — Atributos estreitos + Prof/Salvaguardas/Perícias ao lado */}
             <div className="space-y-2">
-              {ATRIBUTOS.map(({ key, label }) => (
-                <AtributoCard
-                  key={key}
-                  label={label}
-                  value={dados[key as keyof Personagem] as number}
-                  onChange={v => atualizar(key, v)}
-                />
-              ))}
-              <div className="flex items-center justify-between px-2 py-1.5 bg-[var(--bg3)] rounded border border-[var(--border)]">
-                <span className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Percepção Passiva</span>
-                <span className="text-[var(--gold)] font-cinzel font-bold text-sm">{percepcaoPassiva}</span>
+              <div className="flex gap-3">
+                {/* Atributos — coluna estreita fixa */}
+                <div className="flex flex-col gap-1.5 flex-shrink-0">
+                  {ATRIBUTOS.map(({ key, abrev }) => (
+                    <AtributoCard
+                      key={key}
+                      abrev={abrev}
+                      value={dados[key as keyof Personagem] as number}
+                      onChange={v => atualizar(key, v)}
+                    />
+                  ))}
+                </div>
+
+                {/* Prof + Salvaguardas + Perícias */}
+                <div className="flex flex-col gap-2 flex-1 min-w-0">
+                  <div className="border border-[var(--border)] rounded-xl p-2 text-center">
+                    <p className="text-[var(--text3)] text-[8px] uppercase font-cinzel leading-tight">Bônus de Proficiência</p>
+                    <p className="font-cinzel font-bold text-[var(--gold)] text-xl mt-0.5">+{dados.bonus_proficiencia || 2}</p>
+                  </div>
+
+                  <PainelGrimorio titulo="Salvaguardas" compacto>
+                    <div className="space-y-0.5">
+                      {ATRIBUTOS.map(({ key, label }) => {
+                        const temProf = dados.salvaguardas?.[key] ?? false
+                        const mod = mods[key as keyof typeof mods] ?? 0
+                        const valorFinal = mod + (temProf ? dados.bonus_proficiencia : 0)
+                        return (
+                          <div key={key} className="flex items-center gap-1.5">
+                            <input type="checkbox" checked={temProf} onChange={e => atualizar('salvaguardas', { ...dados.salvaguardas, [key]: e.target.checked })} className="w-3 h-3 accent-[var(--accent)] flex-shrink-0" />
+                            <span className="text-[var(--gold)] text-xs font-cinzel font-bold w-6 text-right flex-shrink-0">{valorFinal >= 0 ? `+${valorFinal}` : `${valorFinal}`}</span>
+                            <span className="text-[var(--text2)] text-xs font-crimson">{label}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </PainelGrimorio>
+
+                  <PainelGrimorio titulo="Perícias" compacto>
+                    <div className="space-y-0.5">
+                      {PERICIAS.map(({ nome, atributo }) => {
+                        const temProf = dados.pericias?.[nome] ?? false
+                        const modBase = (mods[atributo as keyof typeof mods] ?? 0) + (temProf ? dados.bonus_proficiencia : 0)
+                        const ajuste = ajustesPericias[nome] ?? 0
+                        const valorFinal = modBase + ajuste
+                        return (
+                          <div key={nome} className="flex items-center gap-1 py-0.5">
+                            <input type="checkbox" checked={temProf} onChange={e => atualizar('pericias', { ...dados.pericias, [nome]: e.target.checked })} className="w-3 h-3 accent-[var(--accent)] flex-shrink-0" />
+                            <span className="text-[var(--gold)] text-xs font-cinzel font-bold w-6 text-right flex-shrink-0">{valorFinal >= 0 ? `+${valorFinal}` : `${valorFinal}`}</span>
+                            <span className="text-[var(--text2)] text-xs flex-1 font-crimson truncate">{nome}</span>
+                            <span className="text-[var(--text3)] text-[8px] font-cinzel flex-shrink-0">{atributo.slice(0,3).toUpperCase()}</span>
+                            <button onClick={() => ajustarPericia(nome, -1)} className="w-4 h-4 text-[10px] bg-[var(--bg3)] rounded hover:bg-[var(--surface)] text-[var(--text2)] leading-none flex items-center justify-center flex-shrink-0">−</button>
+                            <span className="text-[8px] text-[var(--text3)] w-5 text-center flex-shrink-0">{ajuste !== 0 ? (ajuste > 0 ? `+${ajuste}` : `${ajuste}`) : '±0'}</span>
+                            <button onClick={() => ajustarPericia(nome, +1)} className="w-4 h-4 text-[10px] bg-[var(--bg3)] rounded hover:bg-[var(--surface)] text-[var(--text2)] leading-none flex items-center justify-center flex-shrink-0">+</button>
+                            {ajuste !== 0 && (
+                              <button onClick={() => resetarAjuste(nome)} className="text-[var(--accent)] text-[9px] hover:text-[var(--accent2)] transition-colors flex-shrink-0" title="Resetar ajuste">↺</button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </PainelGrimorio>
+                </div>
               </div>
+
+              <div className="flex items-center gap-2 px-2 py-1.5 bg-[var(--bg3)] rounded border border-[var(--border)]">
+                <div className="w-8 h-8 rounded-full border border-[var(--border)] bg-[var(--bg)] flex items-center justify-center flex-shrink-0">
+                  <span className="font-cinzel font-bold text-sm text-[var(--text)]">{percepcaoPassiva}</span>
+                </div>
+                <p className="text-[var(--text3)] text-[9px] uppercase font-cinzel">Sabedoria Passiva (Percepção)</p>
+              </div>
+
               <PainelGrimorio titulo="Idiomas & Proficiências" compacto>
                 <textarea
                   value={dados.outras_proficiencias ?? ''}
@@ -573,61 +645,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               </PainelGrimorio>
             </div>
 
-            {/* Col 2 — Combate + Perícias + Inventário */}
+            {/* Col 2 — Combate + Inventário */}
             <div className="space-y-2">
-              {/* Bônus de Proficiência */}
-              <div className="flex items-center justify-between px-2 py-1.5 bg-[var(--bg3)] rounded border border-[var(--border)]">
-                <span className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Bônus de Proficiência</span>
-                <div className="flex items-center gap-1">
-                  <span className="text-[var(--gold)] font-cinzel font-bold text-sm">+</span>
-                  <input type="number" value={dados.bonus_proficiencia} onChange={e => atualizar('bonus_proficiencia', parseInt(e.target.value) || 2)} className="w-10 input-dd text-center text-sm font-bold" />
-                </div>
-              </div>
-
-              {/* Salvaguardas */}
-              <PainelGrimorio titulo="Salvaguardas" compacto>
-                <div className="space-y-0.5">
-                  {ATRIBUTOS.map(({ key, label }) => {
-                    const temProf = dados.salvaguardas?.[key] ?? false
-                    const mod = mods[key as keyof typeof mods] ?? 0
-                    const valorFinal = mod + (temProf ? dados.bonus_proficiencia : 0)
-                    return (
-                      <div key={key} className="flex items-center gap-1.5">
-                        <input type="checkbox" checked={temProf} onChange={e => atualizar('salvaguardas', { ...dados.salvaguardas, [key]: e.target.checked })} className="w-3 h-3 accent-[var(--accent)] flex-shrink-0" />
-                        <span className="text-[var(--gold)] text-xs font-cinzel font-bold w-6 text-right flex-shrink-0">{valorFinal >= 0 ? `+${valorFinal}` : `${valorFinal}`}</span>
-                        <span className="text-[var(--text2)] text-xs font-crimson">{label}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </PainelGrimorio>
-
-              {/* Perícias */}
-              <PainelGrimorio titulo="Perícias" compacto>
-                <div className="space-y-0.5">
-                  {PERICIAS.map(({ nome, atributo }) => {
-                    const temProf = dados.pericias?.[nome] ?? false
-                    const modBase = (mods[atributo as keyof typeof mods] ?? 0) + (temProf ? dados.bonus_proficiencia : 0)
-                    const ajuste = ajustesPericias[nome] ?? 0
-                    const valorFinal = modBase + ajuste
-                    return (
-                      <div key={nome} className="flex items-center gap-1 py-0.5">
-                        <input type="checkbox" checked={temProf} onChange={e => atualizar('pericias', { ...dados.pericias, [nome]: e.target.checked })} className="w-3 h-3 accent-[var(--accent)] flex-shrink-0" />
-                        <span className="text-[var(--gold)] text-xs font-cinzel font-bold w-6 text-right flex-shrink-0">{valorFinal >= 0 ? `+${valorFinal}` : `${valorFinal}`}</span>
-                        <span className="text-[var(--text2)] text-xs flex-1 font-crimson truncate">{nome}</span>
-                        <span className="text-[var(--text3)] text-[8px] font-cinzel flex-shrink-0">{atributo.slice(0,3).toUpperCase()}</span>
-                        <button onClick={() => ajustarPericia(nome, -1)} className="w-4 h-4 text-[10px] bg-[var(--bg3)] rounded hover:bg-[var(--surface)] text-[var(--text2)] leading-none flex items-center justify-center flex-shrink-0">−</button>
-                        <span className="text-[8px] text-[var(--text3)] w-5 text-center flex-shrink-0">{ajuste !== 0 ? (ajuste > 0 ? `+${ajuste}` : `${ajuste}`) : '±0'}</span>
-                        <button onClick={() => ajustarPericia(nome, +1)} className="w-4 h-4 text-[10px] bg-[var(--bg3)] rounded hover:bg-[var(--surface)] text-[var(--text2)] leading-none flex items-center justify-center flex-shrink-0">+</button>
-                        {ajuste !== 0 && (
-                          <button onClick={() => resetarAjuste(nome)} className="text-[var(--accent)] text-[9px] hover:text-[var(--accent2)] transition-colors flex-shrink-0" title="Resetar ajuste">↺</button>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </PainelGrimorio>
-
               {/* CA / Iniciativa / Deslocamento */}
               <div className="grid grid-cols-3 gap-1">
                 <div>
@@ -967,11 +986,19 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                       </p>
                       <div className="space-y-0.5">
                         {magias.map(m => (
-                          <div key={m.id} className="flex items-center justify-between px-2 py-1 bg-[#1e1525] rounded">
-                            <span className="text-[#b8a8cc] text-sm font-crimson">{m.spell.name_pt}</span>
+                          <div key={m.id} className="flex items-center justify-between px-2 py-1 bg-[#1e1525] rounded hover:bg-[#261a2e] transition-colors group">
+                            <button
+                              onClick={() => setMagiaPopup(m.spell)}
+                              className="flex-1 text-left min-w-0"
+                            >
+                              <span className="text-[#b8a8cc] text-sm font-crimson group-hover:text-[#d4a843] transition-colors">{m.spell.name_pt}</span>
+                              <span className="text-[#4a3060] text-[10px] ml-1.5 group-hover:text-[#8870a8]">
+                                {m.spell.level === 0 ? 'Truque' : `Nv${m.spell.level}`}
+                              </span>
+                            </button>
                             <button
                               onClick={() => removerMagia(m.id)}
-                              className="text-[#4a3060] hover:text-[#e74c3c] transition-colors"
+                              className="text-[#4a3060] hover:text-[#e74c3c] transition-colors flex-shrink-0 ml-2"
                               title="Remover"
                             >
                               <X className="w-3 h-3" />
@@ -1025,6 +1052,50 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         document.body
       )}
 
+      {magiaPopup && createPortal(
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70"
+          onClick={() => setMagiaPopup(null)}
+        >
+          <div
+            className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-5 max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-start mb-3">
+              <div>
+                <h3 className="font-cinzel text-[var(--gold)] font-bold text-lg">{magiaPopup.name_pt}</h3>
+                <p className="text-[var(--text3)] text-xs italic">{magiaPopup.name_en}</p>
+              </div>
+              <button onClick={() => setMagiaPopup(null)} className="text-[var(--text3)] hover:text-[var(--text)] transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-1.5 text-sm">
+              <p><span className="text-[var(--text3)] font-cinzel text-xs">Nível:</span> <span className="text-[var(--text)]">{magiaPopup.level === 0 ? 'Truque' : `${magiaPopup.level}º nível`}</span></p>
+              {magiaPopup.school_pt && <p><span className="text-[var(--text3)] font-cinzel text-xs">Escola:</span> <span className="text-[var(--text)]">{magiaPopup.school_pt}</span></p>}
+              {magiaPopup.casting_time_pt && <p><span className="text-[var(--text3)] font-cinzel text-xs">Tempo:</span> <span className="text-[var(--text)]">{magiaPopup.casting_time_pt}</span></p>}
+              {magiaPopup.range_pt && <p><span className="text-[var(--text3)] font-cinzel text-xs">Alcance:</span> <span className="text-[var(--text)]">{magiaPopup.range_pt}</span></p>}
+              {magiaPopup.components_pt && <p><span className="text-[var(--text3)] font-cinzel text-xs">Componentes:</span> <span className="text-[var(--text)]">{magiaPopup.components_pt}</span></p>}
+              {magiaPopup.duration_pt && <p><span className="text-[var(--text3)] font-cinzel text-xs">Duração:</span> <span className="text-[var(--text)]">{magiaPopup.duration_pt}</span></p>}
+              <div className="flex gap-1.5 mt-1">
+                {magiaPopup.concentration && (
+                  <span className="text-[var(--accent)] text-xs border border-[var(--accent)] px-2 py-0.5 rounded font-cinzel">Concentração</span>
+                )}
+                {magiaPopup.ritual && (
+                  <span className="text-[#facc15] text-xs border border-[#facc15] px-2 py-0.5 rounded font-cinzel">Ritual</span>
+                )}
+              </div>
+              {magiaPopup.description_pt && (
+                <div className="pt-2 border-t border-[var(--border)]">
+                  <p className="text-[var(--text2)] text-sm leading-relaxed whitespace-pre-wrap font-crimson">{magiaPopup.description_pt}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {modalCopiar && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
@@ -1064,27 +1135,32 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   )
 }
 
-function AtributoCard({ label, value, onChange }: {
-  label: string
+function AtributoCard({ abrev, value, onChange }: {
+  abrev: string
   value: number
   onChange: (v: number) => void
 }) {
   const mod = calcularModificadorAtributo(value)
   return (
-    <div className="flex flex-col items-center border border-[#4a3060] rounded-lg overflow-hidden bg-[#1e1525]">
-      <div className="w-full bg-[#261a2e] py-1 text-center">
-        <span className="text-[#8870a8] text-[9px] font-cinzel uppercase tracking-wider">{label}</span>
+    <div
+      className="flex flex-col items-center border-2 border-[var(--border)] rounded-xl overflow-hidden bg-[var(--surface)]"
+      style={{ width: 64 }}
+    >
+      <div className="w-full text-center py-0.5 bg-[var(--bg3)] border-b border-[var(--border)]">
+        <span className="font-cinzel text-[var(--text3)] text-[8px] uppercase tracking-widest">{abrev}</span>
       </div>
-      <div className="py-2 flex flex-col items-center gap-1.5">
-        <div className="w-12 h-12 rounded-full border-2 border-[#4a3060] bg-[#261a2e] flex items-center justify-center">
-          <span className="text-[#d4a843] text-base font-bold font-cinzel leading-none">{formatarModificador(mod)}</span>
-        </div>
+      <div className="my-1.5 w-9 h-9 rounded-full border-2 border-[var(--border)] bg-[var(--bg)] flex items-center justify-center">
+        <span className="font-cinzel font-bold text-base text-[var(--gold)] leading-none">{formatarModificador(mod)}</span>
+      </div>
+      <div className="w-full border-t border-[var(--border)] bg-[var(--bg3)]">
         <input
           type="number"
+          min={1}
+          max={30}
           value={value}
           onChange={e => onChange(parseInt(e.target.value) || 10)}
-          className="w-14 input-dd text-center text-sm font-bold"
-          title={label}
+          onFocus={e => e.target.select()}
+          className="w-full text-center font-cinzel font-bold text-sm py-1 bg-transparent border-none outline-none text-[var(--text)] focus:text-[var(--gold)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
       </div>
     </div>

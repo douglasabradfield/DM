@@ -6,10 +6,12 @@ import { Crown, Shield, Users, Zap, ChevronDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const PLANOS = [
-  { id: 'free',          nome: 'Aventureiro', cor: 'text-[var(--text3)]',   bg: 'bg-[var(--bg3)]' },
-  { id: 'solo',          nome: 'DM Solo',     cor: 'text-[var(--accent2)]', bg: 'bg-[var(--accent)]/10' },
-  { id: 'mesa_pro',      nome: 'Mesa Pro',    cor: 'text-[var(--gold)]',    bg: 'bg-[var(--gold)]/10' },
-  { id: 'guild_master',  nome: 'Guild Master',cor: 'text-[var(--green2)]',  bg: 'bg-[var(--green)]/10' },
+  { id: 'free',         nome: '🆓 Aventureiro', cor: 'text-[var(--text3)]',   bg: 'bg-[var(--bg3)]' },
+  { id: 'heroi',        nome: 'Herói (legado)', cor: 'text-[var(--text2)]',   bg: 'bg-[var(--bg3)]' },
+  { id: 'solo',         nome: '⚔️ Herói',       cor: 'text-[var(--accent2)]', bg: 'bg-[var(--accent)]/10' },
+  { id: 'mesa_pro',     nome: '🧙 Mestre',      cor: 'text-[var(--gold)]',    bg: 'bg-[var(--gold)]/10' },
+  { id: 'guild_master', nome: '🏰 Guilda',      cor: 'text-[var(--green2)]',  bg: 'bg-[var(--green)]/10' },
+  { id: 'dm_supremo',   nome: '👑 DM Supremo',  cor: 'text-[var(--accent2)]', bg: 'bg-[var(--accent2)]/10' },
 ] as const
 
 const STATUS_COR: Record<string, string> = {

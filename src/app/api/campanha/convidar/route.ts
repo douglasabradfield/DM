@@ -56,5 +56,32 @@ export async function POST(req: NextRequest) {
   const origin = req.headers.get('origin') ?? req.nextUrl.origin
   const linkConvite = `${origin}/convite/${token}`
 
-  return NextResponse.json({ sucesso: true, link: linkConvite, mensagem: 'Convite gerado!' })
+  // Verificar se o usuário convidado já tem conta e criar notificação
+  const { data: usuarioExistente } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('email', email.trim().toLowerCase())
+    .maybeSingle()
+
+  if (usuarioExistente) {
+    await supabase.from('campanha_membros')
+      .update({ user_id: usuarioExistente.id })
+      .eq('token_convite', token)
+
+    await supabase.from('notificacoes').insert({
+      user_id: usuarioExistente.id,
+      tipo: 'convite_campanha',
+      titulo: '🎲 Convite para campanha!',
+      mensagem: `Você foi convidado para participar de "${campanha.nome}". Clique para aceitar.`,
+      link: `/convite/${token}`,
+      lida: false,
+    })
+  }
+
+  return NextResponse.json({
+    sucesso: true,
+    link: linkConvite,
+    jaTemConta: !!usuarioExistente,
+    mensagem: usuarioExistente ? 'Notificação enviada ao jogador!' : 'Convite gerado! Compartilhe o link.',
+  })
 }

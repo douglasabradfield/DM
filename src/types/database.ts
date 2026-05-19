@@ -36,6 +36,9 @@ export interface Campanha {
   resumo_final?: string | null
   moeda_custom_nome?: string | null
   aventura_bloqueada_ate?: string | null
+  sessao_data?: string | null
+  sessao_formato?: 'presencial' | 'online' | null
+  sessao_local?: string | null
 }
 
 export interface Aventura {

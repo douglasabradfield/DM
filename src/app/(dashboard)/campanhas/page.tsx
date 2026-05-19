@@ -247,7 +247,15 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
   onSetarAtiva: (c: Campanha) => void
   onCronica: (nome: string, resumo: string) => void
 }) {
-  const [form, setForm] = useState({ nome: campanha.nome, descricao: campanha.descricao ?? '', sistema: campanha.sistema ?? 'D&D 5e', moeda_custom_nome: campanha.moeda_custom_nome ?? '' })
+  const [form, setForm] = useState({
+    nome: campanha.nome,
+    descricao: campanha.descricao ?? '',
+    sistema: campanha.sistema ?? 'D&D 5e',
+    moeda_custom_nome: campanha.moeda_custom_nome ?? '',
+    sessao_data: campanha.sessao_data ?? null as string | null,
+    sessao_formato: campanha.sessao_formato ?? null as 'presencial' | 'online' | null,
+    sessao_local: campanha.sessao_local ?? '',
+  })
   const [salvando, setSalvando] = useState(false)
   const [encerrando, setEncerrando] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
@@ -255,8 +263,16 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
   const [confirmandoApagar, setConfirmandoApagar] = useState(false)
 
   useEffect(() => {
-    setForm({ nome: campanha.nome, descricao: campanha.descricao ?? '', sistema: campanha.sistema ?? 'D&D 5e', moeda_custom_nome: campanha.moeda_custom_nome ?? '' })
-  }, [campanha.id, campanha.nome, campanha.descricao, campanha.sistema, campanha.moeda_custom_nome])
+    setForm({
+      nome: campanha.nome,
+      descricao: campanha.descricao ?? '',
+      sistema: campanha.sistema ?? 'D&D 5e',
+      moeda_custom_nome: campanha.moeda_custom_nome ?? '',
+      sessao_data: campanha.sessao_data ?? null,
+      sessao_formato: campanha.sessao_formato ?? null,
+      sessao_local: campanha.sessao_local ?? '',
+    })
+  }, [campanha.id, campanha.nome, campanha.descricao, campanha.sistema, campanha.moeda_custom_nome, campanha.sessao_data, campanha.sessao_formato, campanha.sessao_local])
 
   useEffect(() => {
     async function carregarUser() {
@@ -277,7 +293,15 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
       const supabase = createClient()
       const { data, error } = await supabase
         .from('campanhas')
-        .update({ nome: form.nome, descricao: form.descricao, sistema: form.sistema, moeda_custom_nome: form.moeda_custom_nome || null })
+        .update({
+          nome: form.nome,
+          descricao: form.descricao,
+          sistema: form.sistema,
+          moeda_custom_nome: form.moeda_custom_nome || null,
+          sessao_data: form.sessao_data || null,
+          sessao_formato: form.sessao_formato || null,
+          sessao_local: form.sessao_local || null,
+        })
         .eq('id', campanha.id)
         .select().single()
       if (error) throw error
@@ -337,6 +361,12 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
           <h2 className="font-cinzel text-[var(--gold)] text-xl font-bold">{campanha.nome}</h2>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-[var(--text3)] text-xs font-crimson">{campanha.sistema}</span>
+            {campanha.sessao_data && (
+              <span className="text-[var(--text3)] text-[10px] font-crimson">
+                📅 {new Date(campanha.sessao_data).toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                {campanha.sessao_formato && ` · ${campanha.sessao_formato}`}
+              </span>
+            )}
             {campanha.ativa !== false
               ? <span className="text-[10px] px-1.5 py-0.5 bg-[var(--green2)]/20 text-[var(--green2)] border border-[var(--green2)]/40 rounded font-cinzel">Ativa</span>
               : <span className="text-[10px] px-1.5 py-0.5 bg-[var(--border)]/20 text-[var(--border)] border border-[var(--border)]/40 rounded font-cinzel">Encerrada</span>
@@ -392,6 +422,46 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
                 className="input-dd w-full"
               />
               <p className="text-[var(--text3)] text-[10px] mt-0.5 font-crimson">Aparece nas fichas de personagem como moeda adicional</p>
+            </div>
+            <div>
+              <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">📅 Próxima Sessão</label>
+              <input
+                type="datetime-local"
+                value={form.sessao_data ? new Date(form.sessao_data).toISOString().slice(0, 16) : ''}
+                onChange={e => setForm(f => ({ ...f, sessao_data: e.target.value ? new Date(e.target.value).toISOString() : null }))}
+                className="input-dd w-full"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Formato</label>
+                <div className="flex gap-1">
+                  {([{ value: 'presencial', label: '🎲 Presencial' }, { value: 'online', label: '💻 Online' }] as const).map(op => (
+                    <button
+                      key={op.value}
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, sessao_formato: f.sessao_formato === op.value ? null : op.value }))}
+                      className={`flex-1 py-1.5 rounded text-xs font-cinzel border transition-all ${
+                        form.sessao_formato === op.value
+                          ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                          : 'border-[var(--border)] text-[var(--text2)] hover:bg-[var(--surface)]'
+                      }`}
+                    >
+                      {op.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Local / Link</label>
+                <input
+                  type="text"
+                  value={form.sessao_local}
+                  onChange={e => setForm(f => ({ ...f, sessao_local: e.target.value }))}
+                  placeholder={form.sessao_formato === 'online' ? 'Link da sala...' : 'Endereço...'}
+                  className="input-dd w-full"
+                />
+              </div>
             </div>
             <div className="flex gap-2">
               <BotaoRunico type="submit" variante="ouro" tamanho="sm" carregando={salvando}>Salvar</BotaoRunico>

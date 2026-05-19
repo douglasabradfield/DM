@@ -14,7 +14,7 @@ import { BookMarked, Plus, Trash2, Sword, Shield, ScrollText, Star, Map } from '
 import toast from 'react-hot-toast'
 
 type TipoEntrada = 'nota' | 'batalha' | 'npc' | 'item' | 'plot'
-type Visibilidade = 'dm' | 'grupo' | 'privado'
+type Visibilidade = 'dm' | 'grupo' | 'privado' | 'jogador_especifico'
 
 interface EntradaDiario {
   id: string
@@ -27,6 +27,7 @@ interface EntradaDiario {
   sessao_id: string | null
   criado_por: string | null
   visibilidade: Visibilidade
+  visibilidade_jogador_id: string | null
 }
 
 const ICONES_TIPO: Record<TipoEntrada, React.ReactNode> = {
@@ -53,12 +54,15 @@ export default function DiarioPage() {
   const [titulo, setTitulo] = useState('')
   const [conteudo, setConteudo] = useState('')
   const [visibilidade, setVisibilidade] = useState<Visibilidade>('dm')
+  const [jogadorEspecifico, setJogadorEspecifico] = useState<string | null>(null)
+  const [jogadoresCampanha, setJogadoresCampanha] = useState<Array<{ id: string; nome: string; user_id: string | null }>>([])
   const [filtroTipo, setFiltroTipo] = useState<TipoEntrada | ''>('')
   const [userId, setUserId] = useState<string | null>(null)
   const { log } = useBatalha()
   const { campanhaAtiva, papelPorCampanha } = useCampanha()
 
   const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
+  const isDM = !ehJogador
 
   useEffect(() => {
     async function getUser() {
@@ -68,6 +72,28 @@ export default function DiarioPage() {
     }
     getUser()
   }, [])
+
+  useEffect(() => {
+    if (!isDM || !campanhaAtiva?.id) return
+    const supabase = createClient()
+    supabase
+      .from('campanha_membros')
+      .select('id, email, user_id, status')
+      .eq('campanha_id', campanhaAtiva.id)
+      .eq('status', 'ativo')
+      .then(async ({ data: membros }) => {
+        if (!membros?.length) return
+        const userIds = membros.map(m => m.user_id).filter(Boolean) as string[]
+        if (!userIds.length) return
+        const { data: personagens } = await supabase
+          .from('personagens')
+          .select('id, nome, user_id')
+          .eq('campanha_id', campanhaAtiva.id)
+          .eq('tipo_personagem', 'jogador')
+          .in('user_id', userIds)
+        setJogadoresCampanha((personagens ?? []).map(p => ({ id: p.user_id!, nome: p.nome, user_id: p.user_id })))
+      })
+  }, [isDM, campanhaAtiva?.id])
 
   const carregar = useCallback(async () => {
     if (!campanhaAtiva) { setCarregando(false); return }
@@ -82,7 +108,8 @@ export default function DiarioPage() {
       const visiveis = ehJogador && userId
         ? todas.filter(e =>
             e.visibilidade === 'grupo' ||
-            (e.visibilidade === 'privado' && e.criado_por === userId)
+            (e.visibilidade === 'privado' && e.criado_por === userId) ||
+            (e.visibilidade === 'jogador_especifico' && e.visibilidade_jogador_id === userId)
           )
         : todas
 
@@ -109,7 +136,27 @@ export default function DiarioPage() {
         tags: [],
         criado_por: userId ?? null,
         visibilidade,
+        visibilidade_jogador_id: visibilidade === 'jogador_especifico' ? jogadorEspecifico : null,
       })
+
+      // Notificar membros visíveis
+      if (!error && (visibilidade === 'grupo' || visibilidade === 'jogador_especifico')) {
+        const destinatarios = visibilidade === 'jogador_especifico' && jogadorEspecifico
+          ? [jogadorEspecifico]
+          : jogadoresCampanha.map(j => j.user_id).filter(Boolean) as string[]
+
+        for (const uid of destinatarios) {
+          if (uid === userId) continue
+          await supabase.from('notificacoes').insert({
+            user_id: uid,
+            tipo: 'diario_entrada',
+            titulo: '📝 Nova entrada no diário',
+            mensagem: titulo.trim() || conteudo.trim().slice(0, 80),
+            link: '/diario',
+            lida: false,
+          })
+        }
+      }
       if (error) {
         toast.error(`Erro: ${error.message}`)
         return
@@ -119,6 +166,7 @@ export default function DiarioPage() {
       setTitulo('')
       setConteudo('')
       setVisibilidade('dm')
+      setJogadorEspecifico(null)
       carregar()
     } catch {
       toast.error('Erro ao criar entrada')
@@ -221,26 +269,44 @@ export default function DiarioPage() {
               className="w-full input-dd text-sm resize-y"
               campanhaId={campanhaAtiva?.id ?? null}
             />
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-[var(--text3)] text-xs font-cinzel">Visível para:</span>
               {[
-                { value: 'dm', label: '🔒 Só DM' },
-                { value: 'grupo', label: '👥 Grupo' },
-                { value: 'privado', label: '🙈 Privado' },
+                { value: 'dm',      label: '🔒 Só DM',   desc: 'Apenas você vê' },
+                { value: 'grupo',   label: '👥 Grupo',   desc: 'Todos da campanha' },
+                { value: 'privado', label: '🙈 Privado', desc: 'Só quem criou' },
               ].map(op => (
                 <button
                   key={op.value}
                   type="button"
-                  onClick={() => setVisibilidade(op.value as Visibilidade)}
+                  title={op.desc}
+                  onClick={() => { setVisibilidade(op.value as Visibilidade); setJogadorEspecifico(null) }}
                   className={`px-2.5 py-1 rounded-lg text-xs font-cinzel border transition-all ${
-                    visibilidade === op.value
+                    visibilidade === op.value && !jogadorEspecifico
                       ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
-                      : 'border-[var(--border)] text-[var(--text2)]'
+                      : 'border-[var(--border)] text-[var(--text2)] hover:bg-[var(--surface)]'
                   }`}
                 >
                   {op.label}
                 </button>
               ))}
+              {isDM && jogadoresCampanha.length > 0 && (
+                <select
+                  value={jogadorEspecifico || ''}
+                  onChange={e => {
+                    if (e.target.value) {
+                      setVisibilidade('jogador_especifico')
+                      setJogadorEspecifico(e.target.value)
+                    }
+                  }}
+                  className={`input-dd text-xs py-1 ${visibilidade === 'jogador_especifico' ? 'border-[var(--accent)]' : ''}`}
+                >
+                  <option value="">👤 Para jogador...</option>
+                  {jogadoresCampanha.map(j => (
+                    <option key={j.user_id} value={j.user_id!}>{j.nome}</option>
+                  ))}
+                </select>
+              )}
             </div>
             <div className="flex gap-2">
               <BotaoRunico type="submit" variante="ouro" tamanho="sm">Salvar</BotaoRunico>
@@ -277,10 +343,13 @@ export default function DiarioPage() {
                   <span className={`text-[9px] px-1.5 py-0.5 rounded font-cinzel ${
                     entrada.visibilidade === 'grupo' ? 'text-[var(--green2)] bg-[var(--green2)]/10' :
                     entrada.visibilidade === 'privado' ? 'text-[var(--text3)] bg-[var(--surface2)]' :
+                    entrada.visibilidade === 'jogador_especifico' ? 'text-[var(--accent2)] bg-[var(--accent2)]/10' :
                     'text-[var(--gold)] bg-[var(--gold)]/10'
                   }`}>
                     {entrada.visibilidade === 'grupo' ? '👥 Grupo' :
-                     entrada.visibilidade === 'privado' ? '🙈 Privado' : '🔒 DM'}
+                     entrada.visibilidade === 'privado' ? '🙈 Privado' :
+                     entrada.visibilidade === 'jogador_especifico' ? '👤 Jogador' :
+                     '🔒 DM'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">

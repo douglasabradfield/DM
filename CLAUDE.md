@@ -40,7 +40,9 @@ There is no lint or test script configured.
 - `src/app/(dashboard)/` — All main app pages; the layout server component redirects unauthenticated users to `/login`
 - `src/app/api/ia/` — Claude AI endpoints: `chat` (streaming), `resumo-batalha`, `resumo-campanha`
 - `src/app/api/aventura/processar/` — Adventure PDF/MD/TXT processing endpoint
+- `src/app/api/personagem/importar-ficha/` — Character sheet import via Claude document API (multipart form, max 5 MB)
 - `src/app/api/campanhas/[id]/` — Campaign management: `membros`, `convidar`, `link-entrada`
+- `src/app/api/campanha/` — Additional campaign routes: `convidar`, `link-convite` (flat, non-parameterized variants)
 - `src/app/api/convites/` — Invite acceptance: `aceitar`, `entrar`
 - `src/app/api/stripe/` — Checkout session creation and webhook handling
 - `src/app/api/admin/` — Admin-only user management and plan override
@@ -64,7 +66,7 @@ Campaign/session selection is persisted to `localStorage` via `src/store/campanh
 
 `src/lib/claude/prompts.ts` contains `buildSystemPrompt(contextoAventura?, grupoPJs?)` which injects the current adventure and party context, and `PROMPTS_RAPIDOS` — an array of 8 quick-prompt templates (NPC improv, location description, random encounter, battle tip, session summary, plot twist, item rewards, monster tactics).
 
-Monthly IA message usage is tracked in the `uso_ia` table (keyed by user, month, year). The `/api/ia/chat` route reads the user's plan, looks up the limit from `src/lib/ia/limites.ts` (`LIMITES_IA`: free=0, solo=100, mesa_pro=500, guild_master=∞), and returns 429 if the cap is reached.
+Monthly IA message usage is tracked in the `uso_ia` table (keyed by user, month, year). The `/api/ia/chat` route reads the user's plan, looks up the limit from `src/lib/ia/limites.ts` (`LIMITES_IA`: free=0, heroi=0, solo=30, mesa_pro=100, guild_master=∞, dm_supremo=∞), and returns 429 if the cap is reached.
 
 ### Aventura (PDF Processing) Flow
 
@@ -76,17 +78,27 @@ Monthly IA message usage is tracked in the `uso_ia` table (keyed by user, month,
 
 ### Subscription Plans
 
-Five tiers defined in `src/lib/stripe/produtos.ts`:
+Two separate files handle plans:
 
-| id | Name | Price |
-|---|---|---|
-| `free` | Aventureiro | Free — no IA, no adventure upload |
-| `heroi` | Herói | R$9/mo — up to 3 campaigns, no IA |
-| `solo` | DM Solo | R$19/mo — 3 campaigns, 100 IA msgs/mo |
-| `mesa_pro` | Mesa Pro | R$59/mo — unlimited campaigns, 500 IA msgs/mo |
-| `guild_master` | Guild Master | R$129/mo — up to 5 DMs, unlimited IA |
+- **`src/lib/planos.ts`** — canonical source for feature gating. Exports `getPlano()`, `planoSuficiente()`, and `podeUsar()`. Use these functions to gate features; never hardcode plan checks.
+- **`src/lib/stripe/produtos.ts`** — display data for the checkout page UI only (names, descriptions, feature lists).
+
+Six tiers in `src/lib/planos.ts`:
+
+| id | Name | Campaigns | IA msgs/mo |
+|---|---|---|---|
+| `free` | Aventureiro | 1 | 0 |
+| `heroi` | Herói (legado) | 3 | 0 |
+| `solo` | Herói | 1 | 30 |
+| `mesa_pro` | Mestre | 3 | 100 |
+| `guild_master` | Guilda | unlimited | unlimited |
+| `dm_supremo` | DM Supremo | unlimited | unlimited |
 
 `profiles.plano` is the canonical plan value. The Stripe webhook (`/api/stripe/webhook`) maps `stripe_price_id` to plan tier via `PLANOS_STRIPE` and updates both `profiles.plano` and the `assinaturas` table. On cancellation, plan reverts to `free`. Admins can override via `PATCH /api/admin/usuarios/[id]/plano` without touching Stripe.
+
+**Player plan inheritance:** Players in a campaign may inherit the DM's effective plan. The `usePlanoEfetivo` hook (`src/hooks/usePlanoEfetivo.ts`) reads `campanha_membros.plano_efetivo` for the active campaign member and returns that instead of the user's own plan. Always use this hook (not `profiles.plano` directly) in Client Components that gate features.
+
+Use `src/components/ui/BloqueioPlano.tsx` to render the standard upgrade prompt when a feature is unavailable on the user's plan.
 
 ### Design System
 
@@ -94,7 +106,7 @@ Tailwind v4 with a custom theme defined via CSS variables in `src/app/globals.cs
 
 ### Component Organization
 
-- `src/components/ui/` — Generic design-system primitives (buttons, panels, badges, dividers)
+- `src/components/ui/` — Generic design-system primitives (buttons, panels, badges, dividers, `BloqueioPlano`)
 - `src/components/layout/` — App shell: `Sidebar`, `Header`, `ProvedorSessao` (context provider that loads campaigns and user profile on mount)
 - `src/components/batalha/` — All battle tracker components; state is consumed from `useBatalha` store
 - `src/components/personagem/` — Character sheet and mini-card components
@@ -106,7 +118,8 @@ Tailwind v4 with a custom theme defined via CSS variables in `src/app/globals.cs
 - `profiles` — Extended auth user; holds `plano`, `is_admin`, `stripe_customer_id`
 - `assinaturas` — Stripe subscription records; status: `ativo | cancelado | pendente | trial`
 - `campanhas` — DM-owned campaigns; `link_token` enables open join links
-- `campaign_members` — Links users to campaigns with `papel: 'dm' | 'jogador'`
+- `campaign_members` — Links users to campaigns with `papel: 'dm' | 'jogador'` (used by campaign store)
+- `campanha_membros` — Extended membership table with `plano_efetivo` and `status` fields (used by `usePlanoEfetivo`)
 - `aventuras` — Uploaded adventures; `conteudo_json` holds parsed structure
 - `sessoes` — Campaign sessions; `resumo_ia` populated by `/api/ia/resumo-campanha`
 - `diario_entradas` — Journal entries; auto-created on battle end via `encerrarBatalha()`

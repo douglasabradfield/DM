@@ -7,7 +7,7 @@ export interface UsuarioAdmin {
   id: string
   email: string
   nome: string | null
-  plano: 'free' | 'solo' | 'mesa_pro' | 'guild_master'
+  plano: 'free' | 'heroi' | 'solo' | 'mesa_pro' | 'guild_master' | 'dm_supremo'
   is_admin: boolean
   criado_em: string
   assinatura_status: string | null
