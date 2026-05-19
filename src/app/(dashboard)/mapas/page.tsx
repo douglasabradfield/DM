@@ -1,15 +1,14 @@
-import { createClient } from '@/lib/supabase/server'
-import { getPlano } from '@/lib/planos'
+'use client'
+
+import { usePlanoEfetivo } from '@/hooks/usePlanoEfetivo'
+import { planoSuficiente } from '@/lib/planos'
 import { GaleriaImagens } from '@/components/galeria/GaleriaImagens'
 import { BloqueioPlano } from '@/components/ui/BloqueioPlano'
 
-export default async function MapasPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase.from('profiles').select('plano').eq('id', user?.id ?? '').single()
-  const plano = getPlano(profile?.plano)
+export default function MapasPage() {
+  const planoEfetivo = usePlanoEfetivo()
 
-  if (!plano.limites.imagens_mapas) {
+  if (!planoSuficiente(planoEfetivo, 'guild_master')) {
     return <BloqueioPlano recurso="Mapas" planoNecessario="Guilda" />
   }
 

@@ -100,24 +100,25 @@ export default function DiarioPage() {
     setCarregando(true)
     try {
       const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
       let query = supabase.from('diario_entradas').select('*').eq('campanha_id', campanhaAtiva.id)
       if (filtroTipo) query = query.eq('tipo', filtroTipo)
+
+      if (ehJogador && user?.id) {
+        query = query.or(
+          `visibilidade.eq.grupo,` +
+          `and(visibilidade.eq.privado,criado_por.eq.${user.id}),` +
+          `and(visibilidade.eq.jogador_especifico,visibilidade_jogador_id.eq.${user.id})`
+        )
+      }
+
       const { data } = await query.order('criado_em', { ascending: false })
-      const todas = (data ?? []) as EntradaDiario[]
-
-      const visiveis = ehJogador && userId
-        ? todas.filter(e =>
-            e.visibilidade === 'grupo' ||
-            (e.visibilidade === 'privado' && e.criado_por === userId) ||
-            (e.visibilidade === 'jogador_especifico' && e.visibilidade_jogador_id === userId)
-          )
-        : todas
-
-      setEntradas(visiveis)
+      setEntradas((data ?? []) as EntradaDiario[])
     } finally {
       setCarregando(false)
     }
-  }, [campanhaAtiva, filtroTipo, ehJogador, userId])
+  }, [campanhaAtiva, filtroTipo, ehJogador])
 
   useEffect(() => { carregar() }, [carregar])
 

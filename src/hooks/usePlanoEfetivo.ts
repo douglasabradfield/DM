@@ -5,15 +5,10 @@ import { createClient } from '@/lib/supabase/client'
 import { useCampanha } from '@/store/campanha'
 
 export function usePlanoEfetivo() {
-  const { campanhaAtiva } = useCampanha()
+  const { campanhaAtiva, papelPorCampanha } = useCampanha()
   const [planoEfetivo, setPlanoEfetivo] = useState('free')
 
   useEffect(() => {
-    if (campanhaAtiva?.plano_efetivo) {
-      setPlanoEfetivo(campanhaAtiva.plano_efetivo)
-      return
-    }
-
     async function verificar() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
@@ -24,11 +19,38 @@ export function usePlanoEfetivo() {
         .select('plano')
         .eq('id', user.id)
         .single()
+      const planoProprio = perfil?.plano || 'free'
 
-      setPlanoEfetivo(perfil?.plano ?? 'free')
+      if (!campanhaAtiva) {
+        setPlanoEfetivo(planoProprio)
+        return
+      }
+
+      const papel = papelPorCampanha[campanhaAtiva.id]
+
+      if (papel === 'dm' || !papel) {
+        setPlanoEfetivo(planoProprio)
+        return
+      }
+
+      // Jogador: usar plano_efetivo da campanha (calculado no store)
+      const planoEfetivoCampanha = (campanhaAtiva as { plano_efetivo?: string }).plano_efetivo
+      if (planoEfetivoCampanha) {
+        setPlanoEfetivo(planoEfetivoCampanha)
+        return
+      }
+
+      // Fallback: buscar plano do DM da campanha
+      const { data: dmPerfil } = await supabase
+        .from('profiles')
+        .select('plano')
+        .eq('id', campanhaAtiva.dm_id)
+        .single()
+
+      setPlanoEfetivo(dmPerfil?.plano || planoProprio)
     }
     verificar()
-  }, [campanhaAtiva?.id, campanhaAtiva?.plano_efetivo])
+  }, [campanhaAtiva?.id, papelPorCampanha])
 
   return planoEfetivo
 }

@@ -257,12 +257,29 @@ export default function PersonagensPage() {
     setCarregando(true)
     try {
       const supabase = createClient()
-      const { data } = await supabase
+      const { data: { user } } = await supabase.auth.getUser()
+      const jogadorAtual = user?.id
+
+      const ehJogadorNaCampanha = campanhaAtiva
+        ? papelPorCampanha[campanhaAtiva.id] === 'jogador'
+        : false
+
+      let query = supabase
         .from('personagens')
         .select('*')
         .eq('campanha_id', campanhaAtiva.id)
         .eq('ativo', true)
-        .order('nome')
+
+      if (ehJogadorNaCampanha && jogadorAtual) {
+        query = query.or(
+          `visibilidade.eq.grupo,` +
+          `and(visibilidade.eq.jogador_especifico,visibilidade_jogador_id.eq.${jogadorAtual}),` +
+          `and(visibilidade.eq.privado,user_id.eq.${jogadorAtual}),` +
+          `user_id.eq.${jogadorAtual}`
+        )
+      }
+
+      const { data } = await query.order('nome')
       setPersonagens((data ?? []) as Personagem[])
 
       const { data: membrosData } = await supabase

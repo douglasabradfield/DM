@@ -79,7 +79,9 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
 
   const planoEfetivo = usePlanoEfetivo()
   const campanhasAtivas = campanhas.filter(c => c.ativa !== false)
-  const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
+  const ehJogador = campanhaAtiva
+    ? papelPorCampanha[campanhaAtiva.id] === 'jogador'
+    : false
   const itensVisiveis = itensNav.filter(item => !item.dmOnly || !ehJogador)
 
   return (
@@ -128,14 +130,12 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
                     )}
                   </button>
                 ))}
-                {!ehJogador && (
-                  <button
-                    onClick={() => { setModalNova(true); setDropdownAberto(false) }}
-                    className="w-full text-left px-2 py-1.5 text-sm font-cinzel text-[var(--accent)] hover:bg-[var(--bg3)] transition-colors border-t border-[var(--border)] flex items-center gap-1"
-                  >
-                    <Plus className="w-3 h-3" /> Nova campanha
-                  </button>
-                )}
+                <button
+                  onClick={() => { setModalNova(true); setDropdownAberto(false) }}
+                  className="w-full text-left px-2 py-1.5 text-sm font-cinzel text-[var(--accent)] hover:bg-[var(--bg3)] transition-colors border-t border-[var(--border)] flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" /> Nova campanha
+                </button>
               </div>
             )}
           </div>
@@ -292,7 +292,9 @@ export function BottomNav({ isAdmin, plano: _plano }: { isAdmin?: boolean; plano
   const pathname = usePathname()
   const { campanhaAtiva, papelPorCampanha } = useCampanha()
 
-  const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
+  const ehJogador = campanhaAtiva
+    ? papelPorCampanha[campanhaAtiva.id] === 'jogador'
+    : false
 
   const itensDm = [
     { href: '/batalha',     icone: Swords,      label: 'Batalha'  },

@@ -71,14 +71,12 @@ export default function CampanhasPage() {
         <div className="p-3 border-b border-[var(--border)]">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[var(--text3)] text-xs font-cinzel uppercase tracking-wider">Suas Campanhas</p>
-            {ehDmGlobal && (
-              <button
-                onClick={() => setCriandoNova(true)}
-                className="flex items-center gap-1 text-xs font-cinzel text-[var(--accent)] hover:text-[var(--accent)]/80 transition-colors"
-              >
-                <Plus className="w-3 h-3" /> Nova
-              </button>
-            )}
+            <button
+              onClick={() => setCriandoNova(true)}
+              className="flex items-center gap-1 text-xs font-cinzel text-[var(--accent)] hover:text-[var(--accent)]/80 transition-colors"
+            >
+              <Plus className="w-3 h-3" /> Nova
+            </button>
           </div>
 
           {criandoNova && (
@@ -488,9 +486,16 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
       {/* Info (jogador) */}
       {!ehDm && (
         <PainelGrimorio titulo="Sobre a Campanha" compacto>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {campanha.descricao && <p className="text-[var(--text2)] font-crimson text-sm">{campanha.descricao}</p>}
-            <p className="text-[var(--text3)] text-xs">Sistema: {campanha.sistema}</p>
+            <p className="text-[var(--text3)] text-xs">🎲 Sistema: {campanha.sistema}</p>
+            <p className="text-[var(--text3)] text-xs">
+              📅 Próxima sessão: {campanha.sessao_data
+                ? new Date(campanha.sessao_data).toLocaleString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                : 'Não agendada'}
+            </p>
+            <p className="text-[var(--text3)] text-xs">🎭 Formato: {campanha.sessao_formato || 'Não definido'}</p>
+            {campanha.sessao_local && <p className="text-[var(--text3)] text-xs">📍 Local: {campanha.sessao_local}</p>}
           </div>
         </PainelGrimorio>
       )}
