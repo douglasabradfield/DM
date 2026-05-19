@@ -32,33 +32,67 @@ export const useCampanha = create<EstadoCampanha>()(
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
+        const papelPorCampanha: Record<string, 'dm' | 'jogador'> = {}
+
+        // Campanhas onde é DM
         const { data: comoDm } = await supabase
           .from('campanhas')
           .select('*')
           .eq('dm_id', user.id)
           .order('criado_em', { ascending: false })
 
-        const { data: membros } = await supabase
-          .from('campaign_members')
-          .select('papel, campanhas(*)')
-          .eq('user_id', user.id)
-
-        const papelPorCampanha: Record<string, 'dm' | 'jogador'> = {}
-        const campanhasMembro: Campanha[] = []
-
         for (const c of comoDm ?? []) {
           papelPorCampanha[c.id] = 'dm'
         }
 
-        for (const m of membros ?? []) {
+        // Campanhas via tabela legada campaign_members
+        const { data: membrosLegado } = await supabase
+          .from('campaign_members')
+          .select('papel, campanhas(*)')
+          .eq('user_id', user.id)
+
+        const campanhasLegado: Campanha[] = []
+        for (const m of membrosLegado ?? []) {
           const camp = m.campanhas as unknown as Campanha
           if (camp && !papelPorCampanha[camp.id]) {
             papelPorCampanha[camp.id] = m.papel as 'dm' | 'jogador'
-            campanhasMembro.push(camp)
+            campanhasLegado.push(camp)
           }
         }
 
-        const todas = [...(comoDm as Campanha[] ?? []), ...campanhasMembro]
+        // Campanhas via tabela nova campanha_membros (status ativo)
+        const { data: membrosNovos } = await supabase
+          .from('campanha_membros')
+          .select('campanha_id, plano_efetivo, papel')
+          .eq('user_id', user.id)
+          .eq('status', 'ativo')
+
+        const idsMembrosNovos = (membrosNovos ?? [])
+          .map(m => m.campanha_id)
+          .filter(id => !papelPorCampanha[id])
+
+        const campanhasNovas: Campanha[] = []
+        if (idsMembrosNovos.length > 0) {
+          const { data: campanhasData } = await supabase
+            .from('campanhas')
+            .select('*')
+            .in('id', idsMembrosNovos)
+
+          for (const camp of campanhasData ?? []) {
+            if (!papelPorCampanha[camp.id]) {
+              const membro = membrosNovos?.find(m => m.campanha_id === camp.id)
+              papelPorCampanha[camp.id] = (membro?.papel as 'dm' | 'jogador') ?? 'jogador'
+              campanhasNovas.push(camp)
+            }
+          }
+        }
+
+        const todas = [
+          ...(comoDm as Campanha[] ?? []),
+          ...campanhasLegado,
+          ...campanhasNovas,
+        ]
+
         set({ campanhas: todas, papelPorCampanha })
 
         const { campanhaAtiva } = get()
