@@ -28,7 +28,6 @@ export async function GET() {
       .from('campanhas')
       .select('*')
       .in('id', idsMembro)
-      .eq('status', 'ativa')
     campanhasMembro = data || []
   }
 

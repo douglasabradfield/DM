@@ -27,6 +27,10 @@ export const useCampanha = create<EstadoCampanha>()(
       setCampanhas: (campanhas) => set({ campanhas }),
 
       carregarCampanhas: async () => {
+        // Ler ID salvo ANTES de limpar o estado
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const idSalvo = (get() as any).campanhaAtivaId as string | null
+
         set({ campanhas: [], campanhaAtiva: null, papelPorCampanha: {} })
 
         const resp = await fetch('/api/campanhas/minhas')
@@ -40,12 +44,24 @@ export const useCampanha = create<EstadoCampanha>()(
 
         set({ campanhas, papelPorCampanha })
 
-        const { campanhaAtiva } = get()
-        if (!campanhaAtiva && campanhas.length > 0) {
+        if (idSalvo) {
+          const campanhaSalva = campanhas.find((c: Campanha) => c.id === idSalvo)
+          if (campanhaSalva) {
+            set({ campanhaAtiva: campanhaSalva })
+            return
+          }
+        }
+
+        if (campanhas.length > 0) {
           set({ campanhaAtiva: campanhas[0] })
         }
       },
     }),
-    { name: 'dungeon-desk-campanha', partialize: () => ({}) }
+    {
+      name: 'dungeon-desk-campanha',
+      partialize: (state) => ({
+        campanhaAtivaId: state.campanhaAtiva?.id || null,
+      }),
+    }
   )
 )
