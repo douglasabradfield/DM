@@ -56,13 +56,13 @@ interface CardPersonagemProps {
   inativo?: boolean
   onReativar?: () => void
   jogadoresCampanha?: JogadorCampanha[]
-  onAlterarVisibilidade?: (id: string, visibilidade: string) => void
-  onAlterarVisibilidadeJogador?: (id: string, jogadorId: string) => void
+  onAlterarVisibilidade?: (id: string, visibilidade: string, jogadorId?: string) => void
+  podeEditar?: boolean
 }
 
 function CardPersonagem({
   p, isDm, menuAberto, onToggleMenu, onInativar, onDeletar,
-  inativo, onReativar, jogadoresCampanha, onAlterarVisibilidade, onAlterarVisibilidadeJogador,
+  inativo, onReativar, jogadoresCampanha, onAlterarVisibilidade, podeEditar = true,
 }: CardPersonagemProps) {
   const estilo = estiloTipo(p.tipo_personagem)
   const pct = p.pv_maximo > 0 ? (p.pv_atual / p.pv_maximo) * 100 : 0
@@ -71,8 +71,8 @@ function CardPersonagem({
 
   return (
     <div className="relative">
-      <Link href={inativo ? '#' : `/personagens/${p.id}`} onClick={e => inativo && e.preventDefault()}>
-        <div className={`bg-[var(--surface)] border-2 rounded-xl overflow-hidden transition-all cursor-pointer ${inativo ? 'opacity-50 grayscale' : 'hover:opacity-90'} ${estilo.borda}`}>
+      <Link href={inativo || !podeEditar ? '#' : `/personagens/${p.id}`} onClick={e => (inativo || !podeEditar) && e.preventDefault()}>
+        <div className={`bg-[var(--surface)] border-2 rounded-xl overflow-hidden transition-all cursor-pointer ${inativo ? 'opacity-50 grayscale' : podeEditar ? 'hover:opacity-90' : 'cursor-default'} ${estilo.borda}`}>
           <div className={`${estilo.header} px-4 py-3 flex items-start justify-between`}>
             <div className="min-w-0 flex-1">
               <h3 className={`font-cinzel font-bold text-base leading-tight truncate ${estilo.texto}`}>
@@ -128,6 +128,9 @@ function CardPersonagem({
                 {p.tipo_personagem === 'monstro' ? '👹 Monstro' :
                  p.tipo_personagem === 'npc' ? '🧙 NPC' : '👤 Jogador'}
               </span>
+              {!inativo && !podeEditar && (
+                <span className="text-[9px] px-2 py-0.5 border border-[var(--text3)] text-[var(--text3)] rounded font-cinzel">👁️ Leitura</span>
+              )}
               {inativo && onReativar && (
                 <button
                   onClick={e => { e.preventDefault(); onReativar() }}
@@ -162,7 +165,7 @@ function CardPersonagem({
                 ))}
                 <select
                   value={p.visibilidade === 'jogador_especifico' ? (p.visibilidade_jogador_id || '') : ''}
-                  onChange={e => { if (e.target.value) onAlterarVisibilidadeJogador?.(p.id, e.target.value) }}
+                  onChange={e => { if (e.target.value) onAlterarVisibilidade?.(p.id, 'jogador_especifico', e.target.value) }}
                   onClick={e => e.stopPropagation()}
                   className={`input-dd text-[9px] py-0.5 ${p.visibilidade === 'jogador_especifico' ? 'border-[var(--accent)]' : ''}`}
                 >
@@ -226,7 +229,7 @@ export default function PersonagensPage() {
   const [confirmarDeletar, setConfirmarDeletar] = useState<string | null>(null)
   const [mostrarInativos, setMostrarInativos] = useState(false)
 
-  const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
+  const ehJogador = campanhaAtiva ? papelPorCampanha[campanhaAtiva.id] === 'jogador' : false
   const planoEfetivo = usePlanoEfetivo()
 
   useEffect(() => {
@@ -377,16 +380,16 @@ export default function PersonagensPage() {
     carregar()
   }
 
-  async function alterarVisibilidade(personagemId: string, visibilidade: string) {
+  async function alterarVisibilidade(personagemId: string, visibilidade: string, jogadorId?: string) {
     const supabase = createClient()
-    await supabase.from('personagens').update({ visibilidade, visibilidade_jogador_id: null }).eq('id', personagemId)
-    setPersonagens(prev => prev.map(p => p.id === personagemId ? { ...p, visibilidade, visibilidade_jogador_id: null } : p))
-  }
-
-  async function alterarVisibilidadeJogador(personagemId: string, jogadorId: string) {
-    const supabase = createClient()
-    await supabase.from('personagens').update({ visibilidade: 'jogador_especifico', visibilidade_jogador_id: jogadorId }).eq('id', personagemId)
-    setPersonagens(prev => prev.map(p => p.id === personagemId ? { ...p, visibilidade: 'jogador_especifico', visibilidade_jogador_id: jogadorId } : p))
+    const updates: Record<string, unknown> = { visibilidade }
+    updates.visibilidade_jogador_id = visibilidade === 'jogador_especifico' && jogadorId ? jogadorId : null
+    const { error } = await supabase.from('personagens').update(updates).eq('id', personagemId)
+    if (error) { toast.error('Erro ao salvar visibilidade'); return }
+    toast.success('Visibilidade atualizada!')
+    setPersonagens(prev => prev.map(p =>
+      p.id === personagemId ? { ...p, visibilidade, visibilidade_jogador_id: jogadorId ?? null } : p
+    ))
   }
 
   const filtrados = personagens.filter(p => {
@@ -586,7 +589,7 @@ export default function PersonagensPage() {
               onDeletar={() => { setMenuAberto(null); setConfirmarDeletar(p.id) }}
               jogadoresCampanha={jogadoresCampanha}
               onAlterarVisibilidade={alterarVisibilidade}
-              onAlterarVisibilidadeJogador={alterarVisibilidadeJogador}
+              podeEditar={!ehJogador || p.user_id === userId}
             />
           ))}
         </div>

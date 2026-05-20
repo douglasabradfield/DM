@@ -68,6 +68,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const router = useRouter()
   const atualizarCombatentePorPersonagem = useBatalha(s => s.atualizarCombatentePorPersonagem)
   const campanhaAtiva = useCampanha(s => s.campanhaAtiva)
+  const papelPorCampanha = useCampanha(s => s.papelPorCampanha)
   const [moedaCustomNome, setMoedaCustomNome] = useState(campanhaAtiva?.moeda_custom_nome || 'Especial')
 
   useEffect(() => {
@@ -79,6 +80,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
   const [userId, setUserId] = useState<string | null>(null)
   const isDM = !!campanhaAtiva && !!userId && campanhaAtiva.dm_id === userId
+  const ehJogador = campanhaAtiva ? papelPorCampanha[campanhaAtiva.id] === 'jogador' : false
+  const podeEditar = !ehJogador || p.user_id === userId
 
   useEffect(() => {
     const supabase = createClient()
@@ -212,6 +215,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const [magiaPopup, setMagiaPopup] = useState<Spell | null>(null)
 
   function atualizar<K extends keyof Personagem>(campo: K, valor: Personagem[K]) {
+    if (!podeEditar) return
     setDados(prev => ({ ...prev, [campo]: valor }))
     setAlterado(true)
   }
@@ -519,6 +523,11 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           <p className="font-cinzel text-[var(--accent2)] text-sm">⏳ Aguardando aprovação do Mestre</p>
         </div>
       )}
+      {ehJogador && !podeEditar && (
+        <div className="mb-4 p-3 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-center">
+          <p className="text-[var(--text3)] text-sm font-cinzel">👁️ Você está visualizando este personagem em modo leitura</p>
+        </div>
+      )}
       {/* Cabeçalho */}
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -561,7 +570,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           >
             ← Voltar
           </button>
-          <BotaoRunico variante="ouro" tamanho="sm" onClick={salvar} carregando={salvando}>
+          <BotaoRunico variante="ouro" tamanho="sm" onClick={salvar} carregando={salvando} disabled={!podeEditar}>
             Salvar
           </BotaoRunico>
         </div>
@@ -573,25 +582,25 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           <div className="grid grid-cols-4 gap-2">
             <div>
               <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Nome</label>
-              <input type="text" value={dados.nome ?? ''} onChange={e => atualizar('nome', e.target.value)} className="w-full input-dd" />
+              <input type="text" value={dados.nome ?? ''} onChange={e => atualizar('nome', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
             </div>
             <div className="grid grid-cols-2 gap-1">
               <div>
                 <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Classe</label>
-                <input type="text" value={dados.classe ?? ''} onChange={e => atualizar('classe', e.target.value)} className="w-full input-dd" />
+                <input type="text" value={dados.classe ?? ''} onChange={e => atualizar('classe', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
               </div>
               <div>
                 <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Nível</label>
-                <input type="number" value={dados.nivel} onChange={e => atualizar('nivel', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" />
+                <input type="number" value={dados.nivel} onChange={e => atualizar('nivel', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" disabled={!podeEditar} />
               </div>
             </div>
             <div>
               <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Antecedente</label>
-              <input type="text" value={dados.antecedente ?? ''} onChange={e => atualizar('antecedente', e.target.value)} className="w-full input-dd" />
+              <input type="text" value={dados.antecedente ?? ''} onChange={e => atualizar('antecedente', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
             </div>
             <div>
               <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Jogador</label>
-              <input type="text" value={dados.jogador_nome ?? ''} onChange={e => atualizar('jogador_nome', e.target.value)} className="w-full input-dd" />
+              <input type="text" value={dados.jogador_nome ?? ''} onChange={e => atualizar('jogador_nome', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
             </div>
           </div>
 
@@ -603,11 +612,11 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
             />
             <div>
               <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Raça</label>
-              <input type="text" value={dados.raca ?? ''} onChange={e => atualizar('raca', e.target.value)} className="w-full input-dd" />
+              <input type="text" value={dados.raca ?? ''} onChange={e => atualizar('raca', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
             </div>
             <div>
               <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Tendência</label>
-              <input type="text" value={dados.alinhamento ?? ''} onChange={e => atualizar('alinhamento', e.target.value)} className="w-full input-dd" />
+              <input type="text" value={dados.alinhamento ?? ''} onChange={e => atualizar('alinhamento', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
             </div>
             <div>
               <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Pontos de Experiência</label>
@@ -661,6 +670,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                       abrev={abrev}
                       value={dados[key as keyof Personagem] as number}
                       onChange={v => atualizar(key, v)}
+                      disabled={!podeEditar}
                     />
                   ))}
                 </div>
@@ -764,15 +774,15 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               <div className="grid grid-cols-3 gap-1">
                 <div>
                   <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">CA</label>
-                  <input type="number" value={dados.ca} onChange={e => atualizar('ca', parseInt(e.target.value) || 10)} className="w-full input-dd text-center" />
+                  <input type="number" value={dados.ca} onChange={e => atualizar('ca', parseInt(e.target.value) || 10)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
                 <div>
                   <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Iniciativa</label>
-                  <input type="number" value={dados.iniciativa} onChange={e => atualizar('iniciativa', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" />
+                  <input type="number" value={dados.iniciativa} onChange={e => atualizar('iniciativa', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
                 <div>
                   <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Desl. (m)</label>
-                  <input type="number" value={dados.deslocamento} onChange={e => atualizar('deslocamento', parseInt(e.target.value) || 9)} className="w-full input-dd text-center" />
+                  <input type="number" value={dados.deslocamento} onChange={e => atualizar('deslocamento', parseInt(e.target.value) || 9)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
               </div>
 
@@ -780,15 +790,15 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               <div className="grid grid-cols-3 gap-1">
                 <div>
                   <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Máx</label>
-                  <input type="number" value={dados.pv_maximo} onChange={e => atualizar('pv_maximo', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" />
+                  <input type="number" value={dados.pv_maximo} onChange={e => atualizar('pv_maximo', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
                 <div>
                   <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Atual</label>
-                  <input type="number" value={dados.pv_atual} onChange={e => atualizar('pv_atual', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" />
+                  <input type="number" value={dados.pv_atual} onChange={e => atualizar('pv_atual', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
                 <div>
                   <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Temp</label>
-                  <input type="number" value={dados.pv_temporarios} onChange={e => atualizar('pv_temporarios', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" />
+                  <input type="number" value={dados.pv_temporarios} onChange={e => atualizar('pv_temporarios', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
               </div>
 
@@ -1380,10 +1390,11 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   )
 }
 
-function AtributoCard({ abrev, value, onChange }: {
+function AtributoCard({ abrev, value, onChange, disabled }: {
   abrev: string
   value: number
   onChange: (v: number) => void
+  disabled?: boolean
 }) {
   const mod = calcularModificadorAtributo(value)
   return (
@@ -1405,6 +1416,7 @@ function AtributoCard({ abrev, value, onChange }: {
           value={value}
           onChange={e => onChange(parseInt(e.target.value) || 10)}
           onFocus={e => e.target.select()}
+          disabled={disabled}
           className="w-full text-center font-cinzel font-bold text-sm py-1 bg-transparent border-none outline-none text-[var(--text)] focus:text-[var(--gold)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
       </div>
