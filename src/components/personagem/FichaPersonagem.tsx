@@ -469,6 +469,9 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const [modalCopiar, setModalCopiar] = useState(false)
   const [campanhasDisponiveis, setCampanhasDisponiveis] = useState<{ id: string; nome: string }[]>([])
   const [menuAberto, setMenuAberto] = useState(false)
+  const [modalTransferir, setModalTransferir] = useState(false)
+  type MembroTransferir = { user_id: string; email: string; profiles: { nome: string | null; username: string | null } | null }
+  const [membrosTransferir, setMembrosTransferir] = useState<MembroTransferir[]>([])
 
   async function abrirModalCopiar() {
     const supabase = createClient()
@@ -496,6 +499,37 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     if (error) { toast.error('Erro ao copiar personagem'); return }
     toast.success(`${dados.nome} copiado!`)
     setModalCopiar(false)
+  }
+
+  useEffect(() => {
+    if (!modalTransferir || !campanhaAtiva?.id || !userId) return
+    const supabase = createClient()
+    supabase
+      .from('campanha_membros')
+      .select('user_id, email, profiles:user_id(nome, username)')
+      .eq('campanha_id', campanhaAtiva.id)
+      .eq('status', 'ativo')
+      .neq('user_id', userId)
+      .then(({ data }) => setMembrosTransferir((data ?? []) as unknown as MembroTransferir[]))
+  }, [modalTransferir, campanhaAtiva?.id, userId])
+
+  async function transferirPersonagem(novoUserId: string, nomeJogador: string) {
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('personagens')
+      .update({ user_id: novoUserId, jogador_nome: nomeJogador, ativo: true })
+      .eq('id', p.id)
+    if (error) { toast.error('Erro ao transferir personagem'); return }
+    await supabase.from('notificacoes').insert({
+      user_id: novoUserId,
+      tipo: 'personagem_transferido',
+      titulo: '🎲 Personagem transferido para você!',
+      mensagem: `O personagem "${p.nome}" agora é seu!`,
+      link: `/personagens/${p.id}`,
+    })
+    toast.success(`Personagem transferido para ${nomeJogador}!`)
+    setModalTransferir(false)
+    router.refresh()
   }
 
   return (
@@ -554,13 +588,21 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               <MoreVertical className="w-4 h-4" />
             </button>
             {menuAberto && (
-              <div className="absolute right-0 top-full mt-1 bg-[#1a1025] border border-[#4a3060] rounded shadow-xl z-50 min-w-[140px]">
+              <div className="absolute right-0 top-full mt-1 bg-[#1a1025] border border-[#4a3060] rounded shadow-xl z-50 min-w-[160px]">
                 <button
                   onClick={() => { setMenuAberto(false); abrirModalCopiar() }}
                   className="w-full text-left px-3 py-2 text-xs font-cinzel text-[#8870a8] hover:bg-[#261a2e] hover:text-[#d4a843] transition-colors"
                 >
                   Copiar personagem
                 </button>
+                {isDM && !p.user_id && p.tipo_personagem === 'jogador' && (
+                  <button
+                    onClick={() => { setMenuAberto(false); setModalTransferir(true) }}
+                    className="w-full text-left px-3 py-2 text-xs font-cinzel text-[#8870a8] hover:bg-[#261a2e] hover:text-[#d4a843] transition-colors border-t border-[#4a3060]"
+                  >
+                    👤 Transferir para Jogador
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1382,6 +1424,48 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                 ))}
               </div>
             )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {modalTransferir && createPortal(
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70"
+          onClick={() => setModalTransferir(false)}
+        >
+          <div
+            className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-5 max-w-sm w-full mx-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="font-cinzel text-[var(--gold)] font-bold mb-4">👤 Transferir Personagem</h3>
+            <p className="text-[var(--text2)] text-sm font-crimson mb-4">
+              Escolha o jogador que vai receber <span className="text-[var(--text)]">{p.nome}</span>:
+            </p>
+            {membrosTransferir.length === 0 ? (
+              <p className="text-[var(--border)] text-sm font-crimson text-center py-3">Nenhum jogador disponível na campanha</p>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
+                {membrosTransferir.map(m => (
+                  <button
+                    key={m.user_id}
+                    onClick={() => transferirPersonagem(m.user_id, m.profiles?.nome || m.email)}
+                    className="w-full text-left p-3 border border-[var(--border)] rounded-xl hover:border-[var(--gold)] hover:bg-[var(--surface)] font-cinzel text-sm text-[var(--text)] transition-all"
+                  >
+                    @{m.profiles?.username || m.email}
+                    {m.profiles?.nome && (
+                      <span className="text-[var(--text3)] text-xs ml-2">— {m.profiles.nome}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() => setModalTransferir(false)}
+              className="w-full py-2 border border-[var(--border)] rounded-lg text-[var(--text2)] text-sm font-cinzel"
+            >
+              Cancelar
+            </button>
           </div>
         </div>,
         document.body
