@@ -61,7 +61,7 @@ export default function DiarioPage() {
   const { log } = useBatalha()
   const { campanhaAtiva, papelPorCampanha } = useCampanha()
 
-  const ehJogador = papelPorCampanha[campanhaAtiva?.id ?? ''] === 'jogador'
+  const ehJogador = campanhaAtiva ? papelPorCampanha[campanhaAtiva.id] === 'jogador' : false
   const isDM = !ehJogador
 
   useEffect(() => {
