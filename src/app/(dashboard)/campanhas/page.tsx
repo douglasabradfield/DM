@@ -558,8 +558,6 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
   const [adicionando, setAdicionando] = useState(false)
   const [gerandoLink, setGerandoLink] = useState(false)
 
-  const planoEfetivo = ['guild_master', 'dm_supremo'].includes(userPlano) ? 'guild_master' : 'mesa_pro'
-
   const carregar = useCallback(async () => {
     const supabase = createClient()
     const { data } = await supabase
@@ -578,47 +576,22 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
     if (!username) return
     setAdicionando(true)
     try {
-      const resp = await fetch(`/api/usuarios/buscar?username=${encodeURIComponent(username)}`)
-      const { encontrado, perfil } = await resp.json()
+      const resp = await fetch('/api/usuarios/buscar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, campanhaId }),
+      })
+      const resultado = await resp.json()
 
-      if (!encontrado || !perfil) {
-        toast.error(`Usuário @${username} não encontrado. Verifique o username.`)
+      if (!resultado.encontrado) {
+        toast.error(`Usuário @${username} não encontrado`)
         return
       }
 
-      const supabase = createClient()
-      const { data: jaExiste } = await supabase
-        .from('campanha_membros')
-        .select('id, status')
-        .eq('campanha_id', campanhaId)
-        .eq('user_id', perfil.id)
-        .maybeSingle()
-
-      if (jaExiste && jaExiste.status === 'ativo') {
+      if (resultado.jaEra) {
         toast(`@${username} já está na campanha!`, { icon: 'ℹ️' })
         return
       }
-
-      const { error } = await supabase.from('campanha_membros').upsert({
-        campanha_id: campanhaId,
-        user_id: perfil.id,
-        email: perfil.email || '',
-        papel: 'jogador',
-        plano_efetivo: planoEfetivo,
-        status: 'ativo',
-        aceito_em: new Date().toISOString(),
-      }, { onConflict: 'campanha_id,user_id' })
-      if (error) throw error
-
-      const { data: campanha } = await supabase.from('campanhas').select('nome').eq('id', campanhaId).single()
-      await supabase.from('notificacoes').insert({
-        user_id: perfil.id,
-        tipo: 'adicionado_campanha',
-        titulo: '🎲 Você foi adicionado a uma campanha!',
-        mensagem: `Você foi adicionado à campanha "${campanha?.nome}". Acesse agora!`,
-        link: '/batalha',
-        lida: false,
-      })
 
       toast.success(`@${username} adicionado à campanha!`)
       setUsernameInput('')
