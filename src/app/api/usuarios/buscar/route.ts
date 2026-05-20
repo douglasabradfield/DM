@@ -47,15 +47,22 @@ export async function POST(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const planoEfetivo = (campanha.dm as any)?.plano || 'guild_master'
 
-  await admin.from('campanha_membros').upsert({
-    campanha_id: campanhaId,
-    user_id: perfil.id,
-    email: perfil.email || '',
-    papel: 'jogador',
-    plano_efetivo: planoEfetivo,
-    status: 'ativo',
-    aceito_em: new Date().toISOString(),
-  }, { onConflict: 'campanha_id,user_id' })
+  if (jaExiste) {
+    await admin
+      .from('campanha_membros')
+      .update({ status: 'ativo', plano_efetivo: planoEfetivo, aceito_em: new Date().toISOString() })
+      .eq('id', jaExiste.id)
+  } else {
+    await admin.from('campanha_membros').insert({
+      campanha_id: campanhaId,
+      user_id: perfil.id,
+      email: perfil.email || '',
+      papel: 'jogador',
+      plano_efetivo: planoEfetivo,
+      status: 'ativo',
+      aceito_em: new Date().toISOString(),
+    })
+  }
 
   await admin.from('notificacoes').insert({
     user_id: perfil.id,
