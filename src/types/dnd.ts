@@ -96,6 +96,7 @@ export interface Monster {
   alignment_pt: string | null
   armor_class: number
   hit_points: number
+  hit_dice: string | null
   speed_pt: string | null
   str_score: number
   dex_score: number
@@ -106,6 +107,7 @@ export interface Monster {
   challenge_rating: string
   xp: number | null
   proficiency_bonus: number | null
+  passive_perception: number | null
   senses_pt: string | null
   languages_pt: string | null
   traits_pt: string | null
@@ -113,6 +115,73 @@ export interface Monster {
   traits_rules_pt: string | null
   actions_rules_pt: string | null
   source_page_start: number | null
+  darkvision_ft: number | null
+  blindsight_ft: number | null
+  tremorsense_ft: number | null
+  truesight_ft: number | null
+}
+
+export interface MonsterAction {
+  id: number
+  monster_id: number
+  action_type: string
+  name_pt: string
+  name_en?: string | null
+  attack_type?: string | null
+  attack_bonus?: number | null
+  reach_ft?: number | null
+  range_normal_ft?: number | null
+  range_long_ft?: number | null
+  target_pt?: string | null
+  damage_dice?: string | null
+  damage_type_en?: string | null
+  damage_type_pt?: string | null
+  damage2_dice?: string | null
+  damage2_type_en?: string | null
+  damage2_type_pt?: string | null
+  save_ability?: string | null
+  save_dc?: number | null
+  save_effect_pt?: string | null
+  recharge?: string | null
+  condition_applied_pt?: string | null
+  legendary_cost?: number | null
+  description_pt: string
+}
+
+export interface MonsterSave {
+  id?: number
+  monster_id?: number
+  ability: string
+  bonus: number
+}
+
+export interface MonsterSkill {
+  id?: number
+  monster_id?: number
+  skill_pt: string
+  bonus: number
+}
+
+export interface MonsterDamageModifier {
+  id?: number
+  monster_id?: number
+  modifier_type: string
+  damage_type_pt: string
+  note_pt?: string | null
+}
+
+export interface MonsterConditionImmunity {
+  id?: number
+  monster_id?: number
+  condition_pt: string
+}
+
+export interface MonsterDetailed extends Monster {
+  monster_actions?: MonsterAction[]
+  monster_saves?: MonsterSave[]
+  monster_skills?: MonsterSkill[]
+  monster_damage_modifiers?: MonsterDamageModifier[]
+  monster_condition_immunities?: MonsterConditionImmunity[]
 }
 
 export interface Spell {

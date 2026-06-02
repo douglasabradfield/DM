@@ -6,11 +6,20 @@ import Link from 'next/link'
 import { useCampanha } from '@/store/campanha'
 import { getTemaAtual, aplicarTema, type NomeTema, TEMAS } from '@/lib/tema'
 import { LogOut, User, ChevronDown, Settings, Bell } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface HeaderProps {
   titulo: string
   usuario?: { nome: string | null; email: string; username?: string | null }
+}
+
+interface Notificacao {
+  id: string
+  titulo: string
+  mensagem: string | null
+  link: string | null
+  criado_em: string
+  lida: boolean
 }
 
 export function Header({ titulo, usuario }: HeaderProps) {
@@ -19,10 +28,9 @@ export function Header({ titulo, usuario }: HeaderProps) {
   const [menuAberto, setMenuAberto] = useState(false)
   const [temaMenuAberto, setTemaMenuAberto] = useState(false)
   const [tema, setTema] = useState<NomeTema>('grimorio')
-  const [notificacoes, setNotificacoes] = useState<Array<{
-    id: string; titulo: string; mensagem: string | null; link: string | null; criado_em: string
-  }>>([])
+  const [notificacoes, setNotificacoes] = useState<Notificacao[]>([])
   const [notifAberto, setNotifAberto] = useState(false)
+  const userIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     const t = getTemaAtual()
@@ -30,36 +38,40 @@ export function Header({ titulo, usuario }: HeaderProps) {
     aplicarTema(t)
   }, [])
 
+  async function buscarNotificacoes() {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    userIdRef.current = user.id
+    const { data } = await supabase
+      .from('notificacoes')
+      .select('id, titulo, mensagem, link, criado_em, lida')
+      .eq('user_id', user.id)
+      .order('criado_em', { ascending: false })
+      .limit(20)
+    setNotificacoes((data ?? []) as Notificacao[])
+  }
+
   useEffect(() => {
-    async function buscarNotificacoes() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await supabase
-        .from('notificacoes')
-        .select('id, titulo, mensagem, link, criado_em')
-        .eq('user_id', user.id)
-        .eq('lida', false)
-        .order('criado_em', { ascending: false })
-        .limit(10)
-      setNotificacoes(data ?? [])
-    }
     buscarNotificacoes()
+    const interval = setInterval(buscarNotificacoes, 30000)
+    return () => clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function marcarLida(id: string) {
+  async function marcarLida(id: string, link: string | null) {
     const supabase = createClient()
     await supabase.from('notificacoes').update({ lida: true }).eq('id', id)
-    setNotificacoes(prev => prev.filter(n => n.id !== id))
+    setNotificacoes(prev => prev.map(n => n.id === id ? { ...n, lida: true } : n))
+    if (link) window.location.href = link
   }
 
   async function marcarTodasLidas() {
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    await supabase.from('notificacoes').update({ lida: true }).eq('user_id', user.id).eq('lida', false)
-    setNotificacoes([])
-    setNotifAberto(false)
+    const userId = userIdRef.current
+    if (!userId) return
+    await supabase.from('notificacoes').update({ lida: true }).eq('user_id', userId).eq('lida', false)
+    setNotificacoes(prev => prev.map(n => ({ ...n, lida: true })))
   }
 
   function selecionarTema(novo: NomeTema) {
@@ -73,6 +85,9 @@ export function Header({ titulo, usuario }: HeaderProps) {
     await supabase.auth.signOut()
     router.push('/login')
   }
+
+  const naoLidas = notificacoes.filter(n => !n.lida)
+  const lidas = notificacoes.filter(n => n.lida)
 
   return (
     <header className="h-12 bg-[var(--bg2)] border-b border-[var(--border)] flex items-center justify-between px-4">
@@ -158,9 +173,9 @@ export function Header({ titulo, usuario }: HeaderProps) {
             className="relative p-1.5 text-[var(--text3)] hover:text-[var(--text2)] transition-colors"
           >
             <Bell className="w-4 h-4" />
-            {notificacoes.length > 0 && (
+            {naoLidas.length > 0 && (
               <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-[var(--red2)] text-white text-[9px] rounded-full flex items-center justify-center font-bold">
-                {notificacoes.length > 9 ? '9+' : notificacoes.length}
+                {naoLidas.length > 9 ? '9+' : naoLidas.length}
               </span>
             )}
           </button>
@@ -168,33 +183,72 @@ export function Header({ titulo, usuario }: HeaderProps) {
           {notifAberto && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setNotifAberto(false)} />
-              <div className="absolute right-0 top-full mt-1 z-20 w-72 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-xl overflow-hidden">
+              <div className="absolute right-0 top-full mt-1 z-20 w-80 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-xl overflow-hidden">
+                {/* Header do dropdown */}
                 <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]">
-                  <span className="font-cinzel text-xs text-[var(--text3)] uppercase tracking-wider">Notificações</span>
-                  {notificacoes.length > 0 && (
+                  <span className="font-cinzel text-xs text-[var(--text3)] uppercase tracking-wider">
+                    Notificações
+                    {naoLidas.length > 0 && (
+                      <span className="ml-1.5 text-[var(--red2)]">({naoLidas.length})</span>
+                    )}
+                  </span>
+                  {naoLidas.length > 0 && (
                     <button onClick={marcarTodasLidas} className="text-[10px] text-[var(--accent)] hover:underline font-cinzel">
                       Marcar todas como lidas
                     </button>
                   )}
                 </div>
+
                 {notificacoes.length === 0 ? (
-                  <p className="text-center text-[var(--text3)] text-xs font-crimson py-4">Nenhuma notificação</p>
+                  <p className="text-center text-[var(--text3)] text-xs font-crimson py-4">
+                    Nenhuma notificação
+                  </p>
                 ) : (
-                  <div className="max-h-72 overflow-y-auto">
-                    {notificacoes.map(n => (
+                  <div className="max-h-80 overflow-y-auto">
+                    {/* Não lidas */}
+                    {naoLidas.map(n => (
                       <div
                         key={n.id}
                         className="px-3 py-2.5 border-b border-[var(--border)]/50 hover:bg-[var(--bg3)] transition-colors cursor-pointer"
-                        onClick={() => {
-                          marcarLida(n.id)
-                          if (n.link) window.location.href = n.link
-                          else setNotifAberto(false)
-                        }}
+                        onClick={() => marcarLida(n.id, n.link)}
                       >
-                        <p className="text-[var(--text)] text-xs font-cinzel">{n.titulo}</p>
-                        {n.mensagem && (
-                          <p className="text-[var(--text3)] text-[10px] font-crimson mt-0.5 line-clamp-2">{n.mensagem}</p>
-                        )}
+                        <div className="flex items-start gap-2">
+                          <span className="mt-1 w-1.5 h-1.5 rounded-full bg-[var(--accent2)] flex-shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[var(--text)] text-xs font-cinzel">{n.titulo}</p>
+                            {n.mensagem && (
+                              <p className="text-[var(--text3)] text-[10px] font-crimson mt-0.5 line-clamp-2">{n.mensagem}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Separador entre grupos */}
+                    {naoLidas.length > 0 && lidas.length > 0 && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--bg3)]/50">
+                        <div className="flex-1 h-px bg-[var(--border)]" />
+                        <span className="text-[9px] text-[var(--text3)] font-cinzel uppercase tracking-wider">Lidas</span>
+                        <div className="flex-1 h-px bg-[var(--border)]" />
+                      </div>
+                    )}
+
+                    {/* Lidas */}
+                    {lidas.map(n => (
+                      <div
+                        key={n.id}
+                        className="px-3 py-2.5 border-b border-[var(--border)]/30 hover:bg-[var(--bg3)]/50 transition-colors cursor-default opacity-55"
+                        onClick={() => { if (n.link) window.location.href = n.link }}
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="mt-1 w-1.5 h-1.5 rounded-full bg-[var(--border)] flex-shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[var(--text2)] text-xs font-cinzel">{n.titulo}</p>
+                            {n.mensagem && (
+                              <p className="text-[var(--text3)] text-[10px] font-crimson mt-0.5 line-clamp-2">{n.mensagem}</p>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>

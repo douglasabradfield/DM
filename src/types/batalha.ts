@@ -1,4 +1,4 @@
-import type { TipoDano } from './dnd'
+import type { TipoDano, MonsterAction } from './dnd'
 
 export type TipoCombatente = 'jogador' | 'monstro' | 'npc'
 
@@ -43,6 +43,8 @@ export interface Combatente {
   nivel?: number
   // slots restantes por nível (local, para monstros/NPCs sem personagem_id)
   slots_monstro?: Record<string, number>
+  // ataques estruturados do bestiário (quando monstro tem monster_actions)
+  ataques_estruturados?: MonsterAction[]
   // estado local (não salvo)
   dano_input: number
   dano_tipo: TipoDano

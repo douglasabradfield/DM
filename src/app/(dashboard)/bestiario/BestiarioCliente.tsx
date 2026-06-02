@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { Monster } from '@/types/dnd'
+import type { Monster, MonsterDetailed, MonsterAction } from '@/types/dnd'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { useBatalha } from '@/store/batalha'
 import { calcularModificadorAtributo, formatarModificador, cn } from '@/lib/utils'
@@ -372,9 +372,89 @@ function AbaPersonalizadoBestiario({ userId }: { userId: string }) {
   )
 }
 
+// ─── Helpers para exibição estruturada ────────────────────────────────────
+
+function ftParaM(ft: number): number {
+  return Math.round(ft / 3.28)
+}
+
+const ACTION_TYPE_LABELS: Record<string, string> = {
+  action: 'Ações',
+  bonus_action: 'Ações Bônus',
+  reaction: 'Reações',
+  legendary_action: 'Ações Lendárias',
+  trait: 'Traços',
+}
+
+const DAMAGE_MOD_COR: Record<string, string> = {
+  vulnerability: 'text-[var(--red2)] bg-[var(--red2)]/10 border-[var(--red2)]/30',
+  resistance: 'text-[var(--accent2)] bg-[var(--accent)]/10 border-[var(--accent)]/30',
+  immunity: 'text-[var(--text3)] bg-[var(--bg3)] border-[var(--border)]',
+}
+
+const ABILITY_LABELS: Record<string, string> = {
+  STR: 'FOR', DEX: 'DES', CON: 'CON', INT: 'INT', WIS: 'SAB', CHA: 'CAR',
+  str: 'FOR', dex: 'DES', con: 'CON', int: 'INT', wis: 'SAB', cha: 'CAR',
+}
+
+function AcaoMonstroItem({ acao }: { acao: MonsterAction }) {
+  const temAtaque = acao.attack_bonus !== null && acao.attack_bonus !== undefined && acao.attack_type
+  const alcance = acao.reach_ft
+    ? `${ftParaM(acao.reach_ft)}m`
+    : acao.range_normal_ft
+      ? `${ftParaM(acao.range_normal_ft)}/${ftParaM(acao.range_long_ft ?? acao.range_normal_ft * 4)}m`
+      : null
+
+  return (
+    <div className="mb-2.5">
+      <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+        <span className="font-crimson font-bold text-[var(--text)] text-sm">{acao.name_pt}.</span>
+        {acao.recharge && (
+          <span className="text-[9px] px-1.5 py-0.5 border border-[var(--accent2)] text-[var(--accent2)] rounded font-cinzel">
+            Recarga {acao.recharge}
+          </span>
+        )}
+        {acao.legendary_cost != null && acao.legendary_cost > 1 && (
+          <span className="text-[9px] px-1.5 py-0.5 border border-[var(--gold)] text-[var(--gold)] rounded font-cinzel">
+            Custa {acao.legendary_cost} ações
+          </span>
+        )}
+      </div>
+      {temAtaque && (
+        <p className="text-[var(--text2)] text-sm font-crimson leading-relaxed">
+          <em>Ataque {acao.attack_type}: </em>
+          {(acao.attack_bonus ?? 0) >= 0 ? '+' : ''}{acao.attack_bonus} para atingir
+          {alcance && `, alcance ${alcance}`}
+          {acao.target_pt && `, ${acao.target_pt}`}.
+          {acao.damage_dice && ` Acerto: ${acao.damage_dice}${acao.damage_type_pt ? ` de dano ${acao.damage_type_pt}` : ''}`}
+          {acao.damage2_dice && ` + ${acao.damage2_dice}${acao.damage2_type_pt ? ` de dano ${acao.damage2_type_pt}` : ''}`}
+          {acao.damage_dice ? '.' : ''}
+        </p>
+      )}
+      {acao.save_ability && acao.save_dc && (
+        <p className="text-[var(--text2)] text-sm font-crimson italic">
+          Resistência de {acao.save_ability} CD {acao.save_dc}
+          {acao.save_effect_pt ? `: ${acao.save_effect_pt}.` : '.'}
+        </p>
+      )}
+      {acao.condition_applied_pt && (
+        <span className="inline-block mt-0.5 text-[9px] px-1.5 py-0.5 bg-[var(--accent)]/10 border border-[var(--accent)]/20 rounded text-[var(--accent2)] font-cinzel">
+          Condição: {acao.condition_applied_pt}
+        </span>
+      )}
+      {acao.description_pt && (
+        <p className="text-[var(--text2)] text-sm font-crimson leading-relaxed mt-0.5">{acao.description_pt}</p>
+      )}
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+
 export function BestiarioCliente() {
   const [lista, setLista] = useState<MonsterStub[]>([])
-  const [selecionado, setSelecionado] = useState<Monster | null>(null)
+  const [monstrosComAcoes, setMonstrosComAcoes] = useState<Set<string>>(new Set())
+  const [selecionado, setSelecionado] = useState<MonsterDetailed | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false)
   const [visao, setVisao] = useState<'lista' | 'detalhe'>('lista')
@@ -408,11 +488,15 @@ export function BestiarioCliente() {
     async function carregar() {
       setCarregando(true)
       const supabase = createClient()
-      const { data } = await supabase
-        .from('monsters')
-        .select('id, slug, name_pt, name_en, type_pt, challenge_rating, armor_class, hit_points')
-        .order('name_pt')
-      setLista((data ?? []) as MonsterStub[])
+      const [monstersRes, actionsRes] = await Promise.all([
+        supabase
+          .from('monsters')
+          .select('id, slug, name_pt, name_en, type_pt, challenge_rating, armor_class, hit_points')
+          .order('name_pt'),
+        supabase.from('monster_actions').select('monster_id'),
+      ])
+      setLista((monstersRes.data ?? []) as MonsterStub[])
+      setMonstrosComAcoes(new Set((actionsRes.data ?? []).map(r => String(r.monster_id))))
       setCarregando(false)
     }
     carregar()
@@ -422,8 +506,19 @@ export function BestiarioCliente() {
     if (selecionado?.id === stub.id) return
     setCarregandoDetalhe(true)
     const supabase = createClient()
-    const { data } = await supabase.from('monsters').select('*').eq('id', stub.id).single()
-    setSelecionado(data as Monster)
+    const { data } = await supabase
+      .from('monsters')
+      .select(`
+        *,
+        monster_saves(*),
+        monster_skills(*),
+        monster_damage_modifiers(*),
+        monster_condition_immunities(*),
+        monster_actions(*)
+      `)
+      .eq('id', stub.id)
+      .single()
+    setSelecionado(data as MonsterDetailed)
     setCarregandoDetalhe(false)
     setVisao('detalhe')
   }
@@ -437,7 +532,10 @@ export function BestiarioCliente() {
     return true
   }), [lista, busca, filtroCR])
 
-  function adicionarNaBatalha(m: Monster) {
+  function adicionarNaBatalha(m: MonsterDetailed) {
+    const ataquesEstruturados = m.monster_actions?.filter(
+      a => ['action', 'multiattack', 'bonus_action'].includes(a.action_type)
+    )
     adicionarCombatente({
       personagem_id: null,
       nome: m.name_pt,
@@ -469,6 +567,7 @@ export function BestiarioCliente() {
         xp: m.xp ?? undefined,
         slug: m.slug,
       },
+      ...(ataquesEstruturados?.length ? { ataques_estruturados: ataquesEstruturados } : {}),
       ordem: 999,
     })
     toast.success(`${m.name_pt} adicionado à batalha!`)
@@ -547,9 +646,14 @@ export function BestiarioCliente() {
                       }`}
                     >
                       <div className="flex flex-col gap-0.5">
-                        <span className="font-cinzel font-semibold text-sm text-[var(--dd-text)] leading-tight truncate">
-                          {m.name_pt}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className="font-cinzel font-semibold text-sm text-[var(--dd-text)] leading-tight truncate">
+                            {m.name_pt}
+                          </span>
+                          {monstrosComAcoes.has(String(m.id)) && (
+                            <span className="text-[var(--green2)] text-[9px] flex-shrink-0" title="Dados completos">✓</span>
+                          )}
+                        </div>
                         <span className="text-xs text-[var(--dd-text2)] truncate">
                           {m.type_pt} · CR {m.challenge_rating}
                         </span>
@@ -586,96 +690,239 @@ export function BestiarioCliente() {
                     <p className="text-[var(--border)] text-sm font-crimson">Clique em um monstro da lista para ver seus detalhes</p>
                   </div>
                 </div>
-              ) : (
-                <div className="max-w-3xl">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h2 className="font-cinzel text-[var(--gold)] text-2xl font-bold leading-tight">{selecionado.name_pt}</h2>
-                      <p className="text-sm text-[var(--dd-text2)] italic mt-0.5">{selecionado.name_en}</p>
-                      <p className="text-[var(--text2)] text-sm mt-1">
-                        {[selecionado.size_pt, selecionado.type_pt, selecionado.alignment_pt].filter(Boolean).join(' · ')}
-                      </p>
-                      {selecionado.source_page_start && (
-                        <p className="text-[var(--text3)] text-[10px] font-cinzel mt-0.5">SRD p.{selecionado.source_page_start}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <BotaoReportar
-                        itemSlug={selecionado.slug}
-                        itemNome={selecionado.name_pt}
-                        itemTipo="monstro"
-                        pagina="/bestiario"
-                      />
-                      <button
-                        onClick={() => adicionarNaBatalha(selecionado)}
-                        className="flex items-center gap-2 px-3 py-2 bg-[var(--accent)] border border-[var(--accent2)] text-[var(--bg)] rounded text-sm font-cinzel hover:opacity-90 transition-colors"
-                      >
-                        <Swords className="w-4 h-4" /> Adicionar à Batalha
-                      </button>
-                    </div>
-                  </div>
+              ) : (() => {
+                const m = selecionado
+                const hasStructuredActions = (m.monster_actions?.length ?? 0) > 0
+                const hasStructuredDamage = (m.monster_damage_modifiers?.length ?? 0) > 0
+                const hasCondImmunities = (m.monster_condition_immunities?.length ?? 0) > 0
 
-                  <div className="grid grid-cols-4 gap-2 mb-4">
-                    <PainelGrimorio compacto className="text-center">
-                      <div className="text-[var(--text3)] text-[10px] font-cinzel uppercase">Classe de Armadura</div>
-                      <div className="text-[var(--gold)] text-xl font-cinzel font-bold">{selecionado.armor_class}</div>
-                    </PainelGrimorio>
-                    <PainelGrimorio compacto className="text-center">
-                      <div className="text-[var(--text3)] text-[10px] font-cinzel uppercase">Pontos de Vida</div>
-                      <div className="text-[var(--green2)] text-xl font-cinzel font-bold">{selecionado.hit_points}</div>
-                    </PainelGrimorio>
-                    <PainelGrimorio compacto className="text-center">
-                      <div className="text-[var(--text3)] text-[10px] font-cinzel uppercase">Deslocamento</div>
-                      <div className="text-[var(--text)] text-xs font-crimson mt-1 leading-tight">{selecionado.speed_pt ?? '—'}</div>
-                    </PainelGrimorio>
-                    <PainelGrimorio compacto className="text-center">
-                      <div className="text-[var(--text3)] text-[10px] font-cinzel uppercase">Nível de Desafio</div>
-                      <div className="text-[var(--gold)] text-xl font-cinzel font-bold">{selecionado.challenge_rating}</div>
-                      {selecionado.xp != null && (
-                        <div className="text-[var(--border)] text-[10px]">{selecionado.xp.toLocaleString('pt-BR')} XP</div>
+                // Senses
+                const sentidosEstruturados: string[] = []
+                if (m.darkvision_ft) sentidosEstruturados.push(`Visão no escuro ${ftParaM(m.darkvision_ft)}m`)
+                if (m.blindsight_ft) sentidosEstruturados.push(`Visão cega ${ftParaM(m.blindsight_ft)}m`)
+                if (m.tremorsense_ft) sentidosEstruturados.push(`Sentido sísmico ${ftParaM(m.tremorsense_ft)}m`)
+                if (m.truesight_ft) sentidosEstruturados.push(`Visão verdadeira ${ftParaM(m.truesight_ft)}m`)
+                const sentidosTexto = sentidosEstruturados.length > 0
+                  ? sentidosEstruturados.join(', ')
+                  : m.senses_pt
+
+                // Saves
+                const saveMap = new Map(m.monster_saves?.map(s => [s.ability.toUpperCase(), s.bonus]) ?? [])
+                const savesExplicitos = Array.from(saveMap.entries())
+                  .map(([ab, bonus]) => `${ABILITY_LABELS[ab] ?? ab} ${bonus >= 0 ? '+' : ''}${bonus}`)
+
+                // Skills
+                const skillList = m.monster_skills
+                  ?.slice().sort((a, b) => a.skill_pt.localeCompare(b.skill_pt, 'pt-BR'))
+                  .map(s => `${s.skill_pt} ${s.bonus >= 0 ? '+' : ''}${s.bonus}`) ?? []
+
+                // Damage modifiers
+                const vulns = m.monster_damage_modifiers?.filter(d => d.modifier_type === 'vulnerability') ?? []
+                const resists = m.monster_damage_modifiers?.filter(d => d.modifier_type === 'resistance') ?? []
+                const immunes = m.monster_damage_modifiers?.filter(d => d.modifier_type === 'immunity') ?? []
+
+                // Actions grouped
+                const multiattacks = m.monster_actions?.filter(a => a.action_type === 'multiattack') ?? []
+                const acoesGrupadas = ['action', 'bonus_action', 'reaction', 'legendary_action', 'trait']
+                  .map(tipo => ({
+                    tipo,
+                    label: ACTION_TYPE_LABELS[tipo],
+                    acoes: m.monster_actions?.filter(a => a.action_type === tipo) ?? [],
+                  }))
+                  .filter(g => g.acoes.length > 0)
+
+                return (
+                  <div className="max-w-3xl">
+                    {/* Cabeçalho */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                          <h2 className="font-cinzel text-[var(--gold)] text-2xl font-bold leading-tight">{m.name_pt}</h2>
+                          {hasStructuredActions && (
+                            <span className="text-[9px] px-1.5 py-0.5 bg-[var(--green)]/10 border border-[var(--green)]/30 text-[var(--green2)] rounded font-cinzel">
+                              ✓ Dados completos
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-[var(--dd-text2)] italic">{m.name_en}</p>
+                        <p className="text-[var(--text2)] text-sm mt-1">
+                          {[m.size_pt, m.type_pt, m.alignment_pt].filter(Boolean).join(' · ')}
+                        </p>
+                        {m.source_page_start && (
+                          <p className="text-[var(--text3)] text-[10px] font-cinzel mt-0.5">SRD p.{m.source_page_start}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <BotaoReportar itemSlug={m.slug} itemNome={m.name_pt} itemTipo="monstro" pagina="/bestiario" />
+                        <button
+                          onClick={() => adicionarNaBatalha(m)}
+                          className="flex items-center gap-2 px-3 py-2 bg-[var(--accent)] border border-[var(--accent2)] text-[var(--bg)] rounded text-sm font-cinzel hover:opacity-90 transition-colors"
+                        >
+                          <Swords className="w-4 h-4" /> Adicionar à Batalha
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Stats de combate */}
+                    <div className="grid grid-cols-4 gap-2 mb-3">
+                      <PainelGrimorio compacto className="text-center">
+                        <div className="text-[var(--text3)] text-[10px] font-cinzel uppercase">CA</div>
+                        <div className="text-[var(--gold)] text-xl font-cinzel font-bold">{m.armor_class}</div>
+                      </PainelGrimorio>
+                      <PainelGrimorio compacto className="text-center">
+                        <div className="text-[var(--text3)] text-[10px] font-cinzel uppercase">PV</div>
+                        <div className="text-[var(--green2)] text-lg font-cinzel font-bold">{m.hit_points}</div>
+                        {m.hit_dice && <div className="text-[var(--text3)] text-[9px] mt-0.5">{m.hit_dice}</div>}
+                      </PainelGrimorio>
+                      <PainelGrimorio compacto className="text-center">
+                        <div className="text-[var(--text3)] text-[10px] font-cinzel uppercase">Deslocamento</div>
+                        <div className="text-[var(--text)] text-xs font-crimson mt-1 leading-tight">{m.speed_pt ?? '—'}</div>
+                      </PainelGrimorio>
+                      <PainelGrimorio compacto className="text-center">
+                        <div className="text-[var(--text3)] text-[10px] font-cinzel uppercase">ND</div>
+                        <div className="text-[var(--gold)] text-xl font-cinzel font-bold">{m.challenge_rating}</div>
+                        {m.xp != null && <div className="text-[var(--border)] text-[10px]">{m.xp.toLocaleString('pt-BR')} XP</div>}
+                      </PainelGrimorio>
+                    </div>
+
+                    {/* Atributos + saves + skills */}
+                    <PainelGrimorio titulo="Atributos" compacto className="mb-3">
+                      {m.proficiency_bonus != null && (
+                        <p className="text-[var(--text3)] text-xs font-cinzel mb-2">
+                          Bônus de proficiência: <span className="text-[var(--text2)]">+{m.proficiency_bonus}</span>
+                        </p>
+                      )}
+                      <div className="grid grid-cols-6 gap-2 text-center mb-2">
+                        {atrs.map(({ label, val }) => {
+                          const mod = calcularModificadorAtributo(val)
+                          return (
+                            <div key={label} className="bg-[var(--bg3)] rounded p-2">
+                              <div className="text-[var(--text3)] text-[9px] font-cinzel">{label}</div>
+                              <div className="text-[var(--text)] font-bold">{val}</div>
+                              <div className="text-[var(--text2)] text-xs">{formatarModificador(mod)}</div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {savesExplicitos.length > 0 && (
+                        <p className="text-xs font-crimson border-t border-[var(--border)] pt-1.5">
+                          <span className="text-[var(--text3)] font-cinzel">Testes de Resistência: </span>
+                          <span className="text-[var(--text2)]">{savesExplicitos.join(', ')}</span>
+                        </p>
+                      )}
+                      {skillList.length > 0 && (
+                        <p className="text-xs font-crimson mt-1">
+                          <span className="text-[var(--text3)] font-cinzel">Perícias: </span>
+                          <span className="text-[var(--text2)]">{skillList.join(', ')}</span>
+                        </p>
                       )}
                     </PainelGrimorio>
-                  </div>
 
-                  <PainelGrimorio titulo="Atributos" compacto className="mb-3">
-                    <div className="grid grid-cols-6 gap-2 text-center">
-                      {atrs.map(({ label, val }) => {
-                        const mod = calcularModificadorAtributo(val)
-                        return (
-                          <div key={label} className="bg-[var(--bg3)] rounded p-2">
-                            <div className="text-[var(--text3)] text-[9px] font-cinzel">{label}</div>
-                            <div className="text-[var(--text)] font-bold">{val}</div>
-                            <div className="text-[var(--text2)] text-xs">{formatarModificador(mod)}</div>
+                    {/* Resistências / Imunidades / Vulnerabilidades */}
+                    {hasStructuredDamage && (
+                      <PainelGrimorio titulo="Resistências & Imunidades" compacto className="mb-3">
+                        {vulns.length > 0 && (
+                          <div className="mb-2">
+                            <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase mb-1">Vulnerabilidades</p>
+                            <div className="flex flex-wrap gap-1">
+                              {vulns.map((d, i) => (
+                                <span key={i} className={`text-xs px-2 py-0.5 rounded border font-crimson ${DAMAGE_MOD_COR.vulnerability}`}>
+                                  {d.damage_type_pt}{d.note_pt ? ` (${d.note_pt})` : ''}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        )
-                      })}
-                    </div>
-                  </PainelGrimorio>
+                        )}
+                        {resists.length > 0 && (
+                          <div className="mb-2">
+                            <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase mb-1">Resistências</p>
+                            <div className="flex flex-wrap gap-1">
+                              {resists.map((d, i) => (
+                                <span key={i} className={`text-xs px-2 py-0.5 rounded border font-crimson ${DAMAGE_MOD_COR.resistance}`}>
+                                  {d.damage_type_pt}{d.note_pt ? ` (${d.note_pt})` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {immunes.length > 0 && (
+                          <div>
+                            <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase mb-1">Imunidades a Dano</p>
+                            <div className="flex flex-wrap gap-1">
+                              {immunes.map((d, i) => (
+                                <span key={i} className={`text-xs px-2 py-0.5 rounded border font-crimson ${DAMAGE_MOD_COR.immunity}`}>
+                                  {d.damage_type_pt}{d.note_pt ? ` (${d.note_pt})` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </PainelGrimorio>
+                    )}
 
-                  {(selecionado.senses_pt || selecionado.languages_pt) && (
-                    <PainelGrimorio titulo="Sentidos & Idiomas" compacto className="mb-3">
-                      {selecionado.senses_pt && <p className="text-[var(--text2)] text-sm font-crimson">{selecionado.senses_pt}</p>}
-                      {selecionado.languages_pt && <p className="text-[var(--text2)] text-sm font-crimson mt-1">{selecionado.languages_pt}</p>}
-                    </PainelGrimorio>
-                  )}
+                    {/* Imunidades a condições */}
+                    {hasCondImmunities && (
+                      <PainelGrimorio titulo="Imunidade a Condições" compacto className="mb-3">
+                        <div className="flex flex-wrap gap-1">
+                          {m.monster_condition_immunities!.map((ci, i) => (
+                            <span key={i} className="text-xs px-2 py-0.5 rounded border border-[var(--border)] text-[var(--text2)] font-crimson bg-[var(--bg3)]">
+                              {ci.condition_pt}
+                            </span>
+                          ))}
+                        </div>
+                      </PainelGrimorio>
+                    )}
 
-                  {(selecionado.traits_rules_pt || selecionado.traits_pt) && (
-                    <PainelGrimorio titulo="Habilidades Especiais" compacto className="mb-3">
-                      <p className="text-[var(--text2)] text-sm font-crimson whitespace-pre-wrap leading-relaxed">
-                        {selecionado.traits_rules_pt || selecionado.traits_pt}
-                      </p>
-                    </PainelGrimorio>
-                  )}
+                    {/* Sentidos & Idiomas */}
+                    {(sentidosTexto || m.passive_perception != null || m.languages_pt) && (
+                      <PainelGrimorio titulo="Sentidos & Idiomas" compacto className="mb-3">
+                        {sentidosTexto && <p className="text-[var(--text2)] text-sm font-crimson">{sentidosTexto}</p>}
+                        {m.passive_perception != null && (
+                          <p className="text-[var(--text2)] text-sm font-crimson">Percepção passiva {m.passive_perception}</p>
+                        )}
+                        {m.languages_pt && <p className="text-[var(--text2)] text-sm font-crimson mt-1">{m.languages_pt}</p>}
+                      </PainelGrimorio>
+                    )}
 
-                  {(selecionado.actions_rules_pt || selecionado.actions_pt) && (
-                    <PainelGrimorio titulo="Ações" compacto className="mb-3">
-                      <p className="text-[var(--text2)] text-sm font-crimson whitespace-pre-wrap leading-relaxed">
-                        {selecionado.actions_rules_pt || selecionado.actions_pt}
-                      </p>
-                    </PainelGrimorio>
-                  )}
-                </div>
-              )}
+                    {/* Traços especiais */}
+                    {(m.traits_rules_pt || m.traits_pt) && (
+                      <PainelGrimorio titulo="Habilidades Especiais" compacto className="mb-3">
+                        <p className="text-[var(--text2)] text-sm font-crimson whitespace-pre-wrap leading-relaxed">
+                          {m.traits_rules_pt || m.traits_pt}
+                        </p>
+                      </PainelGrimorio>
+                    )}
+
+                    {/* Ações — estruturadas ou texto */}
+                    {hasStructuredActions ? (
+                      <PainelGrimorio titulo="Ações" compacto className="mb-3">
+                        {multiattacks.map(a => (
+                          <div key={a.id} className="mb-3">
+                            <span className="font-crimson font-bold text-[var(--text)] text-sm">{a.name_pt}. </span>
+                            {a.description_pt && (
+                              <span className="text-[var(--text2)] text-sm font-crimson leading-relaxed">{a.description_pt}</span>
+                            )}
+                          </div>
+                        ))}
+                        {acoesGrupadas.map(({ tipo, label, acoes }) => (
+                          <div key={tipo} className="mb-3">
+                            {tipo !== 'action' && (
+                              <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider border-b border-[var(--border)] pb-1 mb-2">{label}</p>
+                            )}
+                            {acoes.map(a => <AcaoMonstroItem key={a.id} acao={a} />)}
+                          </div>
+                        ))}
+                      </PainelGrimorio>
+                    ) : (m.actions_rules_pt || m.actions_pt) ? (
+                      <PainelGrimorio titulo="Ações" compacto className="mb-3">
+                        <p className="text-[var(--text2)] text-sm font-crimson whitespace-pre-wrap leading-relaxed">
+                          {m.actions_rules_pt || m.actions_pt}
+                        </p>
+                      </PainelGrimorio>
+                    ) : null}
+                  </div>
+                )
+              })()}
             </div>
           </div>
         )}

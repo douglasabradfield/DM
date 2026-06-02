@@ -16,6 +16,9 @@ export interface FeedbackAdmin {
   item_tipo: string | null
   status: 'pendente' | 'analisando' | 'resolvido' | 'ignorado'
   resposta_admin: string | null
+  resposta: string | null
+  respondido_em: string | null
+  respondido_por: string | null
   criado_em: string
   email?: string | null
 }
@@ -68,15 +71,30 @@ export function PainelFeedbacks({ feedbacks: inicial }: Props) {
   async function atualizarStatus(id: string, status: FeedbackAdmin['status'], resposta?: string) {
     setAtualizando(id)
     const supabase = createClient()
-    const { error } = await supabase
-      .from('feedbacks')
-      .update({ status, resposta_admin: resposta ?? null })
-      .eq('id', id)
+    const { data: { user } } = await supabase.auth.getUser()
+
+    const updates: Record<string, unknown> = { status, resposta_admin: resposta ?? null }
+    if (resposta !== undefined) {
+      updates.resposta = resposta || null
+      updates.respondido_em = resposta ? new Date().toISOString() : null
+      updates.respondido_por = resposta ? (user?.id ?? null) : null
+    }
+
+    const { error } = await supabase.from('feedbacks').update(updates).eq('id', id)
 
     if (error) {
       toast.error('Erro ao atualizar')
     } else {
-      setFeedbacks(prev => prev.map(f => f.id === id ? { ...f, status, resposta_admin: resposta ?? f.resposta_admin } : f))
+      setFeedbacks(prev => prev.map(f =>
+        f.id === id ? {
+          ...f,
+          status,
+          resposta_admin: resposta ?? f.resposta_admin,
+          resposta: resposta !== undefined ? (resposta || null) : f.resposta,
+          respondido_em: resposta ? new Date().toISOString() : f.respondido_em,
+          respondido_por: resposta ? (user?.id ?? null) : f.respondido_por,
+        } : f
+      ))
       toast.success('Status atualizado')
       if (respostando === id) {
         setRespostando(null)
@@ -166,10 +184,24 @@ export function PainelFeedbacks({ feedbacks: inicial }: Props) {
                   {f.item_referencia && (
                     <span className="text-xs text-[var(--accent2)] font-cinzel">{f.item_referencia}</span>
                   )}
+                  {f.resposta ? (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-cinzel text-[var(--green2)] bg-[var(--green)]/10 border border-[var(--green)]/30">
+                      ✓ Respondido
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-cinzel text-[var(--text3)] bg-[var(--bg3)] border border-[var(--border)]">
+                      Pendente resposta
+                    </span>
+                  )}
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className="text-[var(--text3)] text-xs">{new Date(f.criado_em).toLocaleDateString('pt-BR')}</p>
                   {f.email && <p className="text-[var(--text3)] text-xs truncate max-w-[140px]">{f.email}</p>}
+                  {f.respondido_em && (
+                    <p className="text-[var(--green2)] text-[10px]">
+                      Resp. {new Date(f.respondido_em).toLocaleDateString('pt-BR')}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -182,9 +214,15 @@ export function PainelFeedbacks({ feedbacks: inicial }: Props) {
                 </div>
               )}
 
-              {f.resposta_admin && (
+              {f.resposta && (
+                <div className="bg-[var(--green)]/5 border border-[var(--green)]/20 rounded p-2 mb-2">
+                  <p className="text-[var(--green2)] text-xs font-cinzel uppercase mb-0.5">✓ Resposta ao usuário</p>
+                  <p className="text-[var(--text2)] font-crimson text-sm">{f.resposta}</p>
+                </div>
+              )}
+              {f.resposta_admin && f.resposta_admin !== f.resposta && (
                 <div className="bg-[var(--accent)]/5 border border-[var(--accent)]/20 rounded p-2 mb-2">
-                  <p className="text-[var(--accent2)] text-xs font-cinzel uppercase mb-0.5">Resposta do admin</p>
+                  <p className="text-[var(--accent2)] text-xs font-cinzel uppercase mb-0.5">Nota interna</p>
                   <p className="text-[var(--text2)] font-crimson text-sm">{f.resposta_admin}</p>
                 </div>
               )}

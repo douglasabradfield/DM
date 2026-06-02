@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
-import { MessageSquare } from 'lucide-react'
+import { MessageSquare, X, CheckCircle, Clock } from 'lucide-react'
+import { format } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 
 type TipoFeedback = 'bug' | 'sugestao' | 'elogio' | 'outro'
 
@@ -15,13 +17,51 @@ const TIPOS: { id: TipoFeedback; emoji: string; label: string; placeholder: stri
   { id: 'outro', emoji: '💬', label: 'Outro', placeholder: 'O que você quer nos dizer?' },
 ]
 
+const TIPO_EMOJI: Record<string, string> = {
+  problema: '🐛', sugestao: '💡', elogio: '⭐', outro: '💬', bug: '🐛',
+}
+
+interface MeuFeedback {
+  id: string
+  tipo: string
+  descricao: string
+  status: string
+  resposta: string | null
+  respondido_em: string | null
+  criado_em: string
+}
+
 export default function FeedbackPage() {
   const [tipo, setTipo] = useState<TipoFeedback>('sugestao')
   const [descricao, setDescricao] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [enviado, setEnviado] = useState(false)
+  const [meusFeedbacks, setMeusFeedbacks] = useState<MeuFeedback[]>([])
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const tipoAtual = TIPOS.find(t => t.id === tipo)!
+
+  useEffect(() => {
+    buscarMeusFeedbacks()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [])
+
+  async function buscarMeusFeedbacks() {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data } = await supabase
+      .from('feedbacks')
+      .select('id, tipo, descricao, status, resposta, respondido_em, criado_em')
+      .eq('user_id', user.id)
+      .order('criado_em', { ascending: false })
+      .limit(10)
+    setMeusFeedbacks((data ?? []) as MeuFeedback[])
+  }
 
   async function enviar() {
     if (!descricao.trim()) {
@@ -56,33 +96,18 @@ export default function FeedbackPage() {
         }),
       }).catch(() => {})
 
+      setDescricao('')
+      setTipo('sugestao')
       setEnviado(true)
+      buscarMeusFeedbacks()
+
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => setEnviado(false), 5000)
     } catch {
       toast.error('Erro ao enviar. Tente novamente.')
     } finally {
       setEnviando(false)
     }
-  }
-
-  if (enviado) {
-    return (
-      <div className="max-w-xl mx-auto p-6 flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <div className="text-5xl mb-4">🎉</div>
-          <h2 className="font-cinzel text-[var(--gold)] text-xl font-bold mb-2">Obrigado pelo feedback!</h2>
-          <p className="text-[var(--text2)] font-crimson mb-6">
-            Sua mensagem foi recebida. Analisamos todos os feedbacks para melhorar o Dungeon Desk.
-          </p>
-          <button
-            onClick={() => { setEnviado(false); setDescricao(''); setTipo('sugestao') }}
-            className="px-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded font-cinzel text-sm
-                       text-[var(--text2)] hover:bg-[var(--bg3)] transition-colors"
-          >
-            Enviar outro feedback
-          </button>
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -96,6 +121,25 @@ export default function FeedbackPage() {
           Sua opinião melhora o app para todos. Cada mensagem é lida com atenção.
         </p>
       </div>
+
+      {/* Confirmação inline */}
+      {enviado && (
+        <div className="mb-4 p-3 bg-[var(--green)]/10 border border-[var(--green)]/30 rounded-lg flex items-start gap-2.5">
+          <CheckCircle className="w-4 h-4 text-[var(--green2)] flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-[var(--green2)] font-cinzel text-sm font-bold">Feedback recebido!</p>
+            <p className="text-[var(--text2)] font-crimson text-xs mt-0.5 leading-relaxed">
+              Obrigado pela sua contribuição. Analisamos todos os feedbacks e entramos em contato quando necessário.
+            </p>
+          </div>
+          <button
+            onClick={() => { setEnviado(false); if (timerRef.current) clearTimeout(timerRef.current) }}
+            className="text-[var(--text3)] hover:text-[var(--text2)] flex-shrink-0 transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Tipo */}
       <div className="mb-5">
@@ -149,6 +193,58 @@ export default function FeedbackPage() {
       <p className="text-[var(--text3)] text-xs font-crimson text-center mt-4">
         Para reportar dados incorretos em monstros, magias ou itens, use o botão ⚑ Reportar nas páginas do Bestiário, Magias e Itens.
       </p>
+
+      {/* Minhas mensagens */}
+      {meusFeedbacks.length > 0 && (
+        <div className="mt-10">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="flex-1 h-px bg-[var(--border)]" />
+            <h2 className="font-cinzel text-[var(--text3)] text-sm uppercase tracking-wide">Minhas mensagens</h2>
+            <div className="flex-1 h-px bg-[var(--border)]" />
+          </div>
+
+          <div className="space-y-3">
+            {meusFeedbacks.map(fb => (
+              <div key={fb.id} className="bg-[var(--bg2)] border border-[var(--border)] rounded-lg p-3">
+                {/* Cabeçalho */}
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-sm">{TIPO_EMOJI[fb.tipo] ?? '💬'}</span>
+                  <span className="text-[var(--text3)] text-xs font-crimson capitalize">{fb.tipo}</span>
+                  <span className="ml-auto text-[var(--text3)] text-[10px] font-crimson">
+                    {format(new Date(fb.criado_em), "d 'de' MMM yyyy", { locale: ptBR })}
+                  </span>
+                </div>
+
+                {/* Texto original */}
+                <p className="text-[var(--text2)] font-crimson text-sm leading-relaxed line-clamp-3">{fb.descricao}</p>
+
+                {/* Resposta do admin ou badge "Em análise" */}
+                {fb.resposta ? (
+                  <div className="mt-2.5 bg-[var(--accent)]/5 border border-[var(--accent)]/20 rounded p-2.5">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <CheckCircle className="w-3 h-3 text-[var(--accent2)]" />
+                      <span className="text-[var(--accent2)] text-[10px] font-cinzel uppercase tracking-wide">
+                        Resposta da equipe
+                      </span>
+                      {fb.respondido_em && (
+                        <span className="ml-auto text-[var(--text3)] text-[9px] font-crimson">
+                          {format(new Date(fb.respondido_em), "d 'de' MMM, HH:mm", { locale: ptBR })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[var(--text)] font-crimson text-sm leading-relaxed">{fb.resposta}</p>
+                  </div>
+                ) : (
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <Clock className="w-3 h-3 text-[var(--text3)]" />
+                    <span className="text-[var(--text3)] text-[10px] font-cinzel">Em análise</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
