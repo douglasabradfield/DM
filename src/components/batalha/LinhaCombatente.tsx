@@ -281,9 +281,10 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
         <SeletorTipoDano valor={c.dano_tipo} onChange={(t) => setarTipoDano(c.id, t)} />
       </td>
 
-      {/* Dano / Cura unificado */}
+      {/* Ajuste manual de PV */}
       <td className="px-1 py-1 w-28">
-        <div className="flex items-center gap-1">
+        <div className="text-[8px] text-[var(--text3)] font-cinzel leading-none mb-0.5 opacity-50">ajuste</div>
+        <div className="flex items-center gap-0.5">
           <input
             type="text"
             inputMode="numeric"
@@ -295,7 +296,7 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
             }}
             onFocus={e => e.target.select()}
             placeholder="0"
-            className="w-12 input-dd text-center text-sm"
+            className="w-10 input-dd text-center text-xs opacity-80"
           />
           <button
             onClick={() => {
@@ -306,8 +307,8 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
               setarDanoInput(c.id, 0)
             }}
             disabled={pausada}
-            title="Aplicar dano"
-            className="px-1.5 py-0.5 bg-[var(--red2)]/80 hover:bg-[var(--red2)] text-white rounded text-xs font-bold transition-colors disabled:opacity-30"
+            title="Ajuste de dano manual"
+            className="px-1 py-0.5 bg-[var(--red2)]/60 hover:bg-[var(--red2)]/90 text-white rounded text-xs transition-colors disabled:opacity-30"
           >💥</button>
           <button
             onClick={() => {
@@ -318,8 +319,8 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
               setarDanoInput(c.id, 0)
             }}
             disabled={pausada}
-            title="Aplicar cura"
-            className="px-1.5 py-0.5 bg-[var(--green)]/80 hover:bg-[var(--green)] text-white rounded text-xs font-bold transition-colors disabled:opacity-30"
+            title="Ajuste de cura manual"
+            className="px-1 py-0.5 bg-[var(--green)]/60 hover:bg-[var(--green)]/90 text-white rounded text-xs transition-colors disabled:opacity-30"
           >💚</button>
         </div>
       </td>

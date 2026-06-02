@@ -45,8 +45,8 @@ interface EstadoBatalhaStore {
   confirmarIniciativa: () => void
 
   // PV
-  aplicarDano: (id: string, dano: number, tipo: TipoDano) => void
-  aplicarCura: (id: string, cura: number) => void
+  aplicarDano: (id: string, dano: number, tipo: TipoDano, silencioso?: boolean) => void
+  aplicarCura: (id: string, cura: number, silencioso?: boolean) => void
   atualizarPV: (id: string, pvAtual: number) => void
   atualizarPVMax: (id: string, pvMax: number) => void
   setarDanoInput: (id: string, valor: number) => void
@@ -54,6 +54,7 @@ interface EstadoBatalhaStore {
   aplicarTodosDanos: () => void
   aplicarTodasCuras: () => void
   zerarContadores: () => void
+  adicionarEntradaLog: (entrada: Omit<EntradaLog, 'id' | 'rodada' | 'turno' | 'criado_em'>) => void
 
   // Condições
   adicionarCondicao: (id: string, condicao: TipoCondicao) => void
@@ -224,8 +225,34 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         .map(l => `**[R${l.rodada}]** ${l.descricao}`)
         .join('\n')
 
+      const TIPOS_MANUAIS = [
+        'ataque', 'ataque_extra', 'magia', 'usar_item', 'ajudar', 'agarrar', 'recuar',
+        'acao_bonus_ataque', 'acao_bonus_magia', 'cura_bonus', 'forma_alternativa',
+        'ataque_oportunidade', 'contra_magia', 'escudo', 'absorver_elementos', 'queda_controlada', 'outra_reacao',
+        'pv_temporarios', 'estabilizar', 'condicao_aplicada', 'condicao_removida', 'concentracao', 'outro',
+      ]
+      const acoesManuais = log.filter(l => TIPOS_MANUAIS.includes(l.tipo))
+      const categorias: Array<{ titulo: string; tipos: string[] }> = [
+        { titulo: '⚔️ Ações Principais', tipos: ['ataque', 'ataque_extra', 'magia', 'usar_item', 'ajudar', 'agarrar', 'recuar'] },
+        { titulo: '✨ Ações Bônus', tipos: ['acao_bonus_ataque', 'acao_bonus_magia', 'cura_bonus', 'forma_alternativa'] },
+        { titulo: '🛡️ Reações', tipos: ['ataque_oportunidade', 'contra_magia', 'escudo', 'absorver_elementos', 'queda_controlada', 'outra_reacao'] },
+        { titulo: '🔮 Efeitos/Resultados', tipos: ['pv_temporarios', 'estabilizar', 'condicao_aplicada', 'condicao_removida', 'concentracao'] },
+        { titulo: '📝 Outros', tipos: ['outro'] },
+      ]
+      const acoesSection = acoesManuais.length > 0
+        ? `## ⚔️ Ações Registradas\n\n${categorias
+            .map(cat => {
+              const itens = acoesManuais.filter(l => cat.tipos.includes(l.tipo))
+              if (!itens.length) return ''
+              return `### ${cat.titulo}\n${itens.map(l => `- [R${l.rodada}] ${l.descricao}`).join('\n')}`
+            })
+            .filter(Boolean)
+            .join('\n\n')}`
+        : ''
+
       const conteudoFinal = [
         resumoIA ? `## 📜 Narrativa da Batalha\n\n${resumoIA}` : '',
+        acoesSection,
         `## 📋 Log de Ações\n\n${logNarrativo || '_Nenhuma ação registrada_'}`,
         tabelaTecnica,
       ].filter(Boolean).join('\n\n')
@@ -386,10 +413,21 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       state.combatentes = state.combatentes.filter(c => c.id !== id)
     }),
 
-    atualizarCombatente: (id, dados) => set(state => {
-      const idx = state.combatentes.findIndex(c => c.id === id)
-      if (idx !== -1) Object.assign(state.combatentes[idx], dados)
-    }),
+    atualizarCombatente: (id, dados) => {
+      set(state => {
+        const idx = state.combatentes.findIndex(c => c.id === id)
+        if (idx !== -1) Object.assign(state.combatentes[idx], dados)
+      })
+      if ('pv_atual' in dados || 'pv_temporarios' in dados) {
+        const c = get().combatentes.find(x => x.id === id)
+        if (c?.personagem_id) {
+          createClient().from('personagens')
+            .update({ pv_atual: c.pv_atual, pv_temporarios: c.pv_temporarios })
+            .eq('id', c.personagem_id)
+            .then(({ error }) => { if (error) console.error('Sync PV batalha→ficha:', error) })
+        }
+      }
+    },
 
     definirIniciativa: (id, valor) => set(state => {
       const c = state.combatentes.find(c => c.id === id)
@@ -417,7 +455,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       state.turnoAtual = 0
     }),
 
-    aplicarDano: (id, dano, tipo) => set(state => {
+    aplicarDano: (id, dano, tipo, silencioso = false) => set(state => {
       const c = state.combatentes.find(c => c.id === id)
       if (!c) return
 
@@ -471,18 +509,30 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         if (c.pv_atual <= 0 && pvAntes > 0) descricao += ` — ${c.nome} caiu! 💀`
       }
 
-      state.log.push({
-        id: gerarId(),
-        rodada: state.rodadaAtual,
-        turno: state.turnoAtual,
-        tipo: 'dano',
-        origem: nomeAtacante,
-        alvo: c.nome,
-        valor: danoFinal,
-        tipo_dano: tipo,
-        descricao,
-        criado_em: new Date().toISOString(),
-      })
+      if (!silencioso) {
+        state.log.push({
+          id: gerarId(),
+          rodada: state.rodadaAtual,
+          turno: state.turnoAtual,
+          tipo: 'dano',
+          origem: nomeAtacante,
+          alvo: c.nome,
+          valor: danoFinal,
+          tipo_dano: tipo,
+          descricao,
+          criado_em: new Date().toISOString(),
+        })
+      }
+
+      if (c.personagem_id) {
+        const pid = c.personagem_id, novoPV = c.pv_atual, novoTemp = c.pv_temporarios
+        setTimeout(() => {
+          createClient().from('personagens')
+            .update({ pv_atual: novoPV, pv_temporarios: novoTemp })
+            .eq('id', pid)
+            .then(({ error }) => { if (error) console.error('Sync PV batalha→ficha:', error) })
+        }, 0)
+      }
 
       setTimeout(() => {
         set(s => {
@@ -492,7 +542,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       }, 600)
     }),
 
-    aplicarCura: (id, cura) => set(state => {
+    aplicarCura: (id, cura, silencioso = false) => set(state => {
       const c = state.combatentes.find(c => c.id === id)
       if (!c) return
 
@@ -504,18 +554,30 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       c.cura_total += cura
       c.flash = 'cura'
 
-      state.log.push({
-        id: gerarId(),
-        rodada: state.rodadaAtual,
-        turno: state.turnoAtual,
-        tipo: 'cura',
-        origem: nomeAtacante,
-        alvo: c.nome,
-        valor: cura,
-        tipo_dano: null,
-        descricao: `${nomeAtacante} curou ${cura} PV de ${c.nome}`,
-        criado_em: new Date().toISOString(),
-      })
+      if (!silencioso) {
+        state.log.push({
+          id: gerarId(),
+          rodada: state.rodadaAtual,
+          turno: state.turnoAtual,
+          tipo: 'cura',
+          origem: nomeAtacante,
+          alvo: c.nome,
+          valor: cura,
+          tipo_dano: null,
+          descricao: `${nomeAtacante} curou ${cura} PV de ${c.nome}`,
+          criado_em: new Date().toISOString(),
+        })
+      }
+
+      if (c.personagem_id) {
+        const pid = c.personagem_id, novoPV = c.pv_atual, novoTemp = c.pv_temporarios
+        setTimeout(() => {
+          createClient().from('personagens')
+            .update({ pv_atual: novoPV, pv_temporarios: novoTemp })
+            .eq('id', pid)
+            .then(({ error }) => { if (error) console.error('Sync PV batalha→ficha:', error) })
+        }, 0)
+      }
 
       setTimeout(() => {
         set(s => {
@@ -525,10 +587,19 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       }, 600)
     }),
 
-    atualizarPV: (id, pvAtual) => set(state => {
-      const c = state.combatentes.find(c => c.id === id)
-      if (c) c.pv_atual = Math.max(0, Math.min(c.pv_maximo, pvAtual))
-    }),
+    atualizarPV: (id, pvAtual) => {
+      set(state => {
+        const c = state.combatentes.find(c => c.id === id)
+        if (c) c.pv_atual = Math.max(0, Math.min(c.pv_maximo, pvAtual))
+      })
+      const c = get().combatentes.find(x => x.id === id)
+      if (c?.personagem_id) {
+        createClient().from('personagens')
+          .update({ pv_atual: c.pv_atual, pv_temporarios: c.pv_temporarios })
+          .eq('id', c.personagem_id)
+          .then(({ error }) => { if (error) console.error('Sync PV batalha→ficha:', error) })
+      }
+    },
 
     atualizarPVMax: (id, pvMax) => set(state => {
       const c = state.combatentes.find(c => c.id === id)
@@ -592,6 +663,16 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         valor: null,
         tipo_dano: null,
         descricao: 'Contadores zerados — PV restaurados ao máximo e mortos revividos',
+        criado_em: new Date().toISOString(),
+      })
+    }),
+
+    adicionarEntradaLog: (entrada) => set(state => {
+      state.log.push({
+        ...entrada,
+        id: gerarId(),
+        rodada: state.rodadaAtual,
+        turno: state.turnoAtual,
         criado_em: new Date().toISOString(),
       })
     }),

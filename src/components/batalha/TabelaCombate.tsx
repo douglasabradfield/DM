@@ -9,7 +9,7 @@ import {
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useBatalha } from '@/store/batalha'
 import { useCampanha } from '@/store/campanha'
-import type { Combatente } from '@/types/batalha'
+import type { Combatente, EntradaLog } from '@/types/batalha'
 import { LinhaCombatente } from './LinhaCombatente'
 import { LogBatalha } from './LogBatalha'
 import { DadosVirtuais } from './DadosVirtuais'
@@ -53,6 +53,7 @@ export function TabelaCombate() {
   const [modalInspiracao, setModalInspiracao] = useState(false)
   const [modalIniciar, setModalIniciar] = useState(false)
   const [modalCarregar, setModalCarregar] = useState(false)
+  const [modalRegistrarAcao, setModalRegistrarAcao] = useState(false)
   const [encerrando, setEncerrando] = useState(false)
   const [avisoXP, setAvisoXP] = useState(false)
   const campanhaAnteriorRef = useRef<string | null>(null)
@@ -165,6 +166,10 @@ export function TabelaCombate() {
 
           <div className="flex-1" />
 
+          <BotaoRunico variante="ouro" tamanho="sm" onClick={() => setModalRegistrarAcao(true)}>
+            ⚔️ Registrar Ação
+          </BotaoRunico>
+          <span className="text-[var(--border)] select-none text-xs">|</span>
           <BotaoRunico variante="secundario" tamanho="sm" onClick={rolarIniciativasMonstros} title="Rolar iniciativa dos monstros">
             🎲 Iniciativas
           </BotaoRunico>
@@ -172,13 +177,13 @@ export function TabelaCombate() {
             🎯 Ordenar
           </BotaoRunico>
           <BotaoRunico variante="secundario" tamanho="sm" onClick={aplicarTodosDanos}>
-            <Zap className="w-3 h-3" /> Aplicar Danos
+            <Zap className="w-3 h-3" /> Danos
           </BotaoRunico>
           <button
             onClick={aplicarTodasCuras}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[var(--green2)] text-[var(--green2)] hover:bg-[var(--green2)]/20 font-cinzel text-xs transition-colors"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[var(--green2)]/60 text-[var(--green2)] hover:bg-[var(--green2)]/10 font-cinzel text-xs transition-colors"
           >
-            💚 Aplicar Cura
+            💚 Cura
           </button>
           <BotaoRunico variante="secundario" tamanho="sm" onClick={zerarContadores}>
             <RotateCcw className="w-3 h-3" /> Zerar
@@ -337,7 +342,7 @@ export function TabelaCombate() {
                           <th className="px-1 py-1.5 text-center w-12">CA</th>
                           <th className="px-2 py-1.5 text-left min-w-28">PV</th>
                           <th className="px-1 py-1.5 text-center w-24">Tipo Dano</th>
-                          <th className="px-1 py-1.5 text-center w-28">Dano / Cura</th>
+                          <th className="px-1 py-1.5 text-center w-28 opacity-60">Ajuste PV</th>
                           <th className="px-1 py-1.5 text-center w-16">💥 Tot</th>
                           <th className="px-1 py-1.5 text-center w-16">💊 Tot</th>
                           <th className="px-1 py-1.5 text-left min-w-24">Condições</th>
@@ -430,6 +435,12 @@ export function TabelaCombate() {
         </div>
       </div>,
       document.body
+    )}
+    {modalRegistrarAcao && (
+      <ModalRegistrarAcao
+        combatentes={combatentes}
+        onFechar={() => setModalRegistrarAcao(false)}
+      />
     )}
     {modalXP && <ModalDistribuirXP xpSugerido={xpGanhoNaBatalha} onFechar={() => setModalXP(false)} />}
     {modalInspiracao && <ModalDarInspiracao onFechar={() => setModalInspiracao(false)} />}
@@ -925,6 +936,262 @@ function PainelDificuldade({ combatentes }: { combatentes: Combatente[] }) {
         </div>
       )}
     </div>
+  )
+}
+
+const GRUPOS_ACAO = [
+  {
+    label: '⚔️ Ação principal', icone: '⚔️',
+    opcoes: [
+      { value: 'ataque',       label: 'Ataque (arma/natural)' },
+      { value: 'ataque_extra', label: 'Ataque extra (ação)' },
+      { value: 'magia',        label: 'Conjurar magia' },
+      { value: 'usar_item',    label: 'Usar item/habilidade' },
+      { value: 'ajudar',       label: 'Ajudar aliado (Help)' },
+      { value: 'agarrar',      label: 'Agarrar/Empurrar' },
+      { value: 'recuar',       label: 'Recuar/Esgueirar' },
+    ],
+  },
+  {
+    label: '✨ Ação bônus', icone: '✨',
+    opcoes: [
+      { value: 'acao_bonus_ataque',  label: 'Ataque bônus (classe)' },
+      { value: 'acao_bonus_magia',   label: 'Magia bônus' },
+      { value: 'cura_bonus',         label: 'Cura bônus (ex: Palavra de Cura)' },
+      { value: 'forma_alternativa',  label: 'Forma alternativa (Wild Shape etc)' },
+    ],
+  },
+  {
+    label: '🛡️ Reação', icone: '🛡️',
+    opcoes: [
+      { value: 'ataque_oportunidade', label: 'Ataque de oportunidade' },
+      { value: 'contra_magia',        label: 'Contra-magia' },
+      { value: 'escudo',              label: 'Escudo (Shield)' },
+      { value: 'absorver_elementos',  label: 'Absorver elementos' },
+      { value: 'queda_controlada',    label: 'Queda controlada' },
+      { value: 'outra_reacao',        label: 'Outra reação' },
+    ],
+  },
+  {
+    label: '🔮 Efeitos/resultados', icone: '🔮',
+    opcoes: [
+      { value: 'cura',               label: 'Cura (direta/área)' },
+      { value: 'pv_temporarios',     label: 'PV temporários' },
+      { value: 'estabilizar',        label: 'Estabilizar (0 PV)' },
+      { value: 'condicao_aplicada',  label: 'Condição aplicada' },
+      { value: 'condicao_removida',  label: 'Condição removida' },
+      { value: 'concentracao',       label: 'Concentração (mantida/quebrada)' },
+      { value: 'morte',              label: 'Morte/Incapacitado' },
+    ],
+  },
+  {
+    label: '📝 Genérico', icone: '📝',
+    opcoes: [{ value: 'outro', label: 'Outro' }],
+  },
+] as const
+
+interface AlvoAcao {
+  uid: string
+  combatenteId: string
+  nome: string
+  valor: number
+  efeitoTipo: 'dano' | 'cura'
+}
+
+const TIPOS_CURA_ACAO = new Set(['cura', 'cura_bonus', 'pv_temporarios', 'estabilizar'])
+
+function ModalRegistrarAcao({
+  combatentes,
+  onFechar,
+}: {
+  combatentes: Combatente[]
+  onFechar: () => void
+}) {
+  const { aplicarDano, aplicarCura, adicionarEntradaLog } = useBatalha()
+  const [tipo, setTipo] = useState('')
+  const [origemNome, setOrigemNome] = useState('')
+  const [alvos, setAlvos] = useState<AlvoAcao[]>([])
+  const [observacao, setObservacao] = useState('')
+
+  const ativos = combatentes.filter(c => !c.ausente && !c.morto)
+  const tipoInfo = GRUPOS_ACAO.flatMap(g => g.opcoes.map(o => ({ ...o, icone: g.icone }))).find(o => o.value === tipo)
+
+  function efeitoPadrao(): 'dano' | 'cura' {
+    return TIPOS_CURA_ACAO.has(tipo) ? 'cura' : 'dano'
+  }
+
+  function adicionarAlvo() {
+    setAlvos(prev => [...prev, {
+      uid: Math.random().toString(36).slice(2),
+      combatenteId: '',
+      nome: '',
+      valor: 0,
+      efeitoTipo: efeitoPadrao(),
+    }])
+  }
+
+  function atualizarAlvo(uid: string, updates: Partial<AlvoAcao>) {
+    setAlvos(prev => prev.map(a => a.uid === uid ? { ...a, ...updates } : a))
+  }
+
+  function removerAlvo(uid: string) {
+    setAlvos(prev => prev.filter(a => a.uid !== uid))
+  }
+
+  function confirmar() {
+    if (!tipo || !origemNome) return
+
+    const alvosValidos = alvos.filter(a => a.combatenteId && a.valor > 0)
+
+    // Aplicar efeitos silenciosamente (sem entradas individuais no log)
+    for (const alvo of alvosValidos) {
+      if (alvo.efeitoTipo === 'cura') {
+        aplicarCura(alvo.combatenteId, alvo.valor, true)
+      } else {
+        aplicarDano(alvo.combatenteId, alvo.valor, 'cortante', true)
+      }
+    }
+
+    // Entrada unificada no log
+    const alvosDesc = alvosValidos.map(a =>
+      `${a.nome}: ${a.valor} ${a.efeitoTipo === 'cura' ? 'cura' : 'dano'}`
+    )
+    const partes: string[] = [
+      `${tipoInfo?.icone ?? '📝'} ${tipoInfo?.label ?? tipo} — ${origemNome}`,
+      ...(alvosDesc.length > 0 ? [`→ ${alvosDesc.join(', ')}`] : []),
+      ...(observacao ? [`(${observacao})`] : []),
+    ]
+
+    adicionarEntradaLog({
+      tipo: tipo as EntradaLog['tipo'],
+      origem: origemNome,
+      alvo: alvosValidos.map(a => a.nome).join(', '),
+      valor: alvosValidos.reduce((sum, a) => sum + a.valor, 0),
+      tipo_dano: null,
+      descricao: partes.join(' '),
+    })
+
+    onFechar()
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70" onClick={onFechar}>
+      <div
+        className="bg-[var(--bg2)] border border-[var(--gold)] rounded-xl p-5 max-w-lg w-full mx-4 space-y-3 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="font-cinzel text-[var(--gold)] text-base font-bold">⚔️ Registrar Ação</h3>
+
+        {/* Tipo */}
+        <div>
+          <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Tipo *</label>
+          <select value={tipo} onChange={e => setTipo(e.target.value)} className="input-dd w-full text-sm" autoFocus>
+            <option value="">— Selecione o tipo —</option>
+            {GRUPOS_ACAO.map(g => (
+              <optgroup key={g.label} label={g.label}>
+                {g.opcoes.map(op => (
+                  <option key={op.value} value={op.value}>{op.label}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+
+        {/* Quem fez */}
+        <div>
+          <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Quem fez *</label>
+          <select value={origemNome} onChange={e => setOrigemNome(e.target.value)} className="input-dd w-full text-sm">
+            <option value="">— Selecione —</option>
+            <option value="DM">DM</option>
+            {ativos.map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
+          </select>
+        </div>
+
+        {/* Alvos múltiplos */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-[var(--text3)] text-xs font-cinzel uppercase">Alvos e Efeitos</label>
+            <button
+              onClick={adicionarAlvo}
+              className="text-xs text-[var(--accent2)] hover:text-[var(--accent)] font-cinzel transition-colors"
+            >
+              + Adicionar alvo
+            </button>
+          </div>
+          {alvos.length === 0 ? (
+            <p className="text-[var(--text3)] text-xs font-crimson italic">
+              Sem alvo — registra a ação sem aplicar efeito mecânico
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {alvos.map(alvo => (
+                <div key={alvo.uid} className="flex items-center gap-1.5 bg-[var(--bg3)] rounded p-1.5">
+                  <select
+                    value={alvo.combatenteId}
+                    onChange={e => {
+                      const c = combatentes.find(x => x.id === e.target.value)
+                      atualizarAlvo(alvo.uid, { combatenteId: e.target.value, nome: c?.nome ?? '' })
+                    }}
+                    className="input-dd text-xs flex-1 min-w-0"
+                  >
+                    <option value="">— Alvo —</option>
+                    {combatentes
+                      .filter(c => c.nome !== origemNome)
+                      .map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                  </select>
+                  <input
+                    type="number"
+                    min={0}
+                    value={alvo.valor || ''}
+                    onChange={e => atualizarAlvo(alvo.uid, { valor: parseInt(e.target.value) || 0 })}
+                    placeholder="0"
+                    className="input-dd text-xs text-center w-14"
+                  />
+                  <select
+                    value={alvo.efeitoTipo}
+                    onChange={e => atualizarAlvo(alvo.uid, { efeitoTipo: e.target.value as 'dano' | 'cura' })}
+                    className={`input-dd text-xs w-[4.5rem] ${alvo.efeitoTipo === 'cura' ? 'text-[var(--green2)]' : 'text-[var(--red2)]'}`}
+                  >
+                    <option value="dano">💥 Dano</option>
+                    <option value="cura">💚 Cura</option>
+                  </select>
+                  <button
+                    onClick={() => removerAlvo(alvo.uid)}
+                    className="text-[var(--border)] hover:text-[var(--red2)] transition-colors px-1 text-base leading-none"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Observação */}
+        <div>
+          <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Observação (opcional)</label>
+          <textarea
+            value={observacao}
+            onChange={e => setObservacao(e.target.value)}
+            placeholder="Ex: dano de fogo, crítico, salvou na metade..."
+            rows={2}
+            className="input-dd w-full text-sm resize-none"
+          />
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={onFechar} className="flex-1 py-2 border border-[var(--border)] rounded text-[var(--text2)] text-sm">Cancelar</button>
+          <button
+            onClick={confirmar}
+            disabled={!tipo || !origemNome}
+            className="flex-1 py-2 bg-[var(--accent)] hover:opacity-90 text-white rounded font-cinzel text-sm disabled:opacity-50"
+          >
+            Registrar
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }
 

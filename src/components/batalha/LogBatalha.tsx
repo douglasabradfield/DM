@@ -4,15 +4,43 @@ import { useBatalha } from '@/store/batalha'
 import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
 import { cn } from '@/lib/utils'
 
-const iconesTipo = {
-  dano:       '💥',
-  cura:       '💊',
-  condicao:   '⚡',
-  morte:      '☠️',
-  magia:      '✨',
-  iniciativa: '🎯',
-  nota:       '📝',
-  sistema:    '⚙️',
+const iconesTipo: Record<string, string> = {
+  // automáticos
+  dano:                '💥',
+  cura:                '💊',
+  condicao:            '⚡',
+  morte:               '☠️',
+  magia:               '✨',
+  iniciativa:          '🎯',
+  nota:                '📝',
+  sistema:             '⚙️',
+  // ação principal
+  ataque:              '⚔️',
+  ataque_extra:        '⚔️',
+  usar_item:           '⚔️',
+  ajudar:              '⚔️',
+  agarrar:             '⚔️',
+  recuar:              '⚔️',
+  // ação bônus
+  acao_bonus_ataque:   '✨',
+  acao_bonus_magia:    '✨',
+  cura_bonus:          '💚',
+  forma_alternativa:   '✨',
+  // reação
+  ataque_oportunidade: '🛡️',
+  contra_magia:        '🛡️',
+  escudo:              '🛡️',
+  absorver_elementos:  '🛡️',
+  queda_controlada:    '🛡️',
+  outra_reacao:        '🛡️',
+  // efeitos
+  pv_temporarios:      '💚',
+  estabilizar:         '💚',
+  condicao_aplicada:   '🔮',
+  condicao_removida:   '🔮',
+  concentracao:        '🔮',
+  // genérico
+  outro:               '📝',
 }
 
 export function LogBatalha() {

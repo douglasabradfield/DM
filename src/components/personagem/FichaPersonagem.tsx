@@ -67,6 +67,7 @@ interface FichaPersonagemProps {
 export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemProps) {
   const router = useRouter()
   const atualizarCombatentePorPersonagem = useBatalha(s => s.atualizarCombatentePorPersonagem)
+  const combatenteAtivo = useBatalha(s => s.combatentes.find(c => c.personagem_id === p.id))
   const campanhaAtiva = useCampanha(s => s.campanhaAtiva)
   const papelPorCampanha = useCampanha(s => s.papelPorCampanha)
   const [moedaCustomNome, setMoedaCustomNome] = useState(campanhaAtiva?.moeda_custom_nome || 'Especial')
@@ -100,6 +101,17 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const [alterado, setAlterado] = useState(false)
   const alteradoRef = useRef(false)
   useEffect(() => { alteradoRef.current = alterado }, [alterado])
+
+  useEffect(() => {
+    if (combatenteAtivo) {
+      setDados(prev => ({
+        ...prev,
+        pv_atual: combatenteAtivo.pv_atual,
+        pv_temporarios: combatenteAtivo.pv_temporarios ?? 0,
+      }))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [combatenteAtivo?.pv_atual, combatenteAtivo?.pv_temporarios])
 
   useEffect(() => {
     const supabase = createClient()
@@ -211,7 +223,11 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const [buscaMagia, setBuscaMagia] = useState('')
   const [resultadosBusca, setResultadosBusca] = useState<Spell[]>([])
   const [buscandoMagia, setBuscandoMagia] = useState(false)
-  const [espacosUtilizados, setEspacosUtilizados] = useState<Record<number, number>>({})
+  const [espacosUtilizados, setEspacosUtilizados] = useState<Record<number, number>>(() => {
+    const raw = (p as { slots_magia?: Record<string, { usados: number }> | null }).slots_magia
+    if (!raw) return {}
+    return Object.fromEntries(Object.entries(raw).map(([k, v]) => [parseInt(k), v?.usados ?? 0]))
+  })
   const [magiaPopup, setMagiaPopup] = useState<Spell | null>(null)
 
   function atualizar<K extends keyof Personagem>(campo: K, valor: Personagem[K]) {
@@ -321,20 +337,41 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const espacosPorNivel = ESPACOS_MAGIA[Math.min(Math.max(dados.nivel, 1), 20)] ?? ESPACOS_MAGIA[1]
 
   function toggleEspaco(nivel: number, indice: number) {
-    setEspacosUtilizados(prev => {
-      const utilizados = prev[nivel] ?? 0
-      const total = espacosPorNivel[nivel - 1] ?? 0
-      if (indice < utilizados) {
-        return { ...prev, [nivel]: utilizados - 1 }
-      } else if (utilizados < total) {
-        return { ...prev, [nivel]: utilizados + 1 }
-      }
-      return prev
-    })
+    if (!podeEditar) return
+    const utilizados = espacosUtilizados[nivel] ?? 0
+    const total = espacosPorNivel[nivel - 1] ?? 0
+    let novoUtilizados: number
+    if (indice < utilizados) {
+      novoUtilizados = utilizados - 1
+    } else if (utilizados < total) {
+      novoUtilizados = utilizados + 1
+    } else {
+      return
+    }
+    const novos = { ...espacosUtilizados, [nivel]: novoUtilizados }
+    setEspacosUtilizados(novos)
+    salvarSlotsDb(novos)
+  }
+
+  async function salvarSlotsDb(espacos: Record<number, number>) {
+    const slotsDb: Record<string, { total: number; usados: number }> = {}
+    const espacosBatalha: Record<number, { total: number; utilizados: number }> = {}
+    for (const [nStr, usados] of Object.entries(espacos)) {
+      const n = parseInt(nStr)
+      const total = espacosPorNivel[n - 1] ?? 0
+      slotsDb[nStr] = { total, usados }
+      if (total > 0) espacosBatalha[n] = { total, utilizados: usados }
+    }
+    const supabase = createClient()
+    const { error } = await supabase.from('personagens').update({ slots_magia: slotsDb }).eq('id', p.id)
+    if (error) console.error('Sync slots_magia:', error)
+    atualizarCombatentePorPersonagem(p.id, { espacos_magia: espacosBatalha })
   }
 
   function descansarLongo() {
-    setEspacosUtilizados({})
+    const vazios: Record<number, number> = {}
+    setEspacosUtilizados(vazios)
+    salvarSlotsDb(vazios)
     toast.success('Descanso longo! Espaços de magia recuperados.')
   }
 
@@ -1112,9 +1149,10 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                         <button
                           key={i}
                           onClick={() => toggleEspaco(nivel, i)}
+                          disabled={!podeEditar}
                           className={`text-base transition-colors ${
                             i < utilizados ? 'text-[#4a3060]' : 'text-[#9b59b6]'
-                          } hover:scale-110`}
+                          } hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed`}
                           title={i < utilizados ? 'Espaço usado' : 'Espaço disponível'}
                         >
                           {i < utilizados ? '○' : '●'}

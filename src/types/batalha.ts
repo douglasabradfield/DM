@@ -81,11 +81,25 @@ export interface EstadoBatalha {
   log: EntradaLog[]
 }
 
+export type TipoEntradaLog =
+  // automáticos
+  | 'dano' | 'cura' | 'condicao' | 'morte' | 'magia' | 'iniciativa' | 'nota' | 'sistema'
+  // ação principal (modal)
+  | 'ataque' | 'ataque_extra' | 'usar_item' | 'ajudar' | 'agarrar' | 'recuar'
+  // ação bônus (modal)
+  | 'acao_bonus_ataque' | 'acao_bonus_magia' | 'cura_bonus' | 'forma_alternativa'
+  // reação (modal)
+  | 'ataque_oportunidade' | 'contra_magia' | 'escudo' | 'absorver_elementos' | 'queda_controlada' | 'outra_reacao'
+  // efeitos/resultados (modal)
+  | 'pv_temporarios' | 'estabilizar' | 'condicao_aplicada' | 'condicao_removida' | 'concentracao'
+  // genérico
+  | 'outro'
+
 export interface EntradaLog {
   id: string
   rodada: number
   turno: number
-  tipo: 'dano' | 'cura' | 'condicao' | 'morte' | 'magia' | 'iniciativa' | 'nota' | 'sistema'
+  tipo: TipoEntradaLog
   origem: string
   alvo: string
   valor: number | null
