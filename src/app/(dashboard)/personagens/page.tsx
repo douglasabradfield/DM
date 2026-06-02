@@ -153,7 +153,7 @@ function CardPersonagem({
                 ].map(op => (
                   <button
                     key={op.value}
-                    onClick={() => onAlterarVisibilidade(p.id, op.value)}
+                    onClick={e => { e.stopPropagation(); e.preventDefault(); onAlterarVisibilidade(p.id, op.value) }}
                     className={`px-2 py-0.5 rounded text-[9px] font-cinzel border transition-all ${
                       (p.visibilidade ?? 'grupo') === op.value
                         ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
@@ -165,8 +165,8 @@ function CardPersonagem({
                 ))}
                 <select
                   value={p.visibilidade === 'jogador_especifico' ? (p.visibilidade_jogador_id || '') : ''}
-                  onChange={e => { if (e.target.value) onAlterarVisibilidade?.(p.id, 'jogador_especifico', e.target.value) }}
-                  onClick={e => e.stopPropagation()}
+                  onChange={e => { e.stopPropagation(); if (e.target.value) onAlterarVisibilidade?.(p.id, 'jogador_especifico', e.target.value) }}
+                  onClick={e => { e.stopPropagation(); e.preventDefault() }}
                   className={`input-dd text-[9px] py-0.5 ${p.visibilidade === 'jogador_especifico' ? 'border-[var(--accent)]' : ''}`}
                 >
                   <option value="">👤 Jogador...</option>
@@ -284,16 +284,23 @@ export default function PersonagensPage() {
 
       const { data: membrosData } = await supabase
         .from('campanha_membros')
-        .select('*, profiles(id, nome, username)')
+        .select('user_id')
         .eq('campanha_id', campanhaAtiva.id)
         .eq('status', 'ativo')
         .eq('papel', 'jogador')
 
-      const jogadores: JogadorCampanha[] = (membrosData ?? []).map(m => {
-        const prof = m.profiles as unknown as { id: string; nome: string | null; username?: string | null } | null
-        return { id: prof?.id ?? (m.user_id as string), nome: prof?.nome ?? prof?.username ?? 'Jogador', username: prof?.username }
-      })
-      setJogadoresCampanha(jogadores)
+      const userIds = (membrosData ?? []).map(m => m.user_id).filter((id): id is string => !!id)
+      const { data: profilesData } = userIds.length
+        ? await supabase.from('profiles').select('id, nome, username').in('id', userIds)
+        : { data: [] }
+
+      setJogadoresCampanha(
+        (profilesData ?? []).map(p => ({
+          id: p.id as string,
+          nome: (p.nome as string | null) ?? (p.username as string | null) ?? 'Jogador',
+          username: p.username as string | null,
+        }))
+      )
     } finally {
       setCarregando(false)
     }

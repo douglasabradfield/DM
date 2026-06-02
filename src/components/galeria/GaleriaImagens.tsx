@@ -10,12 +10,13 @@ import toast from 'react-hot-toast'
 interface ImagemGaleria {
   id: string
   campanha_id: string
-  titulo: string
+  nome: string
   url: string
+  storage_path: string | null
   tipo: 'imagem' | 'mapa'
-  criado_em: string
   visivel_jogadores: boolean
-  storage_path?: string | null
+  compartilhado: boolean
+  criado_em: string
 }
 
 interface GaleriaImagensProps {
@@ -29,7 +30,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
   const [busca, setBusca] = useState('')
   const [selecionada, setSelecionada] = useState<ImagemGaleria | null>(null)
   const [modalAdicionar, setModalAdicionar] = useState(false)
-  const [titulo, setTitulo] = useState('')
+  const [nome, setNome] = useState('')
   const [url, setUrl] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [modoUpload, setModoUpload] = useState<'url' | 'arquivo'>('arquivo')
@@ -54,18 +55,27 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
       const supabase = createClient()
       let query = supabase
         .from('imagens')
-        .select('id, campanha_id, titulo, url, tipo, criado_em, visivel_jogadores, storage_path')
+        .select('id, campanha_id, nome, url, storage_path, tipo, visivel_jogadores, compartilhado, criado_em')
         .eq('campanha_id', campanhaAtiva.id)
         .eq('tipo', tipo)
         .order('criado_em', { ascending: false })
 
       if (ehJogador) query = query.eq('visivel_jogadores', true)
 
-      const { data } = await query
+      const { data, error } = await query
+      if (error) { console.error('Erro ao buscar imagens:', error); toast.error('Erro ao carregar imagens'); return }
       setImagens((data ?? []) as ImagemGaleria[])
     } finally {
       setCarregando(false)
     }
+  }
+
+  function fecharModal() {
+    setModalAdicionar(false)
+    setArquivo(null)
+    setPreviewArquivo(null)
+    setNome('')
+    setUrl('')
   }
 
   function selecionarArquivo(file: File) {
@@ -77,11 +87,11 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
     const reader = new FileReader()
     reader.onload = e => setPreviewArquivo(e.target?.result as string)
     reader.readAsDataURL(file)
-    if (!titulo) setTitulo(file.name.replace(/\.[^.]+$/, ''))
+    if (!nome) setNome(file.name.replace(/\.[^.]+$/, ''))
   }
 
   async function adicionar() {
-    if (!titulo.trim() || !campanhaAtiva?.id) return
+    if (!nome.trim() || !campanhaAtiva?.id) return
     if (modoUpload === 'url' && !url.trim()) return
     if (modoUpload === 'arquivo' && !arquivo) return
     setSalvando(true)
@@ -106,21 +116,18 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
         .from('imagens')
         .insert({
           campanha_id: campanhaAtiva.id,
-          titulo: titulo.trim(),
+          nome: nome.trim(),
           url: finalUrl,
           tipo,
           visivel_jogadores: false,
-          ...(storagePath ? { storage_path: storagePath } : {}),
+          compartilhado: false,
+          ...(storagePath ? { storage_path: storagePath } : { storage_path: null }),
         })
-        .select()
+        .select('id, campanha_id, nome, url, storage_path, tipo, visivel_jogadores, compartilhado, criado_em')
         .single()
       if (error) throw error
       setImagens(prev => [data as ImagemGaleria, ...prev])
-      setTitulo('')
-      setUrl('')
-      setArquivo(null)
-      setPreviewArquivo(null)
-      setModalAdicionar(false)
+      fecharModal()
       toast.success(`${tipo === 'mapa' ? 'Mapa' : 'Imagem'} adicionada!`)
     } catch (err) {
       console.error(err)
@@ -159,7 +166,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
   }
 
   const filtradas = imagens.filter(i =>
-    !busca || i.titulo.toLowerCase().includes(busca.toLowerCase())
+    !busca || i.nome.toLowerCase().includes(busca.toLowerCase())
   )
 
   const labelTipo = tipo === 'mapa' ? 'Mapa' : 'Imagem'
@@ -218,13 +225,13 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={img.url}
-                      alt={img.titulo}
+                      alt={img.nome}
                       className="w-full h-full object-cover"
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
                     />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[var(--text)] text-sm font-crimson truncate">{img.titulo}</p>
+                    <p className="text-[var(--text)] text-sm font-crimson truncate">{img.nome}</p>
                     <p className="text-[var(--text3)] text-[10px]">
                       {new Date(img.criado_em).toLocaleDateString('pt-BR')}
                     </p>
@@ -256,7 +263,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
         ) : (
           <div className="max-w-4xl w-full">
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-              <h2 className="font-cinzel text-[var(--gold)] text-xl font-bold">{selecionada.titulo}</h2>
+              <h2 className="font-cinzel text-[var(--gold)] text-xl font-bold">{selecionada.nome}</h2>
               <div className="flex gap-2 flex-wrap">
                 {!ehJogador && (
                   <button
@@ -294,7 +301,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={selecionada.url}
-              alt={selecionada.titulo}
+              alt={selecionada.nome}
               className="w-full rounded-lg border border-[var(--border)] shadow-xl object-contain max-h-[70vh]"
               onError={e => { (e.target as HTMLImageElement).alt = 'Erro ao carregar imagem' }}
             />
@@ -304,11 +311,11 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
 
       {/* Modal adicionar */}
       {modalAdicionar && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70" onClick={() => { setModalAdicionar(false); setArquivo(null); setPreviewArquivo(null) }}>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70" onClick={fecharModal}>
           <div className="bg-[var(--bg2)] border border-[var(--gold)] rounded-xl p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-cinzel text-[var(--gold)] text-lg font-bold">+ Adicionar {labelTipo}</h3>
-              <button onClick={() => { setModalAdicionar(false); setArquivo(null); setPreviewArquivo(null) }} className="text-[var(--border)] hover:text-[var(--text)]">
+              <button onClick={fecharModal} className="text-[var(--border)] hover:text-[var(--text)]">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -328,11 +335,11 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
 
             <div className="space-y-3">
               <div>
-                <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Título</label>
+                <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Nome</label>
                 <input
                   type="text"
-                  value={titulo}
-                  onChange={e => setTitulo(e.target.value)}
+                  value={nome}
+                  onChange={e => setNome(e.target.value)}
                   placeholder={`Nome d${tipo === 'mapa' ? 'o mapa' : 'a imagem'}...`}
                   className="input-dd w-full"
                   autoFocus
@@ -355,7 +362,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                     >
                       <Upload className="w-6 h-6 mx-auto mb-2 text-[var(--text3)]" />
                       <p className="text-[var(--text3)] text-sm font-crimson">Clique para selecionar</p>
-                      <p className="text-[var(--border)] text-xs mt-1">JPEG, PNG, GIF ou WebP · máx. 2 MB</p>
+                      <p className="text-[var(--border)] text-xs mt-1">JPEG, PNG, GIF ou WebP · máx. 5 MB</p>
                     </button>
                   ) : (
                     <div className="relative">
@@ -395,10 +402,10 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
             </div>
 
             <div className="flex gap-2 mt-4">
-              <button onClick={() => { setModalAdicionar(false); setArquivo(null); setPreviewArquivo(null) }} className="flex-1 py-2 border border-[var(--border)] rounded text-[var(--text2)] text-sm">Cancelar</button>
+              <button onClick={fecharModal} className="flex-1 py-2 border border-[var(--border)] rounded text-[var(--text2)] text-sm">Cancelar</button>
               <button
                 onClick={adicionar}
-                disabled={!titulo.trim() || (modoUpload === 'url' ? !url.trim() : !arquivo) || salvando}
+                disabled={!nome.trim() || (modoUpload === 'url' ? !url.trim() : !arquivo) || salvando}
                 className="flex-1 py-2 bg-[var(--accent)] hover:opacity-90 text-[var(--bg)] rounded font-cinzel text-sm disabled:opacity-50"
               >
                 {salvando ? 'Enviando...' : 'Adicionar'}
