@@ -28,6 +28,7 @@ interface EntradaDiario {
   criado_por: string | null
   visibilidade: Visibilidade
   visibilidade_jogador_id: string | null
+  profiles: { nome: string | null; username: string | null } | null
 }
 
 const ICONES_TIPO: Record<TipoEntrada, React.ReactNode> = {
@@ -108,15 +109,23 @@ export default function DiarioPage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
 
-      let query = supabase.from('diario_entradas').select('*').eq('campanha_id', campanhaAtiva.id)
+      let query = supabase
+        .from('diario_entradas')
+        .select('*, profiles!criado_por(nome, username)')
+        .eq('campanha_id', campanhaAtiva.id)
       if (filtroTipo) query = query.eq('tipo', filtroTipo)
 
-      if (ehJogador && user?.id) {
-        query = query.or(
-          `visibilidade.eq.grupo,` +
-          `and(visibilidade.eq.privado,criado_por.eq.${user.id}),` +
-          `and(visibilidade.eq.jogador_especifico,visibilidade_jogador_id.eq.${user.id})`
-        )
+      if (user?.id) {
+        if (ehJogador) {
+          query = query.or(
+            `visibilidade.eq.grupo,` +
+            `and(visibilidade.eq.privado,criado_por.eq.${user.id}),` +
+            `and(visibilidade.eq.jogador_especifico,visibilidade_jogador_id.eq.${user.id})`
+          )
+        } else {
+          // DM: vê tudo exceto entradas privadas de outros usuários
+          query = query.or(`visibilidade.neq.privado,criado_por.eq.${user.id}`)
+        }
       }
 
       const { data } = await query.order('criado_em', { ascending: false })
@@ -395,6 +404,13 @@ export default function DiarioPage() {
                        entrada.visibilidade === 'jogador_especifico' ? '👤 Jogador' :
                        '🔒 DM'}
                     </span>
+                    {(() => {
+                      const prof = entrada.profiles
+                      const nomeAutor = prof?.nome ?? (prof?.username ? `@${prof.username}` : null)
+                      return nomeAutor
+                        ? <span className="text-[var(--text3)] text-[10px] font-crimson">por {nomeAutor}</span>
+                        : null
+                    })()}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className="text-[var(--border)] text-xs">

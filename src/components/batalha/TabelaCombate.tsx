@@ -36,7 +36,7 @@ export function TabelaCombate() {
     resetarBatalha,
     adicionarCombatente, confirmarIniciativa, rolarIniciativasMonstros,
     proximoTurno, turnoAnterior, proximaRodada,
-    aplicarTodosDanos, zerarContadores, reordenarCombatentes,
+    aplicarTodosDanos, aplicarTodasCuras, zerarContadores, reordenarCombatentes,
     xpGanhoNaBatalha, xpDistribuido,
   } = useBatalha()
   const { campanhaAtiva } = useCampanha()
@@ -174,6 +174,12 @@ export function TabelaCombate() {
           <BotaoRunico variante="secundario" tamanho="sm" onClick={aplicarTodosDanos}>
             <Zap className="w-3 h-3" /> Aplicar Danos
           </BotaoRunico>
+          <button
+            onClick={aplicarTodasCuras}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[var(--green2)] text-[var(--green2)] hover:bg-[var(--green2)]/20 font-cinzel text-xs transition-colors"
+          >
+            💚 Aplicar Cura
+          </button>
           <BotaoRunico variante="secundario" tamanho="sm" onClick={zerarContadores}>
             <RotateCcw className="w-3 h-3" /> Zerar
           </BotaoRunico>

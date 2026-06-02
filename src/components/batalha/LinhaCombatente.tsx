@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -14,7 +14,7 @@ import { PopupCondicao } from './PopupCondicao'
 import { SeletorTipoDano } from './SeletorTipoDano'
 import { TooltipCombatente } from './TooltipCombatente'
 import { cn } from '@/lib/utils'
-import { Trash2, Plus, GripVertical, X } from 'lucide-react'
+import { Trash2, Plus, GripVertical, X, Pencil } from 'lucide-react'
 import type { TipoDano } from '@/types/dnd'
 
 interface LinhaCombatenteProps {
@@ -45,6 +45,11 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
   const btnCondicoesRef = useRef<HTMLButtonElement>(null)
   const [valorAcao, setValorAcao] = useState('')
   const [modalMonstroAberto, setModalMonstroAberto] = useState(false)
+  const [editandoNome, setEditandoNome] = useState(false)
+
+  useEffect(() => {
+    if (c.dano_input === 0) setValorAcao('')
+  }, [c.dano_input])
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -98,49 +103,79 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
       <td className="px-1 py-1 w-6 text-center text-base">{status}</td>
 
       {/* Nome */}
-      <td className="px-2 py-1 min-w-32">
-        <TooltipCombatente combatente={c}>
-          <span
-            onClick={handleNomeClick}
-            className={cn(
-              'font-crimson text-base',
-              c.tipo === 'jogador' && 'cursor-pointer hover:underline',
-              c.tipo === 'monstro' && c.dados_monstro && 'cursor-pointer hover:underline',
-              c.tipo === 'monstro' && !c.dados_monstro && 'cursor-default',
-              c.tipo === 'npc' && 'cursor-default',
-              ativo ? 'text-[var(--gold2)] font-semibold' : 'text-[var(--text)]',
-              c.tipo === 'monstro' && 'text-[var(--red2)]',
-              c.tipo === 'npc' && 'text-[var(--accent2)]',
-            )}
-          >
-            {c.nome}
-          </span>
-        </TooltipCombatente>
-        {c.tipo === 'jogador' && (
-          <div className="flex items-center gap-0.5 ml-1">
-            {[1, 2, 3, 4, 5].map(i => {
-              const temInspiracao = (c.inspiracao ?? 0) >= i
-              return (
-                <button
-                  key={i}
-                  onClick={() => {
-                    if (temInspiracao && confirm(`Usar 1 inspiração de ${c.nome}? (${c.inspiracao} → ${(c.inspiracao ?? 1) - 1})`)) {
-                      usarInspiracao(c.id)
-                    }
-                  }}
-                  disabled={!temInspiracao}
-                  title={temInspiracao ? `Clique para usar 1 inspiração (${c.inspiracao} disponível)` : 'Sem inspiração'}
-                  className={`text-sm leading-none transition-all ${
-                    temInspiracao
-                      ? 'cursor-pointer hover:scale-125 active:scale-95'
-                      : 'opacity-20 cursor-default'
-                  }`}
+      <td className="px-2 py-1 min-w-32 group/nome">
+        {editandoNome ? (
+          <input
+            type="text"
+            defaultValue={c.nome}
+            autoFocus
+            onBlur={e => {
+              const novo = e.target.value.trim()
+              if (novo) atualizarCombatente(c.id, { nome: novo })
+              setEditandoNome(false)
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+              if (e.key === 'Escape') setEditandoNome(false)
+            }}
+            onClick={e => e.stopPropagation()}
+            className="w-full input-dd text-sm py-0.5"
+          />
+        ) : (
+          <>
+            <div className="flex items-center gap-1">
+              <TooltipCombatente combatente={c}>
+                <span
+                  onClick={handleNomeClick}
+                  className={cn(
+                    'font-crimson text-base',
+                    c.tipo === 'jogador' && 'cursor-pointer hover:underline',
+                    c.tipo === 'monstro' && c.dados_monstro && 'cursor-pointer hover:underline',
+                    c.tipo === 'monstro' && !c.dados_monstro && 'cursor-default',
+                    c.tipo === 'npc' && 'cursor-default',
+                    ativo ? 'text-[var(--gold2)] font-semibold' : 'text-[var(--text)]',
+                    c.tipo === 'monstro' && 'text-[var(--red2)]',
+                    c.tipo === 'npc' && 'text-[var(--accent2)]',
+                  )}
                 >
-                  {temInspiracao ? '⭐' : '☆'}
-                </button>
-              )
-            })}
-          </div>
+                  {c.nome}
+                </span>
+              </TooltipCombatente>
+              <button
+                onClick={e => { e.stopPropagation(); setEditandoNome(true) }}
+                title="Editar nome"
+                className="opacity-0 group-hover/nome:opacity-100 text-[var(--border)] hover:text-[var(--text3)] transition-opacity p-0.5 rounded flex-shrink-0"
+              >
+                <Pencil className="w-2.5 h-2.5" />
+              </button>
+            </div>
+            {c.tipo === 'jogador' && (
+              <div className="flex items-center gap-0.5 ml-1">
+                {[1, 2, 3, 4, 5].map(i => {
+                  const temInspiracao = (c.inspiracao ?? 0) >= i
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        if (temInspiracao && confirm(`Usar 1 inspiração de ${c.nome}? (${c.inspiracao} → ${(c.inspiracao ?? 1) - 1})`)) {
+                          usarInspiracao(c.id)
+                        }
+                      }}
+                      disabled={!temInspiracao}
+                      title={temInspiracao ? `Clique para usar 1 inspiração (${c.inspiracao} disponível)` : 'Sem inspiração'}
+                      className={`text-sm leading-none transition-all ${
+                        temInspiracao
+                          ? 'cursor-pointer hover:scale-125 active:scale-95'
+                          : 'opacity-20 cursor-default'
+                      }`}
+                    >
+                      {temInspiracao ? '⭐' : '☆'}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </>
         )}
       </td>
 

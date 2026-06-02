@@ -52,6 +52,7 @@ interface EstadoBatalhaStore {
   setarDanoInput: (id: string, valor: number) => void
   setarTipoDano: (id: string, tipo: TipoDano) => void
   aplicarTodosDanos: () => void
+  aplicarTodasCuras: () => void
   zerarContadores: () => void
 
   // Condições
@@ -361,8 +362,16 @@ export const useBatalha = create<EstadoBatalhaStore>()(
     }),
 
     adicionarCombatente: (c) => set(state => {
+      const nomes = new Set(state.combatentes.map(x => x.nome))
+      let nome = c.nome
+      if (nomes.has(nome)) {
+        let n = 2
+        while (nomes.has(`${c.nome} ${n}`)) n++
+        nome = `${c.nome} ${n}`
+      }
       state.combatentes.push({
         ...c,
+        nome,
         id: gerarId(),
         batalha_id: state.batalhaId ?? '',
         dano_input: 0,
@@ -544,6 +553,19 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       combatentes.forEach(c => {
         if (c.dano_input > 0 && !c.ausente && !c.morto) {
           aplicarDano(c.id, c.dano_input, c.dano_tipo)
+          set(s => {
+            const comb = s.combatentes.find(x => x.id === c.id)
+            if (comb) comb.dano_input = 0
+          })
+        }
+      })
+    },
+
+    aplicarTodasCuras: () => {
+      const { combatentes, aplicarCura } = get()
+      combatentes.forEach(c => {
+        if (c.dano_input > 0 && !c.ausente && !(c.morto && c.tipo === 'monstro')) {
+          aplicarCura(c.id, c.dano_input)
           set(s => {
             const comb = s.combatentes.find(x => x.id === c.id)
             if (comb) comb.dano_input = 0
