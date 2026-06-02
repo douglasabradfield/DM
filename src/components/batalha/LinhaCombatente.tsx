@@ -14,7 +14,7 @@ import { PopupCondicao } from './PopupCondicao'
 import { SeletorTipoDano } from './SeletorTipoDano'
 import { TooltipCombatente } from './TooltipCombatente'
 import { cn } from '@/lib/utils'
-import { Trash2, Plus, GripVertical, X, Pencil } from 'lucide-react'
+import { Trash2, Plus, GripVertical, X, Pencil, Wand2 } from 'lucide-react'
 import type { TipoDano } from '@/types/dnd'
 
 interface LinhaCombatenteProps {
@@ -46,6 +46,9 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
   const [valorAcao, setValorAcao] = useState('')
   const [modalMonstroAberto, setModalMonstroAberto] = useState(false)
   const [editandoNome, setEditandoNome] = useState(false)
+  const [mostraConjuracao, setMostraConjuracao] = useState(false)
+  const [posConjuracao, setPosConjuracao] = useState({ top: 0, left: 0 })
+  const btnConjuracaoRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (c.dano_input === 0) setValorAcao('')
@@ -387,6 +390,68 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
       <td className="px-1 py-1 min-w-20">
         {Object.keys(c.espacos_magia).length > 0 && (
           <EspacosMagia combatenteId={c.id} espacos={c.espacos_magia} />
+        )}
+        {!c.personagem_id && (
+          <button
+            ref={btnConjuracaoRef}
+            onClick={() => {
+              const rect = btnConjuracaoRef.current?.getBoundingClientRect()
+              if (rect) {
+                setPosConjuracao({
+                  top: rect.bottom + 4,
+                  left: Math.min(rect.left, window.innerWidth - 272),
+                })
+              }
+              setMostraConjuracao(v => !v)
+            }}
+            title="Slots de conjuração"
+            className={`mt-0.5 p-0.5 rounded transition-colors ${mostraConjuracao ? 'text-[var(--accent2)]' : 'text-[var(--border)] hover:text-[var(--accent2)]'}`}
+          >
+            <Wand2 className="w-3 h-3" />
+          </button>
+        )}
+        {mostraConjuracao && typeof document !== 'undefined' && createPortal(
+          <>
+            <div className="fixed inset-0 z-[9995]" onClick={() => setMostraConjuracao(false)} />
+            <div
+              style={{ position: 'fixed', top: posConjuracao.top, left: posConjuracao.left, zIndex: 9996 }}
+              className="bg-[var(--bg2)] border border-[var(--border)] rounded-lg shadow-xl p-2.5 w-64"
+            >
+              <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider mb-2">
+                Slots restantes — {c.nome}
+              </p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => {
+                  const nStr = String(n)
+                  const val = (c.slots_monstro ?? {})[nStr] ?? 0
+                  return (
+                    <div key={n} className="text-center">
+                      <p className="text-[var(--text3)] text-[9px] font-cinzel mb-0.5">Nível {n}</p>
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        value={val}
+                        onChange={e => {
+                          atualizarCombatente(c.id, {
+                            slots_monstro: {
+                              ...(c.slots_monstro ?? {}),
+                              [nStr]: parseInt(e.target.value) || 0,
+                            },
+                          })
+                        }}
+                        className="w-full input-dd text-center text-xs py-0.5 px-1"
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-[var(--text3)] text-[9px] font-crimson mt-2 italic">
+                Edite os slots restantes disponíveis para este conjurador
+              </p>
+            </div>
+          </>,
+          document.body
         )}
       </td>
 

@@ -41,6 +41,8 @@ export interface Combatente {
   vantagem?: 'vantagem' | 'desvantagem' | null
   inspiracao?: number
   nivel?: number
+  // slots restantes por nível (local, para monstros/NPCs sem personagem_id)
+  slots_monstro?: Record<string, number>
   // estado local (não salvo)
   dano_input: number
   dano_tipo: TipoDano

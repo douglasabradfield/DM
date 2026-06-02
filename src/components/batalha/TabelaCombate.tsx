@@ -999,6 +999,7 @@ interface AlvoAcao {
 }
 
 const TIPOS_CURA_ACAO = new Set(['cura', 'cura_bonus', 'pv_temporarios', 'estabilizar'])
+const TIPOS_MAGIA_SLOTS = new Set(['magia', 'contra_magia', 'acao_bonus_magia', 'outra_reacao'])
 
 function ModalRegistrarAcao({
   combatentes,
@@ -1007,14 +1008,18 @@ function ModalRegistrarAcao({
   combatentes: Combatente[]
   onFechar: () => void
 }) {
-  const { aplicarDano, aplicarCura, adicionarEntradaLog } = useBatalha()
+  const { aplicarDano, aplicarCura, adicionarEntradaLog, atualizarCombatente, atualizarCombatentePorPersonagem } = useBatalha()
   const [tipo, setTipo] = useState('')
   const [origemNome, setOrigemNome] = useState('')
+  const [nivelMagia, setNivelMagia] = useState(0) // 0 = Truque
+  const [erroSlot, setErroSlot] = useState('')
+  const [salvando, setSalvando] = useState(false)
   const [alvos, setAlvos] = useState<AlvoAcao[]>([])
   const [observacao, setObservacao] = useState('')
 
   const ativos = combatentes.filter(c => !c.ausente && !c.morto)
   const tipoInfo = GRUPOS_ACAO.flatMap(g => g.opcoes.map(o => ({ ...o, icone: g.icone }))).find(o => o.value === tipo)
+  const ehMagia = TIPOS_MAGIA_SLOTS.has(tipo)
 
   function efeitoPadrao(): 'dano' | 'cura' {
     return TIPOS_CURA_ACAO.has(tipo) ? 'cura' : 'dano'
@@ -1038,12 +1043,64 @@ function ModalRegistrarAcao({
     setAlvos(prev => prev.filter(a => a.uid !== uid))
   }
 
-  function confirmar() {
-    if (!tipo || !origemNome) return
+  async function confirmar() {
+    if (!tipo || !origemNome || salvando) return
+    setErroSlot('')
+
+    const origemCombatente = ativos.find(c => c.nome === origemNome) ?? null
+    const descontarSlot = ehMagia && nivelMagia > 0 && origemCombatente
+
+    if (descontarSlot && origemCombatente) {
+      const nivelStr = String(nivelMagia)
+
+      if (origemCombatente.personagem_id) {
+        // Jogador/NPC com ficha vinculada — verificar via Supabase
+        setSalvando(true)
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('personagens')
+          .select('slots_magia')
+          .eq('id', origemCombatente.personagem_id)
+          .single()
+
+        const slotsDb = (data?.slots_magia ?? {}) as Record<string, { total: number; usados: number }>
+        const slotNivel = slotsDb[nivelStr] ?? { total: 0, usados: 0 }
+
+        if (slotNivel.usados >= slotNivel.total) {
+          setErroSlot(`Sem slots de ${nivelMagia}º nível disponíveis (${slotNivel.usados}/${slotNivel.total})`)
+          setSalvando(false)
+          return
+        }
+
+        const novosSlots = { ...slotsDb, [nivelStr]: { ...slotNivel, usados: slotNivel.usados + 1 } }
+        await supabase.from('personagens').update({ slots_magia: novosSlots }).eq('id', origemCombatente.personagem_id)
+
+        const espacosBatalha: Record<number, { total: number; utilizados: number }> = {}
+        for (const [k, v] of Object.entries(novosSlots)) {
+          espacosBatalha[parseInt(k)] = { total: v.total, utilizados: v.usados }
+        }
+        atualizarCombatentePorPersonagem(origemCombatente.personagem_id, { espacos_magia: espacosBatalha })
+        setSalvando(false)
+      } else {
+        // Monstro/NPC sem ficha — verificar slots_monstro local
+        const slotsLocal = origemCombatente.slots_monstro ?? {}
+        const qtd = slotsLocal[nivelStr] ?? 0
+
+        if (qtd <= 0) {
+          const continuar = window.confirm(
+            `Slots não configurados ou esgotados para ${nivelMagia}º nível.\nDeseja continuar mesmo assim?`
+          )
+          if (!continuar) return
+        } else {
+          atualizarCombatente(origemCombatente.id, {
+            slots_monstro: { ...slotsLocal, [nivelStr]: qtd - 1 },
+          })
+        }
+      }
+    }
 
     const alvosValidos = alvos.filter(a => a.combatenteId && a.valor > 0)
 
-    // Aplicar efeitos silenciosamente (sem entradas individuais no log)
     for (const alvo of alvosValidos) {
       if (alvo.efeitoTipo === 'cura') {
         aplicarCura(alvo.combatenteId, alvo.valor, true)
@@ -1052,12 +1109,13 @@ function ModalRegistrarAcao({
       }
     }
 
-    // Entrada unificada no log
+    const nivelLabel = ehMagia ? (nivelMagia === 0 ? ' (Truque)' : ` (N${nivelMagia})`) : ''
+    const acaoLabel = `${tipoInfo?.label ?? tipo}${nivelLabel}`
     const alvosDesc = alvosValidos.map(a =>
       `${a.nome}: ${a.valor} ${a.efeitoTipo === 'cura' ? 'cura' : 'dano'}`
     )
     const partes: string[] = [
-      `${tipoInfo?.icone ?? '📝'} ${tipoInfo?.label ?? tipo} — ${origemNome}`,
+      `${tipoInfo?.icone ?? '📝'} ${acaoLabel} — ${origemNome}`,
       ...(alvosDesc.length > 0 ? [`→ ${alvosDesc.join(', ')}`] : []),
       ...(observacao ? [`(${observacao})`] : []),
     ]
@@ -1085,7 +1143,12 @@ function ModalRegistrarAcao({
         {/* Tipo */}
         <div>
           <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Tipo *</label>
-          <select value={tipo} onChange={e => setTipo(e.target.value)} className="input-dd w-full text-sm" autoFocus>
+          <select
+            value={tipo}
+            onChange={e => { setTipo(e.target.value); setErroSlot('') }}
+            className="input-dd w-full text-sm"
+            autoFocus
+          >
             <option value="">— Selecione o tipo —</option>
             {GRUPOS_ACAO.map(g => (
               <optgroup key={g.label} label={g.label}>
@@ -1096,6 +1159,26 @@ function ModalRegistrarAcao({
             ))}
           </select>
         </div>
+
+        {/* Nível de magia — aparece só quando o tipo envolve slot */}
+        {ehMagia && (
+          <div>
+            <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Nível da magia</label>
+            <select
+              value={nivelMagia}
+              onChange={e => { setNivelMagia(parseInt(e.target.value)); setErroSlot('') }}
+              className="input-dd w-full text-sm"
+            >
+              <option value={0}>Truque (sem slot)</option>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+                <option key={n} value={n}>{n}º nível</option>
+              ))}
+            </select>
+            {erroSlot && (
+              <p className="text-[var(--red2)] text-xs mt-1 font-crimson">{erroSlot}</p>
+            )}
+          </div>
+        )}
 
         {/* Quem fez */}
         <div>
@@ -1180,13 +1263,15 @@ function ModalRegistrarAcao({
         </div>
 
         <div className="flex gap-2 pt-1">
-          <button onClick={onFechar} className="flex-1 py-2 border border-[var(--border)] rounded text-[var(--text2)] text-sm">Cancelar</button>
+          <button onClick={onFechar} className="flex-1 py-2 border border-[var(--border)] rounded text-[var(--text2)] text-sm">
+            Cancelar
+          </button>
           <button
             onClick={confirmar}
-            disabled={!tipo || !origemNome}
+            disabled={!tipo || !origemNome || salvando}
             className="flex-1 py-2 bg-[var(--accent)] hover:opacity-90 text-white rounded font-cinzel text-sm disabled:opacity-50"
           >
-            Registrar
+            {salvando ? 'Registrando...' : 'Registrar'}
           </button>
         </div>
       </div>
