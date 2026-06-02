@@ -158,6 +158,7 @@ export interface MonsterSave {
 export interface MonsterSkill {
   id?: number
   monster_id?: number
+  skill_en?: string | null
   skill_pt: string
   bonus: number
 }

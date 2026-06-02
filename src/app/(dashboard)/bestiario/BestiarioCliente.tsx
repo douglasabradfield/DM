@@ -6,7 +6,7 @@ import type { Monster, MonsterDetailed, MonsterAction } from '@/types/dnd'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { useBatalha } from '@/store/batalha'
 import { calcularModificadorAtributo, formatarModificador, cn } from '@/lib/utils'
-import { Search, Swords, Plus, X, Trash2 } from 'lucide-react'
+import { Search, Swords, Plus, X, Trash2, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import { BotaoReportar } from '@/components/ui/BotaoReportar'
@@ -451,6 +451,464 @@ function AcaoMonstroItem({ acao }: { acao: MonsterAction }) {
 
 // ──────────────────────────────────────────────────────────────────────────
 
+const CONDICOES_D5E_PT = [
+  'Amedrontado', 'Agarrado', 'Atordoado', 'Caído', 'Cego',
+  'Enfeitiçado', 'Envenenado', 'Exausto', 'Incapacitado',
+  'Invisível', 'Paralisado', 'Petrificado', 'Surdo', 'Inconsciente',
+]
+
+const TIPOS_DANO_OPCOES = [
+  'Ácido', 'Contundente', 'Cortante', 'Elétrico', 'Fogo',
+  'Força', 'Frio', 'Necrótico', 'Perfurante', 'Psíquico',
+  'Radiante', 'Trovejante', 'Veneno',
+]
+
+const ACTION_TYPE_OPCOES = [
+  { value: 'action', label: 'Ação' },
+  { value: 'bonus_action', label: 'Ação Bônus' },
+  { value: 'reaction', label: 'Reação' },
+  { value: 'legendary_action', label: 'Ação Lendária' },
+  { value: 'trait', label: 'Traço' },
+  { value: 'multiattack', label: 'Multiattaque' },
+]
+
+const SAVE_KEYS = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'] as const
+const SAVE_LABELS: Record<string, string> = { STR: 'FOR', DEX: 'DES', CON: 'CON', INT: 'INT', WIS: 'SAB', CHA: 'CAR' }
+
+const SECOES_ADMIN = [
+  { id: 'basico', label: 'Básico' },
+  { id: 'saves', label: 'Saves' },
+  { id: 'pericias', label: 'Perícias' },
+  { id: 'resistencias', label: 'Resistências' },
+  { id: 'condicoes', label: 'Condições' },
+  { id: 'acoes', label: 'Ações' },
+  { id: 'legado', label: 'Legado' },
+] as const
+
+type SecaoAdmin = typeof SECOES_ADMIN[number]['id']
+
+function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
+  monstro: MonsterDetailed
+  onClose: () => void
+  onSaved: (m: MonsterDetailed) => void
+}) {
+  const lbl = "text-[var(--text3)] text-[9px] font-cinzel uppercase"
+  const inp = "w-full input-dd text-sm mt-0.5"
+
+  const scoreMap = {
+    STR: monstro.str_score, DEX: monstro.dex_score, CON: monstro.con_score,
+    INT: monstro.int_score, WIS: monstro.wis_score, CHA: monstro.cha_score,
+  }
+
+  const [abaAdmin, setAbaAdmin] = useState<'monstros' | 'magias' | 'itens'>('monstros')
+  const [secao, setSecao] = useState<SecaoAdmin>('basico')
+  const [salvando, setSalvando] = useState(false)
+
+  const [basico, setBasico] = useState({
+    name_pt: monstro.name_pt,
+    name_en: monstro.name_en,
+    size_pt: monstro.size_pt ?? '',
+    type_pt: monstro.type_pt ?? '',
+    alignment_pt: monstro.alignment_pt ?? '',
+    armor_class: monstro.armor_class,
+    hit_points: monstro.hit_points,
+    hit_dice: monstro.hit_dice ?? '',
+    speed_pt: monstro.speed_pt ?? '',
+    str_score: monstro.str_score,
+    dex_score: monstro.dex_score,
+    con_score: monstro.con_score,
+    int_score: monstro.int_score,
+    wis_score: monstro.wis_score,
+    cha_score: monstro.cha_score,
+    challenge_rating: monstro.challenge_rating,
+    xp: monstro.xp ?? 0,
+    proficiency_bonus: monstro.proficiency_bonus ?? 2,
+    passive_perception: monstro.passive_perception ?? 10,
+    darkvision_ft: monstro.darkvision_ft ?? 0,
+    blindsight_ft: monstro.blindsight_ft ?? 0,
+    tremorsense_ft: monstro.tremorsense_ft ?? 0,
+    truesight_ft: monstro.truesight_ft ?? 0,
+    senses_pt: monstro.senses_pt ?? '',
+    languages_pt: monstro.languages_pt ?? '',
+  })
+
+  const [savesForm, setSavesForm] = useState<Record<string, { ativo: boolean; bonus: number }>>(() => {
+    const saveMap = new Map(monstro.monster_saves?.map(s => [s.ability.toUpperCase(), s.bonus]) ?? [])
+    return Object.fromEntries(SAVE_KEYS.map(k => [k, {
+      ativo: saveMap.has(k),
+      bonus: saveMap.has(k) ? saveMap.get(k)! : Math.floor((scoreMap[k] - 10) / 2),
+    }]))
+  })
+
+  const [skillsForm, setSkillsForm] = useState(() =>
+    (monstro.monster_skills ?? []).map(s => ({ skill_pt: s.skill_pt, skill_en: s.skill_en ?? '', bonus: s.bonus }))
+  )
+
+  const [modifiersForm, setModifiersForm] = useState(() =>
+    (monstro.monster_damage_modifiers ?? []).map(d => ({
+      modifier_type: d.modifier_type,
+      damage_type_pt: d.damage_type_pt,
+      note_pt: d.note_pt ?? '',
+    }))
+  )
+
+  const [condImmunities, setCondImmunities] = useState<string[]>(() =>
+    (monstro.monster_condition_immunities ?? []).map(ci => ci.condition_pt)
+  )
+
+  const [acoesForm, setAcoesForm] = useState<MonsterAction[]>(() =>
+    monstro.monster_actions ?? []
+  )
+
+  const [textoTracos, setTextoTracos] = useState(monstro.traits_rules_pt ?? '')
+  const [textoAcoes, setTextoAcoes] = useState(monstro.actions_rules_pt ?? '')
+
+  async function salvar() {
+    setSalvando(true)
+    const supabase = createClient()
+    const mid = monstro.id
+
+    const { error: e1 } = await supabase.from('monsters').update({
+      ...basico,
+      hit_dice: basico.hit_dice || null,
+      speed_pt: basico.speed_pt || null,
+      size_pt: basico.size_pt || null,
+      type_pt: basico.type_pt || null,
+      alignment_pt: basico.alignment_pt || null,
+      senses_pt: basico.senses_pt || null,
+      languages_pt: basico.languages_pt || null,
+      traits_rules_pt: textoTracos || null,
+      actions_rules_pt: textoAcoes || null,
+    }).eq('id', mid)
+    if (e1) { toast.error('Erro ao salvar dados básicos'); setSalvando(false); return }
+
+    await supabase.from('monster_saves').delete().eq('monster_id', mid)
+    const savesToInsert = Object.entries(savesForm)
+      .filter(([, v]) => v.ativo)
+      .map(([ability, v]) => ({ monster_id: Number(mid), ability, bonus: v.bonus }))
+    if (savesToInsert.length > 0) await supabase.from('monster_saves').insert(savesToInsert)
+
+    await supabase.from('monster_skills').delete().eq('monster_id', mid)
+    if (skillsForm.length > 0) {
+      await supabase.from('monster_skills').insert(
+        skillsForm.filter(s => s.skill_pt).map(s => ({ ...s, monster_id: Number(mid) }))
+      )
+    }
+
+    await supabase.from('monster_damage_modifiers').delete().eq('monster_id', mid)
+    if (modifiersForm.length > 0) {
+      await supabase.from('monster_damage_modifiers').insert(
+        modifiersForm.filter(d => d.damage_type_pt).map(d => ({ ...d, note_pt: d.note_pt || null, monster_id: Number(mid) }))
+      )
+    }
+
+    await supabase.from('monster_condition_immunities').delete().eq('monster_id', mid)
+    if (condImmunities.length > 0) {
+      await supabase.from('monster_condition_immunities').insert(
+        condImmunities.map(c => ({ monster_id: Number(mid), condition_pt: c }))
+      )
+    }
+
+    await supabase.from('monster_actions').delete().eq('monster_id', mid)
+    if (acoesForm.length > 0) {
+      const acoesParaInserir = acoesForm
+        .filter(a => a.name_pt)
+        .map(({ id: _id, monster_id: _mid, ...rest }) => ({ ...rest, monster_id: Number(mid) }))
+      await supabase.from('monster_actions').insert(acoesParaInserir)
+    }
+
+    const { data } = await supabase.from('monsters').select(`
+      *, monster_saves(*), monster_skills(*),
+      monster_damage_modifiers(*), monster_condition_immunities(*), monster_actions(*)
+    `).eq('id', mid).single()
+
+    toast.success('Monstro atualizado!')
+    onSaved(data as MonsterDetailed)
+    setSalvando(false)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-[var(--bg3)] border border-[var(--border2)] rounded-lg w-full max-w-3xl shadow-2xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-[var(--border)] flex-shrink-0">
+          <h2 className="font-cinzel text-[var(--gold)] font-bold">✏️ Editar — {monstro.name_pt}</h2>
+          <button onClick={onClose} className="text-[var(--border)] hover:text-[var(--red2)]"><X className="w-4 h-4" /></button>
+        </div>
+
+        {/* Abas admin externas */}
+        <div className="bg-[var(--bg2)] border-b border-[var(--border)] flex flex-shrink-0">
+          {(['monstros', 'magias', 'itens'] as const).map(aba => (
+            <button
+              key={aba}
+              onClick={() => setAbaAdmin(aba)}
+              className={cn(
+                "px-4 py-2 text-xs font-cinzel border-b-2 transition-colors",
+                abaAdmin === aba ? 'border-[var(--gold)] text-[var(--gold)]' : 'border-transparent text-[var(--text3)] hover:text-[var(--text2)]'
+              )}
+            >
+              {aba === 'monstros' ? 'Monstros' : aba === 'magias' ? 'Magias' : 'Itens'}
+              {aba !== 'monstros' && <span className="ml-1 text-[9px] opacity-50">(em breve)</span>}
+            </button>
+          ))}
+        </div>
+
+        {abaAdmin !== 'monstros' ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-[var(--text3)] font-cinzel text-sm">Em breve</p>
+          </div>
+        ) : (
+          <>
+            {/* Abas de seção */}
+            <div className="bg-[var(--bg2)] border-b border-[var(--border)] flex overflow-x-auto flex-shrink-0">
+              {SECOES_ADMIN.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => setSecao(s.id)}
+                  className={cn(
+                    "px-3 py-1.5 text-[11px] font-cinzel border-b-2 transition-colors whitespace-nowrap",
+                    secao === s.id ? 'border-[var(--accent2)] text-[var(--accent2)]' : 'border-transparent text-[var(--text3)] hover:text-[var(--text2)]'
+                  )}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Conteúdo da seção */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+
+              {/* ── BÁSICO ── */}
+              {secao === 'basico' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className={lbl}>Nome PT</label><input className={inp} value={basico.name_pt} onChange={e => setBasico(b => ({ ...b, name_pt: e.target.value }))} /></div>
+                    <div><label className={lbl}>Nome EN</label><input className={inp} value={basico.name_en} onChange={e => setBasico(b => ({ ...b, name_en: e.target.value }))} /></div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div><label className={lbl}>Tamanho</label><input className={inp} value={basico.size_pt} onChange={e => setBasico(b => ({ ...b, size_pt: e.target.value }))} /></div>
+                    <div><label className={lbl}>Tipo</label><input className={inp} value={basico.type_pt} onChange={e => setBasico(b => ({ ...b, type_pt: e.target.value }))} /></div>
+                    <div><label className={lbl}>Alinhamento</label><input className={inp} value={basico.alignment_pt} onChange={e => setBasico(b => ({ ...b, alignment_pt: e.target.value }))} /></div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div><label className={lbl}>CA</label><input type="number" className={inp} value={basico.armor_class} onChange={e => setBasico(b => ({ ...b, armor_class: +e.target.value }))} /></div>
+                    <div><label className={lbl}>PV</label><input type="number" className={inp} value={basico.hit_points} onChange={e => setBasico(b => ({ ...b, hit_points: +e.target.value }))} /></div>
+                    <div><label className={lbl}>Dado de Vida</label><input className={inp} value={basico.hit_dice} onChange={e => setBasico(b => ({ ...b, hit_dice: e.target.value }))} placeholder="4d8+4" /></div>
+                    <div><label className={lbl}>Deslocamento</label><input className={inp} value={basico.speed_pt} onChange={e => setBasico(b => ({ ...b, speed_pt: e.target.value }))} placeholder="9m" /></div>
+                  </div>
+                  <div>
+                    <label className={lbl}>Atributos</label>
+                    <div className="grid grid-cols-6 gap-2 mt-1">
+                      {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map((k, i) => {
+                        const labels = ['FOR', 'DES', 'CON', 'INT', 'SAB', 'CAR']
+                        const key = `${k}_score` as keyof typeof basico
+                        return (
+                          <div key={k} className="text-center">
+                            <div className="text-[var(--text3)] text-[9px] font-cinzel mb-0.5">{labels[i]}</div>
+                            <input type="number" min={1} max={30} className="w-full input-dd text-center text-sm" value={basico[key] as number} onChange={e => setBasico(b => ({ ...b, [key]: +e.target.value }))} />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div><label className={lbl}>ND</label><input className={inp} value={basico.challenge_rating} onChange={e => setBasico(b => ({ ...b, challenge_rating: e.target.value }))} /></div>
+                    <div><label className={lbl}>XP</label><input type="number" className={inp} value={basico.xp} onChange={e => setBasico(b => ({ ...b, xp: +e.target.value }))} /></div>
+                    <div><label className={lbl}>Bônus Prof.</label><input type="number" className={inp} value={basico.proficiency_bonus} onChange={e => setBasico(b => ({ ...b, proficiency_bonus: +e.target.value }))} /></div>
+                    <div><label className={lbl}>Percepção Passiva</label><input type="number" className={inp} value={basico.passive_perception} onChange={e => setBasico(b => ({ ...b, passive_perception: +e.target.value }))} /></div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div><label className={lbl}>Visão Escura (ft)</label><input type="number" className={inp} value={basico.darkvision_ft} onChange={e => setBasico(b => ({ ...b, darkvision_ft: +e.target.value }))} /></div>
+                    <div><label className={lbl}>Visão Cega (ft)</label><input type="number" className={inp} value={basico.blindsight_ft} onChange={e => setBasico(b => ({ ...b, blindsight_ft: +e.target.value }))} /></div>
+                    <div><label className={lbl}>Sentido Sísmico (ft)</label><input type="number" className={inp} value={basico.tremorsense_ft} onChange={e => setBasico(b => ({ ...b, tremorsense_ft: +e.target.value }))} /></div>
+                    <div><label className={lbl}>Visão Verdadeira (ft)</label><input type="number" className={inp} value={basico.truesight_ft} onChange={e => setBasico(b => ({ ...b, truesight_ft: +e.target.value }))} /></div>
+                  </div>
+                  <div><label className={lbl}>Sentidos (texto)</label><input className={inp} value={basico.senses_pt} onChange={e => setBasico(b => ({ ...b, senses_pt: e.target.value }))} /></div>
+                  <div><label className={lbl}>Idiomas</label><input className={inp} value={basico.languages_pt} onChange={e => setBasico(b => ({ ...b, languages_pt: e.target.value }))} /></div>
+                </>
+              )}
+
+              {/* ── SAVES ── */}
+              {secao === 'saves' && (
+                <div>
+                  <p className="text-[var(--text3)] text-xs font-cinzel mb-3">Marque os atributos com bônus de proficiência e informe o bônus total.</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {SAVE_KEYS.map(k => (
+                      <div key={k} className={cn("flex items-center gap-3 p-3 rounded border", savesForm[k]?.ativo ? "border-[var(--accent2)]/40 bg-[var(--accent)]/5" : "border-[var(--border)] bg-[var(--bg3)]")}>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={savesForm[k]?.ativo ?? false}
+                            onChange={e => setSavesForm(f => ({ ...f, [k]: { ...f[k], ativo: e.target.checked } }))}
+                            className="accent-[var(--accent2)]"
+                          />
+                          <span className="font-cinzel text-sm text-[var(--text2)] w-8">{SAVE_LABELS[k]}</span>
+                        </label>
+                        <input
+                          type="number"
+                          value={savesForm[k]?.bonus ?? 0}
+                          onChange={e => setSavesForm(f => ({ ...f, [k]: { ...f[k], bonus: +e.target.value } }))}
+                          disabled={!savesForm[k]?.ativo}
+                          className="w-20 input-dd text-sm disabled:opacity-40"
+                        />
+                        {savesForm[k]?.ativo && <span className="text-[var(--accent2)] text-xs font-cinzel">prof</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── PERÍCIAS ── */}
+              {secao === 'pericias' && (
+                <div>
+                  {skillsForm.map((s, i) => (
+                    <div key={i} className="flex items-center gap-2 mb-2">
+                      <input className="flex-1 input-dd text-sm" placeholder="Perícia (PT)" value={s.skill_pt} onChange={e => setSkillsForm(f => f.map((x, j) => j === i ? { ...x, skill_pt: e.target.value } : x))} />
+                      <input className="flex-1 input-dd text-sm" placeholder="Skill (EN)" value={s.skill_en} onChange={e => setSkillsForm(f => f.map((x, j) => j === i ? { ...x, skill_en: e.target.value } : x))} />
+                      <input type="number" className="w-20 input-dd text-sm" placeholder="Bônus" value={s.bonus} onChange={e => setSkillsForm(f => f.map((x, j) => j === i ? { ...x, bonus: +e.target.value } : x))} />
+                      <button onClick={() => setSkillsForm(f => f.filter((_, j) => j !== i))} className="text-[var(--red2)] hover:opacity-70"><X className="w-3.5 h-3.5" /></button>
+                    </div>
+                  ))}
+                  <button onClick={() => setSkillsForm(f => [...f, { skill_pt: '', skill_en: '', bonus: 0 }])} className="mt-2 flex items-center gap-1.5 text-xs font-cinzel text-[var(--accent2)] hover:opacity-70">
+                    <Plus className="w-3 h-3" /> Adicionar Perícia
+                  </button>
+                </div>
+              )}
+
+              {/* ── RESISTÊNCIAS ── */}
+              {secao === 'resistencias' && (
+                <div>
+                  {modifiersForm.map((d, i) => (
+                    <div key={i} className="flex items-center gap-2 mb-2">
+                      <select className="input-dd text-sm w-40" value={d.modifier_type} onChange={e => setModifiersForm(f => f.map((x, j) => j === i ? { ...x, modifier_type: e.target.value } : x))}>
+                        <option value="resistance">Resistência</option>
+                        <option value="immunity">Imunidade</option>
+                        <option value="vulnerability">Vulnerabilidade</option>
+                      </select>
+                      <select className="input-dd text-sm flex-1" value={d.damage_type_pt} onChange={e => setModifiersForm(f => f.map((x, j) => j === i ? { ...x, damage_type_pt: e.target.value } : x))}>
+                        <option value="">— Tipo de Dano —</option>
+                        {TIPOS_DANO_OPCOES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <input className="w-36 input-dd text-sm" placeholder="Nota (opcional)" value={d.note_pt} onChange={e => setModifiersForm(f => f.map((x, j) => j === i ? { ...x, note_pt: e.target.value } : x))} />
+                      <button onClick={() => setModifiersForm(f => f.filter((_, j) => j !== i))} className="text-[var(--red2)] hover:opacity-70"><X className="w-3.5 h-3.5" /></button>
+                    </div>
+                  ))}
+                  <button onClick={() => setModifiersForm(f => [...f, { modifier_type: 'resistance', damage_type_pt: '', note_pt: '' }])} className="mt-2 flex items-center gap-1.5 text-xs font-cinzel text-[var(--accent2)] hover:opacity-70">
+                    <Plus className="w-3 h-3" /> Adicionar
+                  </button>
+                </div>
+              )}
+
+              {/* ── CONDIÇÕES ── */}
+              {secao === 'condicoes' && (
+                <div>
+                  <p className="text-[var(--text3)] text-xs font-cinzel mb-3">Selecione as condições às quais o monstro é imune.</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {CONDICOES_D5E_PT.map(c => (
+                      <label key={c} className="flex items-center gap-2 cursor-pointer p-2 rounded border border-transparent hover:border-[var(--border)]">
+                        <input
+                          type="checkbox"
+                          checked={condImmunities.includes(c)}
+                          onChange={e => setCondImmunities(prev => e.target.checked ? [...prev, c] : prev.filter(x => x !== c))}
+                          className="accent-[var(--accent2)]"
+                        />
+                        <span className="text-sm text-[var(--text2)] font-crimson">{c}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── AÇÕES ── */}
+              {secao === 'acoes' && (
+                <div>
+                  {acoesForm.map((a, i) => (
+                    <div key={i} className="mb-4 p-3 border border-[var(--border)] rounded-lg bg-[var(--bg)]">
+                      <div className="flex items-center gap-2 mb-2">
+                        <select className="input-dd text-sm w-44" value={a.action_type} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, action_type: e.target.value } : x))}>
+                          {ACTION_TYPE_OPCOES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                        <button onClick={() => setAcoesForm(f => f.filter((_, j) => j !== i))} className="text-[var(--red2)] hover:opacity-70 ml-auto"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <div><label className={lbl}>Nome PT</label><input className="w-full input-dd text-sm mt-0.5" value={a.name_pt} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, name_pt: e.target.value } : x))} /></div>
+                        <div><label className={lbl}>Nome EN</label><input className="w-full input-dd text-sm mt-0.5" value={a.name_en ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, name_en: e.target.value } : x))} /></div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        <div><label className={lbl}>Tipo Ataque</label><input className="w-full input-dd text-sm mt-0.5" value={a.attack_type ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, attack_type: e.target.value } : x))} placeholder="corpo a corpo" /></div>
+                        <div><label className={lbl}>Bônus Ataque</label><input type="number" className="w-full input-dd text-sm mt-0.5" value={a.attack_bonus ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, attack_bonus: e.target.value !== '' ? +e.target.value : null } : x))} /></div>
+                        <div><label className={lbl}>Alcance (ft)</label><input type="number" className="w-full input-dd text-sm mt-0.5" value={a.reach_ft ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, reach_ft: e.target.value !== '' ? +e.target.value : null } : x))} /></div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        <div><label className={lbl}>Alcance Normal (ft)</label><input type="number" className="w-full input-dd text-sm mt-0.5" value={a.range_normal_ft ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, range_normal_ft: e.target.value !== '' ? +e.target.value : null } : x))} /></div>
+                        <div><label className={lbl}>Alcance Longo (ft)</label><input type="number" className="w-full input-dd text-sm mt-0.5" value={a.range_long_ft ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, range_long_ft: e.target.value !== '' ? +e.target.value : null } : x))} /></div>
+                        <div><label className={lbl}>Alvo PT</label><input className="w-full input-dd text-sm mt-0.5" value={a.target_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, target_pt: e.target.value } : x))} /></div>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 mb-2">
+                        <div><label className={lbl}>Dano</label><input className="w-full input-dd text-sm mt-0.5" value={a.damage_dice ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, damage_dice: e.target.value } : x))} placeholder="2d6+4" /></div>
+                        <div><label className={lbl}>Tipo Dano PT</label><input className="w-full input-dd text-sm mt-0.5" value={a.damage_type_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, damage_type_pt: e.target.value } : x))} /></div>
+                        <div><label className={lbl}>Dano 2</label><input className="w-full input-dd text-sm mt-0.5" value={a.damage2_dice ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, damage2_dice: e.target.value } : x))} /></div>
+                        <div><label className={lbl}>Tipo Dano 2 PT</label><input className="w-full input-dd text-sm mt-0.5" value={a.damage2_type_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, damage2_type_pt: e.target.value } : x))} /></div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        <div><label className={lbl}>Atributo Resist.</label><input className="w-full input-dd text-sm mt-0.5" value={a.save_ability ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, save_ability: e.target.value } : x))} placeholder="DEX" /></div>
+                        <div><label className={lbl}>CD Resist.</label><input type="number" className="w-full input-dd text-sm mt-0.5" value={a.save_dc ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, save_dc: e.target.value !== '' ? +e.target.value : null } : x))} /></div>
+                        <div><label className={lbl}>Efeito Resist. PT</label><input className="w-full input-dd text-sm mt-0.5" value={a.save_effect_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, save_effect_pt: e.target.value } : x))} /></div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        <div><label className={lbl}>Recarga</label><input className="w-full input-dd text-sm mt-0.5" value={a.recharge ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, recharge: e.target.value } : x))} placeholder="5-6" /></div>
+                        <div><label className={lbl}>Condição Aplicada</label><input className="w-full input-dd text-sm mt-0.5" value={a.condition_applied_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, condition_applied_pt: e.target.value } : x))} /></div>
+                        <div><label className={lbl}>Custo Lendário</label><input type="number" className="w-full input-dd text-sm mt-0.5" value={a.legendary_cost ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, legendary_cost: e.target.value !== '' ? +e.target.value : null } : x))} /></div>
+                      </div>
+                      <div><label className={lbl}>Descrição PT</label><textarea rows={2} className="w-full input-dd text-sm mt-0.5 resize-none" value={a.description_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, description_pt: e.target.value } : x))} /></div>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => setAcoesForm(f => [...f, {
+                      id: -(Date.now()), monster_id: 0, action_type: 'action', name_pt: '', description_pt: '',
+                    } as MonsterAction])}
+                    className="flex items-center gap-1.5 text-xs font-cinzel text-[var(--accent2)] hover:opacity-70"
+                  >
+                    <Plus className="w-3 h-3" /> Adicionar Ação
+                  </button>
+                </div>
+              )}
+
+              {/* ── LEGADO ── */}
+              {secao === 'legado' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className={lbl}>Traços / Habilidades Especiais (texto)</label>
+                    <textarea rows={7} className="w-full input-dd text-sm mt-0.5 resize-none" value={textoTracos} onChange={e => setTextoTracos(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className={lbl}>Ações (texto)</label>
+                    <textarea rows={7} className="w-full input-dd text-sm mt-0.5 resize-none" value={textoAcoes} onChange={e => setTextoAcoes(e.target.value)} />
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-[var(--border)] flex-shrink-0">
+              <button onClick={onClose} className="px-3 py-1.5 text-xs font-cinzel text-[var(--text3)] border border-[var(--border)] rounded hover:border-[var(--border2)] transition-colors">Cancelar</button>
+              <button
+                onClick={salvar}
+                disabled={salvando}
+                className="px-4 py-1.5 text-xs font-cinzel text-[var(--gold)] bg-[var(--surface)] border border-[var(--gold)]/50 rounded hover:bg-[var(--gold)]/10 transition-colors disabled:opacity-50"
+              >
+                {salvando ? 'Salvando...' : '💾 Salvar Tudo'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function BestiarioCliente() {
   const [lista, setLista] = useState<MonsterStub[]>([])
   const [monstrosComAcoes, setMonstrosComAcoes] = useState<Set<string>>(new Set())
@@ -462,6 +920,8 @@ export function BestiarioCliente() {
   const [filtroCR, setFiltroCR] = useState('')
   const [userPlano, setUserPlano] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [modalAdminAberto, setModalAdminAberto] = useState(false)
   const [aba, setAba] = useState<'oficial' | 'personalizado'>('oficial')
   const { adicionarCombatente } = useBatalha()
   const router = useRouter()
@@ -471,8 +931,11 @@ export function BestiarioCliente() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { setUserPlano('free'); return }
       setUserId(user.id)
-      supabase.from('profiles').select('plano').eq('id', user.id).single()
-        .then(({ data }) => setUserPlano(data?.plano ?? 'free'))
+      supabase.from('profiles').select('plano, is_admin').eq('id', user.id).single()
+        .then(({ data }) => {
+          setUserPlano(data?.plano ?? 'free')
+          setIsAdmin(data?.is_admin === true)
+        })
     })
   }, [])
 
@@ -706,10 +1169,21 @@ export function BestiarioCliente() {
                   ? sentidosEstruturados.join(', ')
                   : m.senses_pt
 
-                // Saves
+                // Saves — todos os 6 atributos, com destaque quando há bônus de proficiência
                 const saveMap = new Map(m.monster_saves?.map(s => [s.ability.toUpperCase(), s.bonus]) ?? [])
-                const savesExplicitos = Array.from(saveMap.entries())
-                  .map(([ab, bonus]) => `${ABILITY_LABELS[ab] ?? ab} ${bonus >= 0 ? '+' : ''}${bonus}`)
+                const SAVE_DEFS = [
+                  { key: 'STR', label: 'FOR', score: m.str_score },
+                  { key: 'DEX', label: 'DES', score: m.dex_score },
+                  { key: 'CON', label: 'CON', score: m.con_score },
+                  { key: 'INT', label: 'INT', score: m.int_score },
+                  { key: 'WIS', label: 'SAB', score: m.wis_score },
+                  { key: 'CHA', label: 'CAR', score: m.cha_score },
+                ]
+                const savesCompletos = SAVE_DEFS.map(a => {
+                  const baseMod = Math.floor((a.score - 10) / 2)
+                  const explicitoBonus = saveMap.get(a.key)
+                  return { ...a, bonus: explicitoBonus ?? baseMod, temProf: explicitoBonus !== undefined }
+                })
 
                 // Skills
                 const skillList = m.monster_skills
@@ -753,6 +1227,14 @@ export function BestiarioCliente() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
+                        {isAdmin && (
+                          <button
+                            onClick={() => setModalAdminAberto(true)}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-[var(--bg3)] border border-[var(--border2)] text-[var(--text2)] rounded text-sm font-cinzel hover:bg-[var(--surface)] transition-colors"
+                          >
+                            <Pencil className="w-3.5 h-3.5" /> Editar
+                          </button>
+                        )}
                         <BotaoReportar itemSlug={m.slug} itemNome={m.name_pt} itemTipo="monstro" pagina="/bestiario" />
                         <button
                           onClick={() => adicionarNaBatalha(m)}
@@ -804,12 +1286,19 @@ export function BestiarioCliente() {
                           )
                         })}
                       </div>
-                      {savesExplicitos.length > 0 && (
-                        <p className="text-xs font-crimson border-t border-[var(--border)] pt-1.5">
-                          <span className="text-[var(--text3)] font-cinzel">Testes de Resistência: </span>
-                          <span className="text-[var(--text2)]">{savesExplicitos.join(', ')}</span>
-                        </p>
-                      )}
+                      <div className="border-t border-[var(--border)] pt-2 mt-1">
+                        <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase mb-1.5">Testes de Resistência</p>
+                        <div className="grid grid-cols-6 gap-1 text-center">
+                          {savesCompletos.map(s => (
+                            <div key={s.key} className={cn("rounded p-1.5", s.temProf ? "bg-[var(--accent)]/10 border border-[var(--accent)]/20" : "bg-[var(--bg3)]")}>
+                              <div className="text-[var(--text3)] text-[9px] font-cinzel">{s.label}</div>
+                              <div className={cn("text-xs font-bold", s.temProf ? "text-[var(--accent2)]" : "text-[var(--text2)]")}>
+                                {formatarModificador(s.bonus)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                       {skillList.length > 0 && (
                         <p className="text-xs font-crimson mt-1">
                           <span className="text-[var(--text3)] font-cinzel">Perícias: </span>
@@ -927,6 +1416,14 @@ export function BestiarioCliente() {
           </div>
         )}
       </div>
+
+      {modalAdminAberto && selecionado && (
+        <ModalAdminEditarMonstro
+          monstro={selecionado}
+          onClose={() => setModalAdminAberto(false)}
+          onSaved={(m) => setSelecionado(m)}
+        />
+      )}
     </div>
   )
 }
