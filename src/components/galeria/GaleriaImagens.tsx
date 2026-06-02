@@ -54,7 +54,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
       const supabase = createClient()
       let query = supabase
         .from('imagens')
-        .select('*')
+        .select('id, campanha_id, titulo, url, tipo, criado_em, visivel_jogadores, storage_path')
         .eq('campanha_id', campanhaAtiva.id)
         .eq('tipo', tipo)
         .order('criado_em', { ascending: false })

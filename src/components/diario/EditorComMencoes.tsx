@@ -102,13 +102,13 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
     }
   }
 
-  function inserirMencao(nome: string) {
+  function inserirMencao(nome: string, id: string) {
     const textarea = textareaRef.current
     if (!textarea) return
     const pos = textarea.selectionStart
     const antes = value.slice(0, pos)
     const depois = value.slice(pos)
-    const novosAntes = antes.replace(/@[^\s@]*$/, `@${nome}`)
+    const novosAntes = antes.replace(/@[^\s@]*$/, `@[${nome}](personagem:${id})`)
     onChange(`${novosAntes} ${depois}`)
     setQueryMencao(null)
     setSugestoes([])
@@ -125,7 +125,7 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
     if (e.key === 'ArrowDown') { e.preventDefault(); setIndiceSelecionado(i => Math.min(i + 1, sugestoes.length - 1)) }
     if (e.key === 'ArrowUp') { e.preventDefault(); setIndiceSelecionado(i => Math.max(i - 1, 0)) }
     if (e.key === 'Enter' || e.key === 'Tab') {
-      if (sugestoes[indiceSelecionado]) { e.preventDefault(); inserirMencao(sugestoes[indiceSelecionado].nome) }
+      if (sugestoes[indiceSelecionado]) { e.preventDefault(); inserirMencao(sugestoes[indiceSelecionado].nome, sugestoes[indiceSelecionado].id) }
     }
     if (e.key === 'Escape') { setQueryMencao(null); setSugestoes([]); setDropdownPos(null) }
   }
@@ -149,7 +149,7 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
           {sugestoes.map((s, i) => (
             <button
               key={s.id}
-              onMouseDown={e => { e.preventDefault(); inserirMencao(s.nome) }}
+              onMouseDown={e => { e.preventDefault(); inserirMencao(s.nome, s.id) }}
               className={`w-full text-left px-3 py-1.5 text-sm font-crimson transition-colors ${i === indiceSelecionado ? 'bg-[var(--surface)] text-[var(--gold)]' : 'text-[var(--text)] hover:bg-[var(--bg3)]'}`}
             >
               @{s.nome}

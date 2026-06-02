@@ -1,0 +1,1 @@
+ALTER TABLE imagens ADD COLUMN IF NOT EXISTS titulo text;

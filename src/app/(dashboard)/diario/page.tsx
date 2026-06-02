@@ -58,6 +58,12 @@ export default function DiarioPage() {
   const [jogadoresCampanha, setJogadoresCampanha] = useState<Array<{ id: string; nome: string; user_id: string | null }>>([])
   const [filtroTipo, setFiltroTipo] = useState<TipoEntrada | ''>('')
   const [userId, setUserId] = useState<string | null>(null)
+  const [entradaEditando, setEntradaEditando] = useState<EntradaDiario | null>(null)
+  const [editTitulo, setEditTitulo] = useState('')
+  const [editConteudo, setEditConteudo] = useState('')
+  const [editVisibilidade, setEditVisibilidade] = useState<Visibilidade>('grupo')
+  const [editJogador, setEditJogador] = useState<string | null>(null)
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false)
   const { log } = useBatalha()
   const { campanhaAtiva, papelPorCampanha } = useCampanha()
 
@@ -185,6 +191,37 @@ export default function DiarioPage() {
     }
   }
 
+  function abrirEdicao(entrada: EntradaDiario) {
+    setEntradaEditando(entrada)
+    setEditTitulo(entrada.titulo || '')
+    setEditConteudo(entrada.conteudo)
+    setEditVisibilidade(entrada.visibilidade)
+    setEditJogador(entrada.visibilidade_jogador_id)
+  }
+
+  async function salvarEdicao() {
+    if (!entradaEditando) return
+    setSalvandoEdicao(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('diario_entradas')
+        .update({
+          titulo: editTitulo.trim() || null,
+          conteudo: editConteudo.trim(),
+          visibilidade: editVisibilidade,
+          visibilidade_jogador_id: editVisibilidade === 'jogador_especifico' ? editJogador : null,
+        })
+        .eq('id', entradaEditando.id)
+      if (error) { toast.error('Erro ao salvar'); return }
+      toast.success('Entrada atualizada!')
+      setEntradaEditando(null)
+      carregar()
+    } finally {
+      setSalvandoEdicao(false)
+    }
+  }
+
   async function exportarLogBatalha() {
     if (log.length === 0) { toast.error('Nenhum log para exportar'); return }
     if (!campanhaAtiva) { toast.error('Nenhuma campanha ativa selecionada'); return }
@@ -210,6 +247,9 @@ export default function DiarioPage() {
   const podeDeletar = (entrada: EntradaDiario) =>
     !ehJogador || entrada.criado_por === userId
 
+  const podeEditarEntrada = (entrada: EntradaDiario) =>
+    !ehJogador || entrada.criado_por === userId
+
   return (
     <div className="p-4">
       <div className="flex items-center justify-between mb-4">
@@ -223,7 +263,7 @@ export default function DiarioPage() {
               <Sword className="w-3 h-3" /> Exportar Log de Batalha
             </BotaoRunico>
           )}
-          <BotaoRunico variante="ouro" tamanho="sm" onClick={() => setCriando(true)}>
+          <BotaoRunico variante="ouro" tamanho="sm" onClick={() => { setVisibilidade(ehJogador ? 'grupo' : 'dm'); setCriando(true) }}>
             <Plus className="w-3 h-3" /> Nova Entrada
           </BotaoRunico>
         </div>
@@ -273,9 +313,9 @@ export default function DiarioPage() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[var(--text3)] text-xs font-cinzel">Visível para:</span>
               {[
-                { value: 'dm',      label: '🔒 Só DM',   desc: 'Apenas você vê' },
                 { value: 'grupo',   label: '👥 Grupo',   desc: 'Todos da campanha' },
                 { value: 'privado', label: '🙈 Privado', desc: 'Só quem criou' },
+                ...(!ehJogador ? [{ value: 'dm', label: '🔒 Só DM', desc: 'Apenas você vê' }] : []),
               ].map(op => (
                 <button
                   key={op.value}
@@ -291,7 +331,7 @@ export default function DiarioPage() {
                   {op.label}
                 </button>
               ))}
-              {isDM && jogadoresCampanha.length > 0 && (
+              {!ehJogador && jogadoresCampanha.length > 0 && (
                 <select
                   value={jogadorEspecifico || ''}
                   onChange={e => {
@@ -332,41 +372,108 @@ export default function DiarioPage() {
         </div>
       ) : (
         <div className="space-y-3 max-w-3xl">
-          {entradas.map(entrada => (
-            <PainelGrimorio key={entrada.id} compacto>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <span style={{ color: COR_TIPO[entrada.tipo] }}>{ICONES_TIPO[entrada.tipo]}</span>
-                  {entrada.titulo && (
-                    <span className="font-cinzel text-sm" style={{ color: COR_TIPO[entrada.tipo] }}>{entrada.titulo}</span>
-                  )}
-                  <span className="text-[var(--border)] text-xs capitalize">{entrada.tipo}</span>
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-cinzel ${
-                    entrada.visibilidade === 'grupo' ? 'text-[var(--green2)] bg-[var(--green2)]/10' :
-                    entrada.visibilidade === 'privado' ? 'text-[var(--text3)] bg-[var(--surface2)]' :
-                    entrada.visibilidade === 'jogador_especifico' ? 'text-[var(--accent2)] bg-[var(--accent2)]/10' :
-                    'text-[var(--gold)] bg-[var(--gold)]/10'
-                  }`}>
-                    {entrada.visibilidade === 'grupo' ? '👥 Grupo' :
-                     entrada.visibilidade === 'privado' ? '🙈 Privado' :
-                     entrada.visibilidade === 'jogador_especifico' ? '👤 Jogador' :
-                     '🔒 DM'}
-                  </span>
+          {entradas.map(entrada => {
+            const podeEditar = podeEditarEntrada(entrada)
+            const estaEditando = entradaEditando?.id === entrada.id
+            return (
+              <PainelGrimorio key={entrada.id} compacto>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span style={{ color: COR_TIPO[entrada.tipo] }}>{ICONES_TIPO[entrada.tipo]}</span>
+                    {entrada.titulo && (
+                      <span className="font-cinzel text-sm" style={{ color: COR_TIPO[entrada.tipo] }}>{entrada.titulo}</span>
+                    )}
+                    <span className="text-[var(--border)] text-xs capitalize">{entrada.tipo}</span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-cinzel ${
+                      entrada.visibilidade === 'grupo' ? 'text-[var(--green2)] bg-[var(--green2)]/10' :
+                      entrada.visibilidade === 'privado' ? 'text-[var(--text3)] bg-[var(--surface2)]' :
+                      entrada.visibilidade === 'jogador_especifico' ? 'text-[var(--accent2)] bg-[var(--accent2)]/10' :
+                      'text-[var(--gold)] bg-[var(--gold)]/10'
+                    }`}>
+                      {entrada.visibilidade === 'grupo' ? '👥 Grupo' :
+                       entrada.visibilidade === 'privado' ? '🙈 Privado' :
+                       entrada.visibilidade === 'jogador_especifico' ? '👤 Jogador' :
+                       '🔒 DM'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-[var(--border)] text-xs">
+                      {format(new Date(entrada.criado_em), "d 'de' MMM, HH:mm", { locale: ptBR })}
+                    </span>
+                    {podeEditar && !estaEditando && (
+                      <button onClick={() => abrirEdicao(entrada)} className="text-[var(--text3)] hover:text-[var(--gold)] transition-colors text-xs">
+                        ✏️
+                      </button>
+                    )}
+                    {podeDeletar(entrada) && (
+                      <button onClick={() => excluir(entrada.id)} className="text-[var(--border)] hover:text-[var(--red2)] transition-colors">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-[var(--border)] text-xs">
-                    {format(new Date(entrada.criado_em), "d 'de' MMM, HH:mm", { locale: ptBR })}
-                  </span>
-                  {podeDeletar(entrada) && (
-                    <button onClick={() => excluir(entrada.id)} className="text-[var(--border)] hover:text-[var(--red2)] transition-colors">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <TextoComMencoes texto={entrada.conteudo} className="text-[var(--text2)] font-crimson text-sm whitespace-pre-wrap" />
-            </PainelGrimorio>
-          ))}
+
+                {estaEditando ? (
+                  <div className="space-y-2 mt-2">
+                    <input
+                      type="text"
+                      value={editTitulo}
+                      onChange={e => setEditTitulo(e.target.value)}
+                      placeholder="Título (opcional)"
+                      className="w-full input-dd text-sm"
+                    />
+                    <EditorComMencoes
+                      value={editConteudo}
+                      onChange={setEditConteudo}
+                      rows={4}
+                      placeholder="Conteúdo..."
+                      className="w-full input-dd text-sm resize-y"
+                      campanhaId={campanhaAtiva?.id ?? null}
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[var(--text3)] text-xs font-cinzel">Visível para:</span>
+                      {[
+                        { value: 'grupo',   label: '👥 Grupo' },
+                        { value: 'privado', label: '🙈 Privado' },
+                        ...(!ehJogador ? [{ value: 'dm', label: '🔒 Só DM' }] : []),
+                      ].map(op => (
+                        <button
+                          key={op.value}
+                          type="button"
+                          onClick={() => { setEditVisibilidade(op.value as Visibilidade); setEditJogador(null) }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-cinzel border transition-all ${
+                            editVisibilidade === op.value && !editJogador
+                              ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                              : 'border-[var(--border)] text-[var(--text2)] hover:bg-[var(--surface)]'
+                          }`}
+                        >
+                          {op.label}
+                        </button>
+                      ))}
+                      {!ehJogador && jogadoresCampanha.length > 0 && (
+                        <select
+                          value={editJogador || ''}
+                          onChange={e => { if (e.target.value) { setEditVisibilidade('jogador_especifico'); setEditJogador(e.target.value) } }}
+                          className={`input-dd text-xs py-1 ${editVisibilidade === 'jogador_especifico' ? 'border-[var(--accent)]' : ''}`}
+                        >
+                          <option value="">👤 Para jogador...</option>
+                          {jogadoresCampanha.map(j => (
+                            <option key={j.user_id} value={j.user_id!}>{j.nome}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <BotaoRunico variante="ouro" tamanho="sm" onClick={salvarEdicao} carregando={salvandoEdicao}>Salvar</BotaoRunico>
+                      <BotaoRunico variante="fantasma" tamanho="sm" onClick={() => setEntradaEditando(null)}>Cancelar</BotaoRunico>
+                    </div>
+                  </div>
+                ) : (
+                  <TextoComMencoes texto={entrada.conteudo} className="text-[var(--text2)] font-crimson text-sm whitespace-pre-wrap" />
+                )}
+              </PainelGrimorio>
+            )
+          })}
         </div>
       )}
     </div>

@@ -284,13 +284,14 @@ export default function PersonagensPage() {
 
       const { data: membrosData } = await supabase
         .from('campanha_membros')
-        .select('user_id, profiles:user_id(id, nome, username)')
+        .select('*, profiles(id, nome, username)')
         .eq('campanha_id', campanhaAtiva.id)
         .eq('status', 'ativo')
+        .eq('papel', 'jogador')
 
       const jogadores: JogadorCampanha[] = (membrosData ?? []).map(m => {
-        const prof = m.profiles as unknown as { id: string; nome: string; username?: string | null }
-        return { id: prof?.id || (m.user_id as string), nome: prof?.nome || 'Jogador', username: prof?.username }
+        const prof = m.profiles as unknown as { id: string; nome: string | null; username?: string | null } | null
+        return { id: prof?.id ?? (m.user_id as string), nome: prof?.nome ?? prof?.username ?? 'Jogador', username: prof?.username }
       })
       setJogadoresCampanha(jogadores)
     } finally {
@@ -407,13 +408,7 @@ export default function PersonagensPage() {
     }
   })
 
-  const personagensVisiveis = !ehJogador
-    ? ordenados
-    : ordenados.filter(p =>
-        (p.visibilidade ?? 'grupo') === 'grupo' ||
-        p.user_id === userId ||
-        (p.visibilidade === 'jogador_especifico' && p.visibilidade_jogador_id === userId)
-      )
+  const personagensVisiveis = ordenados
 
   const labelFiltro: Record<FiltroTipo, string> = {
     todos: 'Todos',
