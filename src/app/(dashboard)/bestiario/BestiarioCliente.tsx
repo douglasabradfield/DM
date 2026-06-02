@@ -500,7 +500,6 @@ function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
     INT: monstro.int_score, WIS: monstro.wis_score, CHA: monstro.cha_score,
   }
 
-  const [abaAdmin, setAbaAdmin] = useState<'monstros' | 'magias' | 'itens'>('monstros')
   const [secao, setSecao] = useState<SecaoAdmin>('basico')
   const [salvando, setSalvando] = useState(false)
 
@@ -637,30 +636,7 @@ function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
           <button onClick={onClose} className="text-[var(--border)] hover:text-[var(--red2)]"><X className="w-4 h-4" /></button>
         </div>
 
-        {/* Abas admin externas */}
-        <div className="bg-[var(--bg2)] border-b border-[var(--border)] flex flex-shrink-0">
-          {(['monstros', 'magias', 'itens'] as const).map(aba => (
-            <button
-              key={aba}
-              onClick={() => setAbaAdmin(aba)}
-              className={cn(
-                "px-4 py-2 text-xs font-cinzel border-b-2 transition-colors",
-                abaAdmin === aba ? 'border-[var(--gold)] text-[var(--gold)]' : 'border-transparent text-[var(--text3)] hover:text-[var(--text2)]'
-              )}
-            >
-              {aba === 'monstros' ? 'Monstros' : aba === 'magias' ? 'Magias' : 'Itens'}
-              {aba !== 'monstros' && <span className="ml-1 text-[9px] opacity-50">(em breve)</span>}
-            </button>
-          ))}
-        </div>
-
-        {abaAdmin !== 'monstros' ? (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-[var(--text3)] font-cinzel text-sm">Em breve</p>
-          </div>
-        ) : (
-          <>
-            {/* Abas de seção */}
+        {/* Abas de seção */}
             <div className="bg-[var(--bg2)] border-b border-[var(--border)] flex overflow-x-auto flex-shrink-0">
               {SECOES_ADMIN.map(s => (
                 <button
@@ -902,8 +878,6 @@ function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
                 {salvando ? 'Salvando...' : '💾 Salvar Tudo'}
               </button>
             </div>
-          </>
-        )}
       </div>
     </div>
   )
