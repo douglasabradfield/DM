@@ -42,9 +42,21 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
   const [modalNova, setModalNova] = useState(false)
   const [nomeCampanha, setNomeCampanha] = useState('')
   const [criando, setCriando] = useState(false)
+  const [minimizada, setMinimizada] = useState(false)
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { carregarCampanhas() }, [])
+
+  useEffect(() => {
+    const salvo = localStorage.getItem('sidebar-minimizada')
+    if (salvo === 'true') setMinimizada(true)
+  }, [])
+
+  function toggleMinimizar() {
+    const novo = !minimizada
+    setMinimizada(novo)
+    localStorage.setItem('sidebar-minimizada', String(novo))
+  }
 
   async function criarCampanha() {
     if (!nomeCampanha.trim()) return
@@ -86,59 +98,83 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
 
   return (
     <>
-      <aside className="hidden md:flex w-56 bg-[var(--bg2)] border-r border-[var(--border)] flex-col min-h-screen">
+      <aside className={cn(
+        "hidden md:flex bg-[var(--bg2)] border-r border-[var(--border)] flex-col min-h-screen",
+        "transition-all duration-200 overflow-hidden flex-shrink-0",
+        minimizada ? "w-14" : "w-[220px]"
+      )}>
         {/* Logo */}
         <div className="p-4 border-b border-[var(--border)]">
           <div className="flex items-center gap-2">
-            <Shield className="w-7 h-7 text-[var(--gold)]" />
-            <div>
-              <h1 className="font-cinzel text-[var(--gold)] font-bold text-sm leading-none">Dungeon</h1>
-              <h1 className="font-cinzel text-[var(--gold2)] font-bold text-sm leading-none">Desk</h1>
-            </div>
-          </div>
-        </div>
-
-        {/* Seletor de Campanha */}
-        <div className="p-2 border-b border-[var(--border)]">
-          <p className="text-[var(--text3)] text-xs font-cinzel uppercase tracking-wider mb-1 px-1">Campanha</p>
-          <div className="relative">
-            <button
-              onClick={() => setDropdownAberto(!dropdownAberto)}
-              className="w-full flex items-center justify-between px-2 py-1.5 bg-[var(--bg3)] border border-[var(--border)] rounded text-sm text-left hover:border-[var(--border2)] transition-colors"
-            >
-              <span className={cn('font-crimson truncate', campanhaAtiva ? 'text-[var(--gold)]' : 'text-[var(--border)]')}>
-                {campanhaAtiva?.nome ?? 'Sem campanha'}
-              </span>
-              <ChevronDown className="w-3 h-3 text-[var(--border)] flex-shrink-0 ml-1" />
-            </button>
-
-            {dropdownAberto && (
-              <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded shadow-xl">
-                {campanhasAtivas.map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => { setCampanhaAtiva(c); setDropdownAberto(false) }}
-                    className={cn(
-                      'w-full text-left px-2 py-1.5 text-sm font-crimson transition-colors hover:bg-[var(--bg3)]',
-                      campanhaAtiva?.id === c.id ? 'text-[var(--gold)]' : 'text-[var(--text2)]'
-                    )}
-                  >
-                    {c.nome}
-                    {campanhaAtiva?.id === c.id && <span className="ml-1 text-[9px]">✓</span>}
-                    {papelPorCampanha[c.id] === 'jogador' && (
-                      <span className="ml-1 text-[9px] text-[var(--accent2)]">(jogador)</span>
-                    )}
-                  </button>
-                ))}
-                <button
-                  onClick={() => { setModalNova(true); setDropdownAberto(false) }}
-                  className="w-full text-left px-2 py-1.5 text-sm font-cinzel text-[var(--accent)] hover:bg-[var(--bg3)] transition-colors border-t border-[var(--border)] flex items-center gap-1"
-                >
-                  <Plus className="w-3 h-3" /> Nova campanha
-                </button>
+            <Shield className="w-7 h-7 text-[var(--gold)] flex-shrink-0" />
+            {!minimizada && (
+              <div>
+                <h1 className="font-cinzel text-[var(--gold)] font-bold text-sm leading-none">Dungeon</h1>
+                <h1 className="font-cinzel text-[var(--gold2)] font-bold text-sm leading-none">Desk</h1>
               </div>
             )}
           </div>
+        </div>
+
+        {/* Campanha + botão minimizar */}
+        <div className="border-b border-[var(--border)]">
+          <div className="flex items-center justify-between px-3 py-2">
+            {!minimizada && (
+              <span className="font-cinzel text-[var(--text3)] text-[10px] uppercase tracking-wider">
+                Campanha
+              </span>
+            )}
+            <button
+              onClick={toggleMinimizar}
+              className="ml-auto p-1.5 rounded-lg text-[var(--text3)] hover:text-[var(--text)] hover:bg-[var(--surface)] transition-colors text-sm leading-none"
+              title={minimizada ? 'Expandir menu' : 'Minimizar menu'}
+            >
+              {minimizada ? '→' : '←'}
+            </button>
+          </div>
+
+          {!minimizada && (
+            <div className="px-2 pb-2">
+              <div className="relative">
+                <button
+                  onClick={() => setDropdownAberto(!dropdownAberto)}
+                  className="w-full flex items-center justify-between px-2 py-1.5 bg-[var(--bg3)] border border-[var(--border)] rounded text-sm text-left hover:border-[var(--border2)] transition-colors"
+                >
+                  <span className={cn('font-crimson truncate', campanhaAtiva ? 'text-[var(--gold)]' : 'text-[var(--border)]')}>
+                    {campanhaAtiva?.nome ?? 'Sem campanha'}
+                  </span>
+                  <ChevronDown className="w-3 h-3 text-[var(--border)] flex-shrink-0 ml-1" />
+                </button>
+
+                {dropdownAberto && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded shadow-xl">
+                    {campanhasAtivas.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => { setCampanhaAtiva(c); setDropdownAberto(false) }}
+                        className={cn(
+                          'w-full text-left px-2 py-1.5 text-sm font-crimson transition-colors hover:bg-[var(--bg3)]',
+                          campanhaAtiva?.id === c.id ? 'text-[var(--gold)]' : 'text-[var(--text2)]'
+                        )}
+                      >
+                        {c.nome}
+                        {campanhaAtiva?.id === c.id && <span className="ml-1 text-[9px]">✓</span>}
+                        {papelPorCampanha[c.id] === 'jogador' && (
+                          <span className="ml-1 text-[9px] text-[var(--accent2)]">(jogador)</span>
+                        )}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => { setModalNova(true); setDropdownAberto(false) }}
+                      className="w-full text-left px-2 py-1.5 text-sm font-cinzel text-[var(--accent)] hover:bg-[var(--bg3)] transition-colors border-t border-[var(--border)] flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" /> Nova campanha
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Navegação */}
@@ -150,12 +186,19 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
               return (
                 <div
                   key={href}
-                  title={`Disponível no plano ${planoMinimo ? getPlano(planoMinimo).nome : ''} ou superior`}
-                  className="flex items-center gap-3 px-3 py-2 rounded text-base font-crimson opacity-40 cursor-not-allowed select-none"
+                  title={minimizada ? label : `Disponível no plano ${planoMinimo ? getPlano(planoMinimo).nome : ''} ou superior`}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded text-base font-crimson opacity-40 cursor-not-allowed select-none",
+                    minimizada && "justify-center"
+                  )}
                 >
                   <Icone className="w-4 h-4 flex-shrink-0 text-[var(--text3)]" />
-                  <span className="text-[var(--text3)]">{label}</span>
-                  <Lock className="w-3 h-3 ml-auto text-[var(--text3)]" />
+                  {!minimizada && (
+                    <>
+                      <span className="text-[var(--text3)]">{label}</span>
+                      <Lock className="w-3 h-3 ml-auto text-[var(--text3)]" />
+                    </>
+                  )}
                 </div>
               )
             }
@@ -164,8 +207,10 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
                 key={href}
                 href={href}
                 onClick={() => setDropdownAberto(false)}
+                title={minimizada ? label : undefined}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2 rounded text-base font-crimson transition-all duration-150 group',
+                  minimizada && 'justify-center',
                   ativo
                     ? 'bg-[var(--surface)] text-[var(--text)] border-l-2'
                     : 'text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--bg3)]'
@@ -176,8 +221,12 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
                   className="w-4 h-4 flex-shrink-0 transition-colors"
                   style={{ color: ativo ? cor : undefined }}
                 />
-                <span>{label}</span>
-                {ativo && <ChevronRight className="w-3 h-3 ml-auto text-[var(--border)]" />}
+                {!minimizada && (
+                  <>
+                    <span>{label}</span>
+                    {ativo && <ChevronRight className="w-3 h-3 ml-auto text-[var(--border)]" />}
+                  </>
+                )}
               </Link>
             )
           })}
@@ -188,8 +237,10 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
               <Link
                 href="/admin"
                 onClick={() => setDropdownAberto(false)}
+                title={minimizada ? 'Admin' : undefined}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2 rounded text-base font-crimson transition-all duration-150',
+                  minimizada && 'justify-center',
                   ativo
                     ? 'bg-[var(--surface)] text-[var(--text)] border-l-2'
                     : 'text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--bg3)]'
@@ -200,8 +251,12 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
                   className="w-4 h-4 flex-shrink-0"
                   style={{ color: ativo ? cor : undefined }}
                 />
-                <span>Admin</span>
-                {ativo && <ChevronRight className="w-3 h-3 ml-auto text-[var(--border)]" />}
+                {!minimizada && (
+                  <>
+                    <span>Admin</span>
+                    {ativo && <ChevronRight className="w-3 h-3 ml-auto text-[var(--border)]" />}
+                  </>
+                )}
               </Link>
             )
           })()}
@@ -212,33 +267,41 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
           <Link
             href="/feedback"
             onClick={() => setDropdownAberto(false)}
+            title={minimizada ? 'Feedback' : undefined}
             className={cn(
               'flex items-center gap-2 px-3 py-1.5 rounded text-sm font-crimson transition-colors w-full',
+              minimizada && 'justify-center',
               pathname === '/feedback'
                 ? 'bg-[var(--surface)] text-[var(--text)]'
                 : 'text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--bg3)]'
             )}
           >
-            💬 Feedback & Sugestões
+            <span>💬</span>
+            {!minimizada && <span>Feedback & Sugestões</span>}
           </Link>
           {isAdmin && (
             <Link
               href="/admin/feedbacks"
               onClick={() => setDropdownAberto(false)}
+              title={minimizada ? 'Feedbacks Admin' : undefined}
               className={cn(
                 'flex items-center gap-2 px-3 py-1.5 rounded text-sm font-crimson transition-colors w-full',
+                minimizada && 'justify-center',
                 pathname === '/admin/feedbacks'
                   ? 'bg-[var(--surface)] text-[var(--text)]'
                   : 'text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--bg3)]'
               )}
             >
-              📋 Feedbacks Admin
+              <span>📋</span>
+              {!minimizada && <span>Feedbacks Admin</span>}
             </Link>
           )}
-          <div className="text-center pt-1">
-            <p className="font-cinzel text-xs text-[var(--border)] tracking-widest uppercase">Dungeon Desk</p>
-            <p className="text-xs text-[var(--border)] mt-0.5">v1.0</p>
-          </div>
+          {!minimizada && (
+            <div className="text-center pt-1">
+              <p className="font-cinzel text-xs text-[var(--border)] tracking-widest uppercase">Dungeon Desk</p>
+              <p className="text-xs text-[var(--border)] mt-0.5">v1.0</p>
+            </div>
+          )}
         </div>
       </aside>
 
