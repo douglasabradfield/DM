@@ -13,7 +13,7 @@ import { ModalLevelUp } from '@/components/personagem/ModalLevelUp'
 import { createClient } from '@/lib/supabase/client'
 import { useBatalha } from '@/store/batalha'
 import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
-import { ESPACOS_MAGIA } from '@/lib/dados-dnd/espacos-magia'
+import { getEspacosMagiaPorClasse } from '@/lib/dados-dnd/espacos-magia'
 import { getNivelPorXP, getProgressoXP } from '@/lib/dados-dnd/xp-niveis'
 import type { TipoDano } from '@/types/dnd'
 import { Search, X, MoreVertical } from 'lucide-react'
@@ -333,8 +333,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     }
   }
 
-  // Espaços de magia por nível
-  const espacosPorNivel = ESPACOS_MAGIA[Math.min(Math.max(dados.nivel, 1), 20)] ?? ESPACOS_MAGIA[1]
+  // Espaços de magia por classe e nível
+  const espacosPorNivel = getEspacosMagiaPorClasse(dados.classe, dados.nivel)
 
   function toggleEspaco(nivel: number, indice: number) {
     if (!podeEditar) return
