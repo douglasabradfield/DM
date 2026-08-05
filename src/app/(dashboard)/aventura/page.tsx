@@ -31,6 +31,7 @@ interface Capitulo {
   resumo: string
   npcs: Array<{ nome: string; descricao: string }>
   locais: Local[]
+  traduzido?: boolean
 }
 
 interface ConteudoAventura {
@@ -47,7 +48,7 @@ interface ConteudoAventura {
 }
 
 export default function AventuraPage() {
-  const { campanhaAtiva } = useCampanha()
+  const { campanhaAtiva, papelPorCampanha } = useCampanha()
   const router = useRouter()
   const [aventura, setAventura] = useState<ConteudoAventura | null>(null)
   const [carregando, setCarregando] = useState(true)
@@ -62,6 +63,11 @@ export default function AventuraPage() {
   const [arquivo, setArquivo] = useState<File | null>(null)
   const [confirmandoApagar, setConfirmandoApagar] = useState(false)
   const [plano, setPlano] = useState<string>('free')
+
+  // Tradução de capítulo
+  const [capituloTraduzindo, setCapituloTraduzindo] = useState<number | null>(null)
+  const [progressoTraducao, setProgressoTraducao] = useState<{ atual: number; total: number } | null>(null)
+  const [offsetPorCapitulo, setOffsetPorCapitulo] = useState<Record<number, number>>({})
 
   useEffect(() => {
     async function fetchPlano() {
@@ -160,6 +166,44 @@ export default function AventuraPage() {
     setAventura(null)
     setConfirmandoApagar(false)
     toast.success('Aventura apagada')
+  }
+
+  async function traduzirCapitulo(cap: Capitulo) {
+    if (!campanhaAtiva?.id || capituloTraduzindo !== null) return
+    setCapituloTraduzindo(cap.numero)
+    let offset = offsetPorCapitulo[cap.numero] ?? 0
+    setProgressoTraducao({ atual: offset, total: cap.locais.length })
+    try {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const res = await fetch('/api/aventura/traduzir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ campanhaId: campanhaAtiva.id, capituloNumero: cap.numero, offset }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.erro ?? 'Erro ao traduzir capítulo')
+
+        offset = data.proximoOffset
+        setOffsetPorCapitulo(prev => ({ ...prev, [cap.numero]: offset }))
+        setProgressoTraducao({ atual: offset, total: data.total })
+
+        if (data.concluido) break
+      }
+      setOffsetPorCapitulo(prev => {
+        const resto = { ...prev }
+        delete resto[cap.numero]
+        return resto
+      })
+      toast.success('Capítulo traduzido')
+      await carregar()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao traduzir capítulo'
+      toast.error(`Tradução parou no local ${offset + 1}: ${msg}`)
+    } finally {
+      setCapituloTraduzindo(null)
+      setProgressoTraducao(null)
+    }
   }
 
   function getMimeType(arquivo: File): string {
@@ -369,7 +413,12 @@ export default function AventuraPage() {
                     : 'border-transparent text-[var(--text2)] hover:bg-[var(--surface)] hover:text-[var(--text)]'
                 }`}
               >
-                <p className="font-cinzel text-xs font-bold">Cap. {cap.numero}</p>
+                <p className="font-cinzel text-xs font-bold flex items-center gap-1.5">
+                  Cap. {cap.numero}
+                  {cap.traduzido && (
+                    <span title="Capítulo traduzido" className="text-[var(--green)] text-[10px]">✓</span>
+                  )}
+                </p>
                 <p className="text-[10px] text-[var(--text3)] leading-tight mt-0.5">
                   {(cap.titulo_pt ?? '').replace(/^Capítulo \d+:\s*/i, '').replace(/^Chapter \d+:\s*/i, '')}
                 </p>
@@ -504,9 +553,29 @@ export default function AventuraPage() {
 
             {/* Header do capítulo */}
             <div className="p-4 border-b border-[var(--border)] bg-[var(--surface)]">
-              <h2 className="font-cinzel text-[var(--gold)] text-lg font-bold">
-                {capAtual.titulo_pt}
-              </h2>
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="font-cinzel text-[var(--gold)] text-lg font-bold">
+                  {capAtual.titulo_pt}
+                </h2>
+                {papelPorCampanha[campanhaAtiva.id] === 'dm' && (
+                  <button
+                    onClick={() => traduzirCapitulo(capAtual)}
+                    disabled={capituloTraduzindo !== null}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 border border-[var(--border)] rounded-lg text-[var(--text2)] text-xs font-cinzel hover:border-[var(--gold)] hover:text-[var(--gold)] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {capituloTraduzindo === capAtual.numero && progressoTraducao ? (
+                      <>
+                        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Traduzindo... {progressoTraducao.atual}/{progressoTraducao.total} locais
+                      </>
+                    ) : capAtual.traduzido ? (
+                      '🌐 Retraduzir'
+                    ) : (
+                      '🌐 Traduzir capítulo'
+                    )}
+                  </button>
+                )}
+              </div>
               <p className="text-[var(--text3)] text-xs mt-1">
                 {[capAtual.plano, capAtual.nivel_recomendado && `Nível ${capAtual.nivel_recomendado}`].filter(Boolean).join(' · ')}
               </p>
