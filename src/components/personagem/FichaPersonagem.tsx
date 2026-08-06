@@ -131,6 +131,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   }, [p.id])
 
   const [levelUp, setLevelUp] = useState<{ novoNivel: number; novaProf: number } | null>(null)
+  const nivelNotificado = useRef(p.nivel)
 
   // Inventário
   const [inventario, setInventario] = useState<ItemInventario[]>(
@@ -290,7 +291,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       onAtualizar?.(dados)
 
       // Notificar DM sobre level-up (somente jogadores)
-      if (!isDM && dados.nivel > p.nivel && campanhaAtiva?.dm_id) {
+      if (!isDM && dados.nivel > nivelNotificado.current && campanhaAtiva?.dm_id) {
         await supabase.from('notificacoes').insert({
           user_id: campanhaAtiva.dm_id,
           tipo: 'level_up',
@@ -299,6 +300,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           link: `/personagens/${p.id}`,
           lida: false,
         })
+        nivelNotificado.current = dados.nivel
       }
       // Sincroniza com a batalha se o personagem estiver em combate
       atualizarCombatentePorPersonagem(p.id, {
@@ -311,7 +313,6 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         imunidades: dados.imunidades ?? [],
         vulnerabilidades: dados.vulnerabilidades ?? [],
       })
-      router.push('/personagens')
     } catch (err) {
       console.error('Exceção ao salvar personagem:', err)
       toast.error('Erro ao salvar')
