@@ -255,6 +255,20 @@ Fonts: `Cinzel` (headings) e `Crimson Pro` (body). Use `cn()` de `src/lib/utils.
 
 ---
 
+## Backup e migrations
+
+### Backup manual (antes de cada fase)
+```bash
+supabase db dump --data-only -f C:\Users\dougl\dungeon-desk-backups\dados-AAAA-MM-DD.sql
+supabase db dump -f C:\Users\dougl\dungeon-desk-backups\schema-AAAA-MM-DD.sql
+```
+Destino sempre FORA do repo (pasta `dungeon-desk-backups/`, já no `.gitignore` — `*.dump` e `dungeon-desk-backups/`). O dump de dados contém diários privados dos jogadores — nunca commitar.
+
+`supabase db dump`/`db pull` chamam `pg_dump` via Docker por padrão. Sem Docker Desktop instalado, use o `pg_dump` do PostgreSQL 17 local (`C:\Program Files\PostgreSQL\17\bin`, instalado via `winget install PostgreSQL.PostgreSQL.17` — só o cliente é necessário, o serviço local pode ficar desabilitado): adicione ao PATH da sessão e rode `supabase db dump --dry-run` para obter o script `pg_dump` com credencial temporária, corrija `--quote-all-identifier` para `--quote-all-identifiers` (bug de abreviação de flag no Windows) e execute o script direto.
+
+### Schema versionado
+Mudanças de schema sempre viram um arquivo em `supabase/migrations/` (nome `AAAAMMDDHHMMSS_descricao.sql`) + aplicação manual no SQL Editor do Supabase. O projeto não usa `supabase db push` por enquanto.
+
 ## Important Patterns
 
 ### Always read before editing
