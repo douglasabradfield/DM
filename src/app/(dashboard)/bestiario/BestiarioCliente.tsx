@@ -400,12 +400,19 @@ const ABILITY_LABELS: Record<string, string> = {
   str: 'FOR', dex: 'DES', con: 'CON', int: 'INT', wis: 'SAB', cha: 'CAR',
 }
 
+const ATTACK_TYPE_LABELS: Record<string, string> = {
+  melee_weapon: 'com arma corpo a corpo',
+  ranged_weapon: 'com arma à distância',
+  melee_spell: 'com magia corpo a corpo',
+  ranged_spell: 'com magia à distância',
+}
+
 function AcaoMonstroItem({ acao }: { acao: MonsterAction }) {
   const temAtaque = acao.attack_bonus !== null && acao.attack_bonus !== undefined && acao.attack_type
   const alcance = acao.reach_ft
-    ? `${ftParaM(acao.reach_ft)}m`
+    ? `${formatarMetros(acao.reach_ft)} m`
     : acao.range_normal_ft
-      ? `${ftParaM(acao.range_normal_ft)}/${ftParaM(acao.range_long_ft ?? acao.range_normal_ft * 4)}m`
+      ? `${formatarMetros(acao.range_normal_ft)}/${formatarMetros(acao.range_long_ft ?? acao.range_normal_ft * 4)} m`
       : null
 
   return (
@@ -425,7 +432,7 @@ function AcaoMonstroItem({ acao }: { acao: MonsterAction }) {
       </div>
       {temAtaque && (
         <p className="text-[var(--text2)] text-sm font-crimson leading-relaxed">
-          <em>Ataque {acao.attack_type}: </em>
+          <em>Ataque {ATTACK_TYPE_LABELS[acao.attack_type ?? ''] ?? acao.attack_type}: </em>
           {(acao.attack_bonus ?? 0) >= 0 ? '+' : ''}{acao.attack_bonus} para atingir
           {alcance && `, alcance ${alcance}`}
           {acao.target_pt && `, ${acao.target_pt}`}.
@@ -436,7 +443,7 @@ function AcaoMonstroItem({ acao }: { acao: MonsterAction }) {
       )}
       {acao.save_ability && acao.save_dc && (
         <p className="text-[var(--text2)] text-sm font-crimson italic">
-          Resistência de {acao.save_ability} CD {acao.save_dc}
+          Resistência de {SAVE_LABELS[acao.save_ability.toUpperCase()] ?? acao.save_ability} CD {acao.save_dc}
           {acao.save_effect_pt ? `: ${acao.save_effect_pt}.` : '.'}
         </p>
       )}
@@ -454,29 +461,92 @@ function AcaoMonstroItem({ acao }: { acao: MonsterAction }) {
 
 // ──────────────────────────────────────────────────────────────────────────
 
-const CONDICOES_D5E_PT = [
-  'Amedrontado', 'Agarrado', 'Atordoado', 'Caído', 'Cego',
-  'Enfeitiçado', 'Envenenado', 'Exausto', 'Incapacitado',
-  'Invisível', 'Paralisado', 'Petrificado', 'Surdo', 'Inconsciente',
+// Condições D&D 5e — rótulo PT exibido na UI, valor EN gravado em
+// monster_condition_immunities.condition_en (NOT NULL no banco).
+const CONDICOES_D5E: { pt: string; en: string }[] = [
+  { pt: 'Amedrontado', en: 'frightened' },
+  { pt: 'Agarrado', en: 'grappled' },
+  { pt: 'Atordoado', en: 'stunned' },
+  { pt: 'Caído', en: 'prone' },
+  { pt: 'Cego', en: 'blinded' },
+  { pt: 'Enfeitiçado', en: 'charmed' },
+  { pt: 'Envenenado', en: 'poisoned' },
+  { pt: 'Exausto', en: 'exhaustion' },
+  { pt: 'Incapacitado', en: 'incapacitated' },
+  { pt: 'Invisível', en: 'invisible' },
+  { pt: 'Paralisado', en: 'paralyzed' },
+  { pt: 'Petrificado', en: 'petrified' },
+  { pt: 'Surdo', en: 'deafened' },
+  { pt: 'Inconsciente', en: 'unconscious' },
 ]
+const CONDICOES_D5E_PT = CONDICOES_D5E.map(c => c.pt)
+const MAPA_CONDICAO_PT_EN: Record<string, string> = Object.fromEntries(CONDICOES_D5E.map(c => [c.pt, c.en]))
 
-const TIPOS_DANO_OPCOES = [
-  'Ácido', 'Contundente', 'Cortante', 'Elétrico', 'Fogo',
-  'Força', 'Frio', 'Necrótico', 'Perfurante', 'Psíquico',
-  'Radiante', 'Trovejante', 'Veneno',
+// Tipos de dano — idem, damage_type_en é NOT NULL em monster_damage_modifiers.
+const TIPOS_DANO: { pt: string; en: string }[] = [
+  { pt: 'Ácido', en: 'acid' },
+  { pt: 'Contundente', en: 'bludgeoning' },
+  { pt: 'Cortante', en: 'slashing' },
+  { pt: 'Elétrico', en: 'lightning' },
+  { pt: 'Fogo', en: 'fire' },
+  { pt: 'Força', en: 'force' },
+  { pt: 'Frio', en: 'cold' },
+  { pt: 'Necrótico', en: 'necrotic' },
+  { pt: 'Perfurante', en: 'piercing' },
+  { pt: 'Psíquico', en: 'psychic' },
+  { pt: 'Radiante', en: 'radiant' },
+  { pt: 'Trovejante', en: 'thunder' },
+  { pt: 'Veneno', en: 'poison' },
 ]
+const TIPOS_DANO_OPCOES = TIPOS_DANO.map(t => t.pt)
+const MAPA_DANO_PT_EN: Record<string, string> = Object.fromEntries(TIPOS_DANO.map(t => [t.pt, t.en]))
 
+// monster_actions.action_type_check no banco
 const ACTION_TYPE_OPCOES = [
   { value: 'action', label: 'Ação' },
   { value: 'bonus_action', label: 'Ação Bônus' },
   { value: 'reaction', label: 'Reação' },
   { value: 'legendary_action', label: 'Ação Lendária' },
+  { value: 'lair_action', label: 'Ação de Covil' },
+  { value: 'multiattack', label: 'Multiataque' },
   { value: 'trait', label: 'Traço' },
-  { value: 'multiattack', label: 'Multiattaque' },
+]
+
+// monster_actions.attack_type_check no banco — antes era texto livre
+const ATTACK_TYPE_OPCOES = [
+  { value: '', label: '— Nenhum —' },
+  { value: 'melee_weapon', label: 'Arma corpo a corpo' },
+  { value: 'ranged_weapon', label: 'Arma à distância' },
+  { value: 'melee_spell', label: 'Magia corpo a corpo' },
+  { value: 'ranged_spell', label: 'Magia à distância' },
 ]
 
 const SAVE_KEYS = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'] as const
 const SAVE_LABELS: Record<string, string> = { STR: 'FOR', DEX: 'DES', CON: 'CON', INT: 'INT', WIS: 'SAB', CHA: 'CAR' }
+// monster_saves.ability_check e monster_actions.save_ability_check exigem minúsculo
+const SAVE_KEY_PARA_DB: Record<string, string> = { STR: 'str', DEX: 'dex', CON: 'con', INT: 'int', WIS: 'wis', CHA: 'cha' }
+const SAVE_ABILITY_OPCOES = [
+  { value: '', label: '— Nenhum —' },
+  ...SAVE_KEYS.map(k => ({ value: SAVE_KEY_PARA_DB[k], label: SAVE_LABELS[k] })),
+]
+
+// D&D 5e PT-BR usa 1,5 m por 5 pés (não a conversão real de 0,3048 m/pé) —
+// é o mesmo arredondamento do livro do jogador oficial.
+function pesParaMetros(ft: number): number {
+  return Math.round(ft * 0.3 * 10) / 10
+}
+function metrosParaPes(m: number): number {
+  return Math.round(m / 0.3)
+}
+function formatarMetros(ft: number): string {
+  return pesParaMetros(ft).toLocaleString('pt-BR')
+}
+function parseMetros(texto: string): number | null {
+  const limpo = texto.trim().replace(',', '.')
+  if (limpo === '') return null
+  const n = Number(limpo)
+  return Number.isNaN(n) ? null : n
+}
 
 const SECOES_ADMIN = [
   { id: 'basico', label: 'Básico' },
@@ -603,6 +673,38 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
   const [visivelJogadores, setVisivelJogadores] = useState(monstro?.visivel_jogadores ?? false)
   const [sufixoSlug] = useState(() => gerarSufixoAleatorio())
   const [camposInvalidos, setCamposInvalidos] = useState<Set<string>>(new Set())
+  // Guarda o id do monstro assim que o INSERT base funciona, mesmo que uma
+  // tabela auxiliar falhe depois — evita duplicar o monstro numa nova tentativa.
+  const [midCriado, setMidCriado] = useState<string | number | null>(null)
+  // Buffer de texto por ação (chaveado pelo id estável de MonsterAction) para os
+  // campos de distância em metros — evita o valor "pular" enquanto o DM digita
+  // um decimal, já que o dado real fica em pés (arredondado) no banco.
+  const [textoDist, setTextoDist] = useState<Record<number, { reach?: string; normal?: string; longo?: string }>>({})
+
+  function valorDist(id: number, campo: 'reach' | 'normal' | 'longo', ft: number | null | undefined): string {
+    const buf = textoDist[id]?.[campo]
+    if (buf !== undefined) return buf
+    return ft != null ? formatarMetros(ft) : ''
+  }
+
+  function mudarDist(id: number, campo: 'reach' | 'normal' | 'longo', texto: string) {
+    setTextoDist(prev => ({ ...prev, [id]: { ...prev[id], [campo]: texto } }))
+  }
+
+  function confirmarDist(i: number, id: number, campo: 'reach' | 'normal' | 'longo', chaveFt: 'reach_ft' | 'range_normal_ft' | 'range_long_ft') {
+    const texto = textoDist[id]?.[campo]
+    if (texto === undefined) return
+    const metros = parseMetros(texto)
+    const ft = metros !== null ? metrosParaPes(metros) : null
+    setAcoesForm(f => f.map((x, j) => j === i ? { ...x, [chaveFt]: ft } : x))
+    setTextoDist(prev => {
+      const proximo = { ...prev }
+      const entrada = { ...proximo[id] }
+      delete entrada[campo]
+      proximo[id] = entrada
+      return proximo
+    })
+  }
 
   const [basico, setBasico] = useState(dadosIniciais)
 
@@ -677,61 +779,85 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
 
     let mid: string | number
 
-    if (modo === 'criar') {
-      const { data, error } = await supabase.from('monsters').insert({
-        ...dadosBasicos,
-        name_en: basico.name_en.trim() || basico.name_pt,
-        size_en: basico.size_pt,
-        type_en: basico.type_pt,
-        alignment_en: basico.alignment_pt,
-        speed_en: basico.speed_pt,
-        slug: slugGerado,
-        criado_por: criadoPor,
-        campanha_id: campanhaId,
-        visivel_jogadores: visivelJogadores,
-      }).select('id').single()
-      if (error || !data) { toast.error(error?.message ?? 'Erro ao criar monstro'); setSalvando(false); return }
-      mid = data.id as string | number
-    } else {
+    const dadosCriacao = {
+      ...dadosBasicos,
+      name_en: basico.name_en.trim() || basico.name_pt,
+      size_en: basico.size_pt,
+      type_en: basico.type_pt,
+      alignment_en: basico.alignment_pt,
+      speed_en: basico.speed_pt,
+      slug: slugGerado,
+      criado_por: criadoPor,
+      campanha_id: campanhaId,
+      visivel_jogadores: visivelJogadores,
+    }
+
+    if (modo === 'editar') {
       mid = monstro!.id
       const { error: e1 } = await supabase.from('monsters').update({
         ...dadosBasicos,
         ...(monstro!.criado_por ? { visivel_jogadores: visivelJogadores } : {}),
       }).eq('id', mid)
       if (e1) { toast.error(e1.message); setSalvando(false); return }
+    } else if (midCriado !== null) {
+      // Nova tentativa após falha nas auxiliares — o monstro base já existe,
+      // só atualiza (nunca insere de novo, senão duplicaria o monstro).
+      mid = midCriado
+      const { error: e1 } = await supabase.from('monsters').update(dadosCriacao).eq('id', mid)
+      if (e1) { toast.error(e1.message); setSalvando(false); return }
+    } else {
+      const { data, error } = await supabase.from('monsters').insert(dadosCriacao).select('id').single()
+      if (error || !data) { toast.error(error?.message ?? 'Erro ao criar monstro'); setSalvando(false); return }
+      mid = data.id as string | number
+      setMidCriado(mid)
     }
+
+    let houveErroAuxiliar = false
 
     await supabase.from('monster_saves').delete().eq('monster_id', mid)
     const savesToInsert = Object.entries(savesForm)
       .filter(([, v]) => v.ativo)
-      .map(([ability, v]) => ({ monster_id: Number(mid), ability, bonus: v.bonus }))
+      .map(([ability, v]) => ({ monster_id: Number(mid), ability: SAVE_KEY_PARA_DB[ability] ?? ability.toLowerCase(), bonus: v.bonus }))
     if (savesToInsert.length > 0) {
       const { error } = await supabase.from('monster_saves').insert(savesToInsert)
-      if (error) toast.error(`Erro ao salvar saves: ${error.message}`)
+      if (error) { toast.error(`Erro ao salvar saves: ${error.message}`); houveErroAuxiliar = true }
     }
 
     await supabase.from('monster_skills').delete().eq('monster_id', mid)
     if (skillsForm.length > 0) {
       const { error } = await supabase.from('monster_skills').insert(
-        skillsForm.filter(s => s.skill_pt).map(s => ({ ...s, monster_id: Number(mid) }))
+        skillsForm.filter(s => s.skill_pt).map(s => ({
+          ...s,
+          skill_en: s.skill_en.trim() || s.skill_pt,
+          monster_id: Number(mid),
+        }))
       )
-      if (error) toast.error(`Erro ao salvar perícias: ${error.message}`)
+      if (error) { toast.error(`Erro ao salvar perícias: ${error.message}`); houveErroAuxiliar = true }
     }
 
     await supabase.from('monster_damage_modifiers').delete().eq('monster_id', mid)
     if (modifiersForm.length > 0) {
       const { error } = await supabase.from('monster_damage_modifiers').insert(
-        modifiersForm.filter(d => d.damage_type_pt).map(d => ({ ...d, note_pt: d.note_pt || null, monster_id: Number(mid) }))
+        modifiersForm.filter(d => d.damage_type_pt).map(d => ({
+          ...d,
+          damage_type_en: MAPA_DANO_PT_EN[d.damage_type_pt] || d.damage_type_pt,
+          note_pt: d.note_pt || null,
+          monster_id: Number(mid),
+        }))
       )
-      if (error) toast.error(`Erro ao salvar resistências: ${error.message}`)
+      if (error) { toast.error(`Erro ao salvar resistências: ${error.message}`); houveErroAuxiliar = true }
     }
 
     await supabase.from('monster_condition_immunities').delete().eq('monster_id', mid)
     if (condImmunities.length > 0) {
       const { error } = await supabase.from('monster_condition_immunities').insert(
-        condImmunities.map(c => ({ monster_id: Number(mid), condition_pt: c }))
+        condImmunities.map(c => ({
+          monster_id: Number(mid),
+          condition_pt: c,
+          condition_en: MAPA_CONDICAO_PT_EN[c] || c,
+        }))
       )
-      if (error) toast.error(`Erro ao salvar imunidades: ${error.message}`)
+      if (error) { toast.error(`Erro ao salvar imunidades: ${error.message}`); houveErroAuxiliar = true }
     }
 
     await supabase.from('monster_actions').delete().eq('monster_id', mid)
@@ -740,7 +866,13 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
         .filter(a => a.name_pt)
         .map(({ id: _id, monster_id: _mid, ...rest }) => ({ ...rest, monster_id: Number(mid) }))
       const { error } = await supabase.from('monster_actions').insert(acoesParaInserir)
-      if (error) toast.error(`Erro ao salvar ações: ${error.message}`)
+      if (error) { toast.error(`Erro ao salvar ações: ${error.message}`); houveErroAuxiliar = true }
+    }
+
+    if (houveErroAuxiliar) {
+      toast.error('O monstro foi salvo, mas alguns dados auxiliares falharam. Corrija e clique em salvar de novo.')
+      setSalvando(false)
+      return
     }
 
     const { data } = await supabase.from('monsters').select(`
@@ -958,13 +1090,48 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
                         <div><label className={lbl}>Nome EN</label><input className="w-full input-dd text-sm mt-0.5" value={a.name_en ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, name_en: e.target.value } : x))} /></div>
                       </div>
                       <div className="grid grid-cols-3 gap-2 mb-2">
-                        <div><label className={lbl}>Tipo Ataque</label><input className="w-full input-dd text-sm mt-0.5" value={a.attack_type ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, attack_type: e.target.value } : x))} placeholder="corpo a corpo" /></div>
+                        <div>
+                          <label className={lbl}>Tipo Ataque</label>
+                          <select className="w-full input-dd text-sm mt-0.5" value={a.attack_type ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, attack_type: e.target.value || null } : x))}>
+                            {ATTACK_TYPE_OPCOES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        </div>
                         <div><label className={lbl}>Bônus Ataque</label><input type="number" className="w-full input-dd text-sm mt-0.5" value={a.attack_bonus ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, attack_bonus: e.target.value !== '' ? +e.target.value : null } : x))} /></div>
-                        <div><label className={lbl}>Alcance (ft)</label><input type="number" className="w-full input-dd text-sm mt-0.5" value={a.reach_ft ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, reach_ft: e.target.value !== '' ? +e.target.value : null } : x))} /></div>
+                        <div>
+                          <label className={lbl}>Alcance (m)</label>
+                          <input
+                            className="w-full input-dd text-sm mt-0.5"
+                            inputMode="decimal"
+                            placeholder="1,5"
+                            value={valorDist(a.id, 'reach', a.reach_ft)}
+                            onChange={e => mudarDist(a.id, 'reach', e.target.value)}
+                            onBlur={() => confirmarDist(i, a.id, 'reach', 'reach_ft')}
+                          />
+                        </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2 mb-2">
-                        <div><label className={lbl}>Alcance Normal (ft)</label><input type="number" className="w-full input-dd text-sm mt-0.5" value={a.range_normal_ft ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, range_normal_ft: e.target.value !== '' ? +e.target.value : null } : x))} /></div>
-                        <div><label className={lbl}>Alcance Longo (ft)</label><input type="number" className="w-full input-dd text-sm mt-0.5" value={a.range_long_ft ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, range_long_ft: e.target.value !== '' ? +e.target.value : null } : x))} /></div>
+                        <div>
+                          <label className={lbl}>Distância Normal (m)</label>
+                          <input
+                            className="w-full input-dd text-sm mt-0.5"
+                            inputMode="decimal"
+                            placeholder="9"
+                            value={valorDist(a.id, 'normal', a.range_normal_ft)}
+                            onChange={e => mudarDist(a.id, 'normal', e.target.value)}
+                            onBlur={() => confirmarDist(i, a.id, 'normal', 'range_normal_ft')}
+                          />
+                        </div>
+                        <div>
+                          <label className={lbl}>Distância Longa (m)</label>
+                          <input
+                            className="w-full input-dd text-sm mt-0.5"
+                            inputMode="decimal"
+                            placeholder="36"
+                            value={valorDist(a.id, 'longo', a.range_long_ft)}
+                            onChange={e => mudarDist(a.id, 'longo', e.target.value)}
+                            onBlur={() => confirmarDist(i, a.id, 'longo', 'range_long_ft')}
+                          />
+                        </div>
                         <div><label className={lbl}>Alvo PT</label><input className="w-full input-dd text-sm mt-0.5" value={a.target_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, target_pt: e.target.value } : x))} /></div>
                       </div>
                       <div className="grid grid-cols-4 gap-2 mb-2">
@@ -974,7 +1141,12 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
                         <div><label className={lbl}>Tipo Dano 2 PT</label><input className="w-full input-dd text-sm mt-0.5" value={a.damage2_type_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, damage2_type_pt: e.target.value } : x))} /></div>
                       </div>
                       <div className="grid grid-cols-3 gap-2 mb-2">
-                        <div><label className={lbl}>Atributo Resist.</label><input className="w-full input-dd text-sm mt-0.5" value={a.save_ability ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, save_ability: e.target.value } : x))} placeholder="DEX" /></div>
+                        <div>
+                          <label className={lbl}>Atributo Resist.</label>
+                          <select className="w-full input-dd text-sm mt-0.5" value={a.save_ability ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, save_ability: e.target.value || null } : x))}>
+                            {SAVE_ABILITY_OPCOES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        </div>
                         <div><label className={lbl}>CD Resist.</label><input type="number" className="w-full input-dd text-sm mt-0.5" value={a.save_dc ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, save_dc: e.target.value !== '' ? +e.target.value : null } : x))} /></div>
                         <div><label className={lbl}>Efeito Resist. PT</label><input className="w-full input-dd text-sm mt-0.5" value={a.save_effect_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, save_effect_pt: e.target.value } : x))} /></div>
                       </div>
