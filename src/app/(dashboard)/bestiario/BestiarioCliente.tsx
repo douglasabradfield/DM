@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import type { Monster, MonsterDetailed, MonsterAction } from '@/types/dnd'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { useBatalha } from '@/store/batalha'
+import { usePermissao } from '@/hooks/usePermissao'
 import { calcularModificadorAtributo, formatarModificador, cn } from '@/lib/utils'
-import { Search, Swords, Plus, X, Trash2, Pencil } from 'lucide-react'
+import { Search, Swords, Plus, X, Trash2, Pencil, ShieldAlert } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import { BotaoReportar } from '@/components/ui/BotaoReportar'
@@ -898,6 +900,7 @@ export function BestiarioCliente() {
   const [modalAdminAberto, setModalAdminAberto] = useState(false)
   const [aba, setAba] = useState<'oficial' | 'personalizado'>('oficial')
   const { adicionarCombatente } = useBatalha()
+  const { ehJogador } = usePermissao()
   const router = useRouter()
 
   useEffect(() => {
@@ -1021,6 +1024,26 @@ export function BestiarioCliente() {
 
   const plano = userPlano ? getPlano(userPlano) : null
   const mostrarPersonalizado = plano?.limites.conteudo_personalizado ?? false
+
+  if (ehJogador) {
+    return (
+      <div className="h-full flex items-center justify-center p-8">
+        <div className="text-center">
+          <ShieldAlert className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
+          <p className="font-cinzel text-[var(--text3)] text-xl mb-2">Área do Mestre</p>
+          <p className="text-[var(--text3)] text-sm font-crimson mb-5 max-w-xs mx-auto">
+            O bestiário é uma ferramenta exclusiva do Mestre da campanha.
+          </p>
+          <Link
+            href="/personagens"
+            className="px-5 py-2 bg-[var(--accent)] text-[var(--bg)] rounded-lg font-cinzel text-sm hover:opacity-90 transition-opacity"
+          >
+            Voltar
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full">
