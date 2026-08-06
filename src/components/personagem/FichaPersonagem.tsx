@@ -13,7 +13,7 @@ import { ModalLevelUp } from '@/components/personagem/ModalLevelUp'
 import { createClient } from '@/lib/supabase/client'
 import { useBatalha } from '@/store/batalha'
 import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
-import { getEspacosMagiaPorClasse } from '@/lib/dados-dnd/espacos-magia'
+import { getEspacosMagiaPorClasse, ehPactoArcano } from '@/lib/dados-dnd/espacos-magia'
 import { getNivelPorXP, getProgressoXP } from '@/lib/dados-dnd/xp-niveis'
 import type { TipoDano } from '@/types/dnd'
 import { Search, X, MoreVertical } from 'lucide-react'
@@ -224,10 +224,20 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const [resultadosBusca, setResultadosBusca] = useState<Spell[]>([])
   const [buscandoMagia, setBuscandoMagia] = useState(false)
   const [espacosUtilizados, setEspacosUtilizados] = useState<Record<number, number>>(() => {
-    const raw = (p as { slots_magia?: Record<string, { usados: number }> | null }).slots_magia
+    const raw = p.slots_magia
     if (!raw) return {}
     return Object.fromEntries(Object.entries(raw).map(([k, v]) => [parseInt(k), v?.usados ?? 0]))
   })
+  const [espacosTotais, setEspacosTotais] = useState<Record<number, number>>(() => {
+    const raw = p.slots_magia
+    const temTotalSalvo = raw && Object.values(raw).some(v => (v?.total ?? 0) > 0)
+    if (raw && temTotalSalvo) {
+      return Object.fromEntries(Object.entries(raw).map(([k, v]) => [parseInt(k), v?.total ?? 0]))
+    }
+    const seed = getEspacosMagiaPorClasse(p.classe, p.nivel)
+    return Object.fromEntries(seed.map((total, idx) => [idx + 1, total]))
+  })
+  const [modoAjuste, setModoAjuste] = useState(false)
   const [magiaPopup, setMagiaPopup] = useState<Spell | null>(null)
 
   function atualizar<K extends keyof Personagem>(campo: K, valor: Personagem[K]) {
@@ -333,13 +343,10 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     }
   }
 
-  // Espaços de magia por classe e nível
-  const espacosPorNivel = getEspacosMagiaPorClasse(dados.classe, dados.nivel)
-
   function toggleEspaco(nivel: number, indice: number) {
     if (!podeEditar) return
     const utilizados = espacosUtilizados[nivel] ?? 0
-    const total = espacosPorNivel[nivel - 1] ?? 0
+    const total = espacosTotais[nivel] ?? 0
     let novoUtilizados: number
     if (indice < utilizados) {
       novoUtilizados = utilizados - 1
@@ -353,14 +360,14 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     salvarSlotsDb(novos)
   }
 
-  async function salvarSlotsDb(espacos: Record<number, number>) {
+  async function salvarSlotsDb(usados: Record<number, number> = espacosUtilizados, totais: Record<number, number> = espacosTotais) {
     const slotsDb: Record<string, { total: number; usados: number }> = {}
     const espacosBatalha: Record<number, { total: number; utilizados: number }> = {}
-    for (const [nStr, usados] of Object.entries(espacos)) {
-      const n = parseInt(nStr)
-      const total = espacosPorNivel[n - 1] ?? 0
-      slotsDb[nStr] = { total, usados }
-      if (total > 0) espacosBatalha[n] = { total, utilizados: usados }
+    for (let n = 1; n <= 9; n++) {
+      const total = totais[n] ?? 0
+      const u = usados[n] ?? 0
+      slotsDb[String(n)] = { total, usados: u }
+      if (total > 0) espacosBatalha[n] = { total, utilizados: u }
     }
     const supabase = createClient()
     const { error } = await supabase.from('personagens').update({ slots_magia: slotsDb }).eq('id', p.id)
@@ -373,6 +380,31 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     setEspacosUtilizados(vazios)
     salvarSlotsDb(vazios)
     toast.success('Descanso longo! Espaços de magia recuperados.')
+  }
+
+  function alterarTotalNivel(nivel: number, novoTotal: number) {
+    setEspacosTotais(prev => ({ ...prev, [nivel]: novoTotal }))
+  }
+
+  function salvarTotalNivel(nivel: number) {
+    const total = espacosTotais[nivel] ?? 0
+    const usadosAtual = espacosUtilizados[nivel] ?? 0
+    const novosUsados = usadosAtual > total ? { ...espacosUtilizados, [nivel]: total } : espacosUtilizados
+    if (novosUsados !== espacosUtilizados) setEspacosUtilizados(novosUsados)
+    salvarSlotsDb(novosUsados, espacosTotais)
+  }
+
+  function recalcularPelaClasse() {
+    if (!confirm('Recalcular espaços de magia pela classe? Isso substituirá os totais atuais.')) return
+    const seed = getEspacosMagiaPorClasse(dados.classe, dados.nivel)
+    const novosTotais = Object.fromEntries(seed.map((total, idx) => [idx + 1, total]))
+    const novosUsados: Record<number, number> = {}
+    for (let n = 1; n <= 9; n++) {
+      novosUsados[n] = Math.min(espacosUtilizados[n] ?? 0, novosTotais[n] ?? 0)
+    }
+    setEspacosTotais(novosTotais)
+    setEspacosUtilizados(novosUsados)
+    salvarSlotsDb(novosUsados, novosTotais)
   }
 
   // Defesas por tipo de dano
@@ -602,8 +634,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       {/* Cabeçalho */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="font-cinzel text-2xl text-[#d4a843]">{dados.nome}</h1>
-          <p className="text-[#8870a8] text-sm">{dados.raca} · {dados.classe} Nv{dados.nivel} · {dados.alinhamento}</p>
+          <h1 className="font-cinzel text-2xl text-[var(--gold)]">{dados.nome}</h1>
+          <p className="text-[var(--text3)] text-sm">{dados.raca} · {dados.classe} Nv{dados.nivel} · {dados.alinhamento}</p>
         </div>
         <div className="flex items-center gap-2">
           {[1, 2, 3].map(n => (
@@ -611,7 +643,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               key={n}
               onClick={() => setPagina(n)}
               className={`font-cinzel text-xs px-3 py-1.5 rounded border transition-colors ${
-                pagina === n ? 'bg-[#261a2e] border-[#d4a843] text-[#d4a843]' : 'border-[#4a3060] text-[#8870a8] hover:border-[#6b4890]'
+                pagina === n ? 'bg-[var(--surface)] border-[var(--gold)] text-[var(--gold)]' : 'border-[var(--border)] text-[var(--text3)] hover:border-[var(--border2)]'
               }`}
             >
               Página {n}
@@ -620,22 +652,22 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           <div className="relative">
             <button
               onClick={() => setMenuAberto(v => !v)}
-              className="font-cinzel text-xs px-2 py-1.5 rounded border border-[#4a3060] text-[#8870a8] hover:border-[#6b4890] transition-colors"
+              className="font-cinzel text-xs px-2 py-1.5 rounded border border-[var(--border)] text-[var(--text3)] hover:border-[var(--border2)] transition-colors"
             >
               <MoreVertical className="w-4 h-4" />
             </button>
             {menuAberto && (
-              <div className="absolute right-0 top-full mt-1 bg-[#1a1025] border border-[#4a3060] rounded shadow-xl z-50 min-w-[160px]">
+              <div className="absolute right-0 top-full mt-1 bg-[var(--bg2)] border border-[var(--border)] rounded shadow-xl z-50 min-w-[160px]">
                 <button
                   onClick={() => { setMenuAberto(false); abrirModalCopiar() }}
-                  className="w-full text-left px-3 py-2 text-xs font-cinzel text-[#8870a8] hover:bg-[#261a2e] hover:text-[#d4a843] transition-colors"
+                  className="w-full text-left px-3 py-2 text-xs font-cinzel text-[var(--text3)] hover:bg-[var(--surface)] hover:text-[var(--gold)] transition-colors"
                 >
                   Copiar personagem
                 </button>
                 {isDM && !p.user_id && p.tipo_personagem === 'jogador' && (
                   <button
                     onClick={() => { setMenuAberto(false); setModalTransferir(true) }}
-                    className="w-full text-left px-3 py-2 text-xs font-cinzel text-[#8870a8] hover:bg-[#261a2e] hover:text-[#d4a843] transition-colors border-t border-[#4a3060]"
+                    className="w-full text-left px-3 py-2 text-xs font-cinzel text-[var(--text3)] hover:bg-[var(--surface)] hover:text-[var(--gold)] transition-colors border-t border-[var(--border)]"
                   >
                     👤 Transferir para Jogador
                   </button>
@@ -645,7 +677,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           </div>
           <button
             onClick={voltar}
-            className="font-cinzel text-xs px-3 py-1.5 rounded border border-[#4a3060] text-[#8870a8] hover:border-[#6b4890] transition-colors"
+            className="font-cinzel text-xs px-3 py-1.5 rounded border border-[var(--border)] text-[var(--text3)] hover:border-[var(--border2)] transition-colors"
           >
             ← Voltar
           </button>
@@ -660,25 +692,25 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           {/* Header linha 1: Nome | Classe+Nível | Antecedente | Jogador */}
           <div className="grid grid-cols-4 gap-2">
             <div>
-              <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Nome</label>
+              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Nome</label>
               <input type="text" value={dados.nome ?? ''} onChange={e => atualizar('nome', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
             </div>
             <div className="grid grid-cols-2 gap-1">
               <div>
-                <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Classe</label>
+                <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Classe</label>
                 <input type="text" value={dados.classe ?? ''} onChange={e => atualizar('classe', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
               </div>
               <div>
-                <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Nível</label>
+                <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Nível</label>
                 <input type="number" value={dados.nivel} onChange={e => atualizar('nivel', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" disabled={!podeEditar} />
               </div>
             </div>
             <div>
-              <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Antecedente</label>
+              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Antecedente</label>
               <input type="text" value={dados.antecedente ?? ''} onChange={e => atualizar('antecedente', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
             </div>
             <div>
-              <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Jogador</label>
+              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Jogador</label>
               <input type="text" value={dados.jogador_nome ?? ''} onChange={e => atualizar('jogador_nome', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
             </div>
           </div>
@@ -690,15 +722,15 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               onChange={val => atualizar('inspiracao', val as never)}
             />
             <div>
-              <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Raça</label>
+              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Raça</label>
               <input type="text" value={dados.raca ?? ''} onChange={e => atualizar('raca', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
             </div>
             <div>
-              <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Tendência</label>
+              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Tendência</label>
               <input type="text" value={dados.alinhamento ?? ''} onChange={e => atualizar('alinhamento', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
             </div>
             <div>
-              <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Pontos de Experiência</label>
+              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Pontos de Experiência</label>
               <InputNumerico
                 value={dados.pontos_experiencia ?? 0}
                 onChange={novaXP => {
@@ -717,17 +749,17 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                 const xp = dados.pontos_experiencia ?? 0
                 const prog = getProgressoXP(xp)
                 if (!prog.proximoNivel) {
-                  return <p className="text-[9px] text-[#d4a843] font-cinzel mt-0.5">⭐ Nível máximo!</p>
+                  return <p className="text-[9px] text-[var(--gold)] font-cinzel mt-0.5">⭐ Nível máximo!</p>
                 }
                 const xpFaltando = prog.proximoNivel.xpNecessario - xp
                 return (
                   <div className="mt-0.5 space-y-0.5">
-                    <div className="h-1.5 bg-[#1e1525] rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-[#9b59b6] to-[#d4a843] rounded-full transition-all" style={{ width: `${prog.percentual}%` }} />
+                    <div className="h-1.5 bg-[var(--bg3)] rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-[var(--accent)] to-[var(--gold)] rounded-full transition-all" style={{ width: `${prog.percentual}%` }} />
                     </div>
-                    <div className="flex justify-between text-[9px] text-[#8870a8]">
+                    <div className="flex justify-between text-[9px] text-[var(--text3)]">
                       <span>Nv{prog.nivelAtual.nivel}</span>
-                      <span className="text-[#d4a843]">−{xpFaltando.toLocaleString('pt-BR')} XP</span>
+                      <span className="text-[var(--gold)]">−{xpFaltando.toLocaleString('pt-BR')} XP</span>
                       <span>Nv{prog.proximoNivel.nivel}</span>
                     </div>
                   </div>
@@ -852,15 +884,15 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               {/* CA / Iniciativa / Deslocamento */}
               <div className="grid grid-cols-3 gap-1">
                 <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">CA</label>
+                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">CA</label>
                   <input type="number" value={dados.ca} onChange={e => atualizar('ca', parseInt(e.target.value) || 10)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
                 <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Iniciativa</label>
+                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Iniciativa</label>
                   <input type="number" value={dados.iniciativa} onChange={e => atualizar('iniciativa', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
                 <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Desl. (m)</label>
+                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Desl. (m)</label>
                   <input type="number" value={dados.deslocamento} onChange={e => atualizar('deslocamento', parseInt(e.target.value) || 9)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
               </div>
@@ -868,15 +900,15 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               {/* Pontos de Vida */}
               <div className="grid grid-cols-3 gap-1">
                 <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Máx</label>
+                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase block">PV Máx</label>
                   <input type="number" value={dados.pv_maximo} onChange={e => atualizar('pv_maximo', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
                 <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Atual</label>
+                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase block">PV Atual</label>
                   <input type="number" value={dados.pv_atual} onChange={e => atualizar('pv_atual', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
                 <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase block">PV Temp</label>
+                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase block">PV Temp</label>
                   <input type="number" value={dados.pv_temporarios} onChange={e => atualizar('pv_temporarios', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
               </div>
@@ -885,21 +917,21 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               <PainelGrimorio titulo="Dados de Vida & Morte" compacto>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Dado de Vida</label>
+                    <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Dado de Vida</label>
                     <input type="text" value={dados.dado_vida ?? ''} onChange={e => atualizar('dado_vida', e.target.value)} className="w-full input-dd text-center" placeholder="d8" />
                   </div>
                   <div>
-                    <label className="text-[#8870a8] text-[9px] font-cinzel uppercase mb-1 block">Teste de Morte</label>
+                    <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase mb-1 block">Teste de Morte</label>
                     <div className="flex items-center gap-1 mb-1">
-                      <span className="text-[#27ae60] text-[9px] font-cinzel w-12">Sucesso</span>
+                      <span className="text-[var(--green)] text-[9px] font-cinzel w-12">Sucesso</span>
                       {[0, 1, 2].map(i => (
-                        <button key={i} onClick={() => setTesteMorte(prev => ({ ...prev, sucessos: prev.sucessos === i + 1 ? i : i + 1 }))} className={`w-4 h-4 rounded-full border transition-colors ${testeMorte.sucessos > i ? 'bg-[#27ae60] border-[#27ae60]' : 'border-[#4a3060] hover:border-[#27ae60]'}`} />
+                        <button key={i} onClick={() => setTesteMorte(prev => ({ ...prev, sucessos: prev.sucessos === i + 1 ? i : i + 1 }))} className={`w-4 h-4 rounded-full border transition-colors ${testeMorte.sucessos > i ? 'bg-[var(--green)] border-[var(--green)]' : 'border-[var(--border)] hover:border-[var(--green)]'}`} />
                       ))}
                     </div>
                     <div className="flex items-center gap-1">
-                      <span className="text-[#e74c3c] text-[9px] font-cinzel w-12">Falha</span>
+                      <span className="text-[var(--red2)] text-[9px] font-cinzel w-12">Falha</span>
                       {[0, 1, 2].map(i => (
-                        <button key={i} onClick={() => setTesteMorte(prev => ({ ...prev, falhas: prev.falhas === i + 1 ? i : i + 1 }))} className={`w-4 h-4 rounded-full border transition-colors ${testeMorte.falhas > i ? 'bg-[#e74c3c] border-[#e74c3c]' : 'border-[#4a3060] hover:border-[#e74c3c]'}`} />
+                        <button key={i} onClick={() => setTesteMorte(prev => ({ ...prev, falhas: prev.falhas === i + 1 ? i : i + 1 }))} className={`w-4 h-4 rounded-full border transition-colors ${testeMorte.falhas > i ? 'bg-[var(--red2)] border-[var(--red2)]' : 'border-[var(--border)] hover:border-[var(--red2)]'}`} />
                       ))}
                     </div>
                   </div>
@@ -916,7 +948,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                       <input value={atq.dano} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], dano: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="1d8+3" />
                     </div>
                   ))}
-                  <button onClick={() => atualizar('ataques', [...dados.ataques, { nome: '', bonus_ataque: '', dano: '', tipo_dano: '', notas: '' }])} className="text-xs text-[#9b59b6] hover:text-[#c39bd3] transition-colors mt-1">+ Adicionar ataque</button>
+                  <button onClick={() => atualizar('ataques', [...dados.ataques, { nome: '', bonus_ataque: '', dano: '', tipo_dano: '', notas: '' }])} className="text-xs text-[var(--accent)] hover:text-[var(--accent2)] transition-colors mt-1">+ Adicionar ataque</button>
                 </div>
               </PainelGrimorio>
 
@@ -927,7 +959,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                     { key: 'pc',      label: 'PC', cor: 'text-[#cd7f32]' },
                     { key: 'pp',      label: 'PP', cor: 'text-[#c0c0c0]' },
                     { key: 'po',      label: 'PO', cor: 'text-[var(--gold)]' },
-                    { key: 'pe',      label: 'PE', cor: 'text-[#50c878]' },
+                    { key: 'pe',      label: 'PE', cor: 'text-[var(--green2)]' },
                     { key: 'platina', label: 'PL', cor: 'text-[var(--accent2)]' },
                   ] as const).map(({ key, label, cor }) => (
                     <div key={key}>
@@ -1010,7 +1042,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                 { label: 'Características & Talentos', key: 'caracteristicas_talentos', rows: 6 },
               ].map(({ label, key, rows }) => (
                 <div key={key}>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">{label}</label>
+                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">{label}</label>
                   <textarea
                     value={(dados[key as keyof Personagem] as string) ?? ''}
                     onChange={e => atualizar(key as keyof Personagem, e.target.value as never)}
@@ -1028,7 +1060,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                     return (
                       <div key={id} className="flex items-center gap-1.5 text-[10px]">
                         <span className="w-4">{icone}</span>
-                        <span className="text-[#b8a8cc] flex-1 font-crimson">{nome}</span>
+                        <span className="text-[var(--text2)] flex-1 font-crimson">{nome}</span>
                         {(['resistencia', 'imunidade', 'vulnerabilidade'] as TipoDefesa[]).map(d => (
                           <button
                             key={d}
@@ -1036,9 +1068,9 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                             className={`px-1 py-0.5 rounded text-[9px] font-cinzel border transition-colors ${
                               defesa === d
                                 ? d === 'resistencia' ? 'bg-[#3498db]/30 border-[#3498db] text-[#3498db]'
-                                : d === 'imunidade' ? 'bg-[#27ae60]/30 border-[#27ae60] text-[#27ae60]'
-                                : 'bg-[#e74c3c]/30 border-[#e74c3c] text-[#e74c3c]'
-                                : 'border-[#4a3060] text-[#4a3060] hover:border-[#6b4890]'
+                                : d === 'imunidade' ? 'bg-[var(--green)]/30 border-[var(--green)] text-[var(--green)]'
+                                : 'bg-[var(--red2)]/30 border-[var(--red2)] text-[var(--red2)]'
+                                : 'border-[var(--border)] text-[var(--border)] hover:border-[var(--border2)]'
                             }`}
                             title={{ resistencia: '🛡️ Resistência', imunidade: '🚫 Imunidade', vulnerabilidade: '⚡ Vulnerabilidade' }[d]}
                           >
@@ -1068,7 +1100,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               { label: 'Cabelo', key: 'cor_cabelo' },
             ].map(({ label, key }) => (
               <div key={key}>
-                <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">{label}</label>
+                <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">{label}</label>
                 <input type="text" value={(dados[key as keyof Personagem] as string) ?? ''} onChange={e => atualizar(key as keyof Personagem, e.target.value as never)} className="w-full input-dd text-sm" />
               </div>
             ))}
@@ -1080,7 +1112,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
             <div className="space-y-3">
               <PainelGrimorio titulo="Aparência Física" compacto>
                 <div className="mb-2">
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">URL da Imagem</label>
+                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">URL da Imagem</label>
                   <input type="url" value={dados.imagem_url ?? ''} onChange={e => atualizar('imagem_url', e.target.value)} className="w-full input-dd text-sm mt-1" placeholder="https://..." />
                   {dados.imagem_url && (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -1088,7 +1120,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                   )}
                 </div>
                 <div>
-                  <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Descrição da Aparência</label>
+                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Descrição da Aparência</label>
                   <textarea value={dados.aparencia ?? ''} onChange={e => atualizar('aparencia', e.target.value)} rows={3} className="w-full input-dd resize-none text-sm" />
                 </div>
               </PainelGrimorio>
@@ -1121,62 +1153,116 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           <PainelGrimorio titulo="Conjuração" ornamentado>
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Classe Conjuradora</label>
-                <input type="text" className="w-full input-dd" placeholder="Mago, Clérigo..." />
+                <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Classe Conjuradora</label>
+                <input type="text" value={dados.classe_conjuradora ?? ''} onChange={e => atualizar('classe_conjuradora', e.target.value)} className="w-full input-dd" placeholder="Mago, Clérigo..." disabled={!podeEditar} />
               </div>
               <div>
-                <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Atributo de Conjuração</label>
-                <input type="text" className="w-full input-dd" placeholder="Inteligência" />
+                <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Atributo de Conjuração</label>
+                <input type="text" value={dados.atributo_conjuracao ?? ''} onChange={e => atualizar('atributo_conjuracao', e.target.value)} className="w-full input-dd" placeholder="Inteligência" disabled={!podeEditar} />
               </div>
               <div>
-                <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">CD de Magia</label>
-                <input type="number" className="w-full input-dd text-center" />
+                <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">CD de Magia</label>
+                <input type="number" value={dados.cd_magia ?? ''} onChange={e => atualizar('cd_magia', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
               </div>
             </div>
 
             {/* Espaços de magia */}
             <DivisorOrnamentado texto="Espaços de Magia" />
-            <div className="grid grid-cols-3 gap-3 mb-3">
-              {espacosPorNivel.map((total, idx) => {
-                if (total === 0) return null
-                const nivel = idx + 1
-                const utilizados = espacosUtilizados[nivel] ?? 0
-                return (
-                  <div key={nivel} className="bg-[#1e1525] rounded p-2">
-                    <div className="text-[#8870a8] text-[9px] font-cinzel uppercase mb-1">Nível {nivel}</div>
-                    <div className="flex gap-1 flex-wrap">
-                      {Array.from({ length: total }).map((_, i) => (
-                        <button
-                          key={i}
-                          onClick={() => toggleEspaco(nivel, i)}
+            {ehPactoArcano(dados.classe) && (
+              <p className="text-[var(--gold)] text-[10px] font-crimson mb-2">
+                Pacto Arcano — todos os espaços são do mesmo nível e voltam em descanso curto.
+              </p>
+            )}
+            {!modoAjuste && Object.values(espacosTotais).every(t => !t) ? (
+              <p className="text-[var(--border)] text-sm font-crimson text-center py-3">
+                Nenhum espaço de magia. Use ✏️ Ajustar para definir.
+              </p>
+            ) : (
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                {Array.from({ length: 9 }).map((_, idx) => {
+                  const nivel = idx + 1
+                  const total = espacosTotais[nivel] ?? 0
+                  if (!modoAjuste && total === 0) return null
+                  const utilizados = espacosUtilizados[nivel] ?? 0
+                  return (
+                    <div key={nivel} className="bg-[var(--bg3)] rounded p-2">
+                      <div className="text-[var(--text3)] text-[9px] font-cinzel uppercase mb-1">Nível {nivel}</div>
+                      {modoAjuste ? (
+                        <input
+                          type="number"
+                          min={0}
+                          max={9}
+                          value={total}
+                          onChange={e => alterarTotalNivel(nivel, Math.max(0, Math.min(9, parseInt(e.target.value) || 0)))}
+                          onBlur={() => salvarTotalNivel(nivel)}
+                          className="w-full input-dd text-center"
                           disabled={!podeEditar}
-                          className={`text-base transition-colors ${
-                            i < utilizados ? 'text-[#4a3060]' : 'text-[#9b59b6]'
-                          } hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed`}
-                          title={i < utilizados ? 'Espaço usado' : 'Espaço disponível'}
-                        >
-                          {i < utilizados ? '○' : '●'}
-                        </button>
-                      ))}
+                        />
+                      ) : (
+                        <>
+                          <div className="flex gap-1 flex-wrap">
+                            {Array.from({ length: total }).map((_, i) => (
+                              <button
+                                key={i}
+                                onClick={() => toggleEspaco(nivel, i)}
+                                disabled={!podeEditar}
+                                className={`text-base transition-colors ${
+                                  i < utilizados ? 'text-[var(--text3)]/40' : 'text-[var(--accent)]'
+                                } hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed`}
+                                title={i < utilizados ? 'Espaço usado' : 'Espaço disponível'}
+                              >
+                                {i < utilizados ? '○' : '●'}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="text-[var(--border)] text-[9px] mt-1">{utilizados}/{total} usados</div>
+                        </>
+                      )}
                     </div>
-                    <div className="text-[#4a3060] text-[9px] mt-1">{utilizados}/{total} usados</div>
-                  </div>
-                )
-              })}
-            </div>
-            <button
-              onClick={descansarLongo}
-              className="text-xs font-cinzel text-[#27ae60] border border-[#27ae60]/40 px-3 py-1 rounded hover:bg-[#27ae60]/10 transition-colors"
-            >
-              🌙 Descanso Longo
-            </button>
+                  )
+                })}
+              </div>
+            )}
+            {modoAjuste ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={recalcularPelaClasse}
+                  className="text-xs font-cinzel text-[var(--accent)] border border-[var(--accent)]/40 px-3 py-1 rounded hover:bg-[var(--accent)]/10 transition-colors"
+                >
+                  ↺ Recalcular pela classe
+                </button>
+                <button
+                  onClick={() => setModoAjuste(false)}
+                  className="text-xs font-cinzel text-[var(--green)] border border-[var(--green)]/40 px-3 py-1 rounded hover:bg-[var(--green)]/10 transition-colors"
+                >
+                  ✓ Concluir
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={descansarLongo}
+                  className="text-xs font-cinzel text-[var(--green)] border border-[var(--green)]/40 px-3 py-1 rounded hover:bg-[var(--green)]/10 transition-colors"
+                >
+                  🌙 Descanso Longo
+                </button>
+                {podeEditar && (
+                  <button
+                    onClick={() => setModoAjuste(true)}
+                    className="text-xs font-cinzel text-[var(--text3)] border border-[var(--border)] px-3 py-1 rounded hover:border-[var(--border2)] transition-colors"
+                  >
+                    ✏️ Ajustar
+                  </button>
+                )}
+              </div>
+            )}
           </PainelGrimorio>
 
           {/* Magias conhecidas */}
           <PainelGrimorio titulo="Magias Conhecidas" compacto>
             {/* Busca */}
             <div className="relative mb-3">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#8870a8]" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
               <input
                 type="text"
                 value={buscaMagia}
@@ -1185,21 +1271,21 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                 className="w-full input-dd pl-9 text-sm"
               />
               {resultadosBusca.length > 0 && (
-                <div className="absolute top-full left-0 right-0 z-50 bg-[#261a2e] border border-[#4a3060] rounded shadow-xl mt-1 max-h-48 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 z-50 bg-[var(--surface)] border border-[var(--border)] rounded shadow-xl mt-1 max-h-48 overflow-y-auto">
                   {resultadosBusca.map(m => (
                     <button
                       key={m.id}
                       onClick={() => adicionarMagia(m)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-[#1e1525] transition-colors flex items-center justify-between"
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg3)] transition-colors flex items-center justify-between"
                     >
-                      <span className="text-[#e8dff0] font-crimson">{m.name_pt}</span>
-                      <span className="text-[#8870a8] text-xs">{m.level === 0 ? 'Truque' : `Nv${m.level}`} · {m.school_pt}</span>
+                      <span className="text-[var(--text)] font-crimson">{m.name_pt}</span>
+                      <span className="text-[var(--text3)] text-xs">{m.level === 0 ? 'Truque' : `Nv${m.level}`} · {m.school_pt}</span>
                     </button>
                   ))}
                 </div>
               )}
               {buscandoMagia && (
-                <div className="absolute top-full left-0 right-0 z-50 bg-[#261a2e] border border-[#4a3060] rounded p-2 text-center text-[#8870a8] text-xs mt-1">
+                <div className="absolute top-full left-0 right-0 z-50 bg-[var(--surface)] border border-[var(--border)] rounded p-2 text-center text-[var(--text3)] text-xs mt-1">
                   Buscando...
                 </div>
               )}
@@ -1207,31 +1293,31 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
             {/* Lista de magias por nível */}
             {Object.keys(magiasPorNivel).length === 0 ? (
-              <p className="text-[#4a3060] text-sm font-crimson text-center py-4">Nenhuma magia adicionada</p>
+              <p className="text-[var(--border)] text-sm font-crimson text-center py-4">Nenhuma magia adicionada</p>
             ) : (
               <div className="space-y-3">
                 {Object.entries(magiasPorNivel)
                   .sort(([a], [b]) => parseInt(a) - parseInt(b))
                   .map(([nivel, magias]) => (
                     <div key={nivel}>
-                      <p className="text-[#8870a8] text-[10px] font-cinzel uppercase tracking-wider mb-1">
+                      <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider mb-1">
                         {parseInt(nivel) === 0 ? 'Truques' : `${nivel}º Nível`}
                       </p>
                       <div className="space-y-0.5">
                         {magias.map(m => (
-                          <div key={m.id} className="flex items-center justify-between px-2 py-1 bg-[#1e1525] rounded hover:bg-[#261a2e] transition-colors group">
+                          <div key={m.id} className="flex items-center justify-between px-2 py-1 bg-[var(--bg3)] rounded hover:bg-[var(--surface)] transition-colors group">
                             <button
                               onClick={() => setMagiaPopup(m.spell)}
                               className="flex-1 text-left min-w-0"
                             >
-                              <span className="text-[#b8a8cc] text-sm font-crimson group-hover:text-[#d4a843] transition-colors">{m.spell.name_pt}</span>
-                              <span className="text-[#4a3060] text-[10px] ml-1.5 group-hover:text-[#8870a8]">
+                              <span className="text-[var(--text2)] text-sm font-crimson group-hover:text-[var(--gold)] transition-colors">{m.spell.name_pt}</span>
+                              <span className="text-[var(--border)] text-[10px] ml-1.5 group-hover:text-[var(--text3)]">
                                 {m.spell.level === 0 ? 'Truque' : `Nv${m.spell.level}`}
                               </span>
                             </button>
                             <button
                               onClick={() => removerMagia(m.id)}
-                              className="text-[#4a3060] hover:text-[#e74c3c] transition-colors flex-shrink-0 ml-2"
+                              className="text-[var(--border)] hover:text-[var(--red2)] transition-colors flex-shrink-0 ml-2"
                               title="Remover"
                             >
                               <X className="w-3 h-3" />
@@ -1315,7 +1401,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                   <span className="text-[var(--accent)] text-xs border border-[var(--accent)] px-2 py-0.5 rounded font-cinzel">Concentração</span>
                 )}
                 {magiaPopup.ritual && (
-                  <span className="text-[#facc15] text-xs border border-[#facc15] px-2 py-0.5 rounded font-cinzel">Ritual</span>
+                  <span className="text-[var(--gold2)] text-xs border border-[var(--gold2)] px-2 py-0.5 rounded font-cinzel">Ritual</span>
                 )}
               </div>
               {magiaPopup.description_pt && (
@@ -1572,7 +1658,7 @@ function InputNumerico({ value, onChange, min = 0, max, className, placeholder }
 function InspiracaoHeroica({ valor, onChange }: { valor: number; onChange: (novo: number) => void }) {
   return (
     <div>
-      <label className="text-[#8870a8] text-[9px] font-cinzel uppercase">Inspiração Heroica</label>
+      <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Inspiração Heroica</label>
       <div className="flex items-center gap-1 mt-0.5">
         {[1, 2, 3, 4, 5].map(i => (
           <button
@@ -1586,7 +1672,7 @@ function InspiracaoHeroica({ valor, onChange }: { valor: number; onChange: (novo
           </button>
         ))}
       </div>
-      <p className="text-[9px] text-[#8870a8] mt-0.5">
+      <p className="text-[9px] text-[var(--text3)] mt-0.5">
         {valor === 0 ? 'Sem inspiração' : `${valor}/5 — clique em ⭐ para usar uma`}
       </p>
     </div>

@@ -337,6 +337,10 @@ export interface Personagem {
   resistencias: TipoDano[]
   imunidades: TipoDano[]
   vulnerabilidades: TipoDano[]
+  classe_conjuradora: string | null
+  atributo_conjuracao: string | null
+  cd_magia: number | null
+  slots_magia: Record<string, { total: number; usados: number }> | null
   dndbeyond_url: string | null
   ativo: boolean
   criado_em: string

@@ -43,23 +43,45 @@ const CLASSE_CONJURADORA_MAP: Record<string, string> = {
   'paladin': 'Paladin',
   'ranger': 'Ranger',
   'warlock': 'Warlock',
+  'cavaleiro arcano': 'Eldritch_Knight',
+  'eldritch knight': 'Eldritch_Knight',
+  'trapaceiro arcano': 'Arcane_Trickster',
+  'arcane trickster': 'Arcane_Trickster',
 }
 
 const NIVEL_CHAVES = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th'] as const
+
+const SEM_ESPACOS = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 export function getEspacosMagia(nivel: number): number[] {
   return ESPACOS_MAGIA[Math.min(Math.max(nivel, 1), 20)] || ESPACOS_MAGIA[1]
 }
 
+export function ehPactoArcano(classe: string | null | undefined): boolean {
+  const classeNormalizada = classe ? classe.trim().toLowerCase() : ''
+  return CLASSE_CONJURADORA_MAP[classeNormalizada] === 'Warlock'
+}
+
 export function getEspacosMagiaPorClasse(classe: string | null | undefined, nivel: number): number[] {
   const classeNormalizada = classe ? classe.trim().toLowerCase() : ''
   const classeKey = CLASSE_CONJURADORA_MAP[classeNormalizada]
-  const classeDb = classeKey ? (SPELL_SLOTS_DB as Record<string, any>)[classeKey] : null
+
+  if (!classeKey) {
+    return SEM_ESPACOS
+  }
+
+  const classeDb = (SPELL_SLOTS_DB as Record<string, any>)[classeKey]
   const nivelStr = String(Math.min(Math.max(nivel, 1), 20))
   const nivelDados = classeDb?.levels?.[nivelStr]
 
   if (!nivelDados) {
-    return getEspacosMagia(nivel)
+    return SEM_ESPACOS
+  }
+
+  if (typeof nivelDados.slots === 'number' && typeof nivelDados.slot_level === 'number') {
+    const pacto = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    pacto[nivelDados.slot_level - 1] = nivelDados.slots
+    return pacto
   }
 
   return NIVEL_CHAVES.map(key => Number(nivelDados[key] ?? 0))
