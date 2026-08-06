@@ -1,3 +1,6 @@
+// Desativa todas as travas de plano. Voltar a comercializar = false.
+export const MODO_MESA_LIVRE = true
+
 export type PlanoId = 'free' | 'heroi' | 'solo' | 'mesa_pro' | 'guild_master' | 'dm_supremo'
 
 export interface LimitesPlano {
@@ -144,16 +147,20 @@ export const PLANOS: Record<PlanoId, Plano> = {
 const ORDEM_PLANOS: PlanoId[] = ['free', 'heroi', 'solo', 'mesa_pro', 'guild_master', 'dm_supremo']
 
 export function getPlano(planoId: string | null | undefined): Plano {
-  return PLANOS[(planoId as PlanoId) ?? 'free'] ?? PLANOS.free
+  const plano = PLANOS[(planoId as PlanoId) ?? 'free'] ?? PLANOS.free
+  if (MODO_MESA_LIVRE) return { ...plano, limites: PLANOS.dm_supremo.limites }
+  return plano
 }
 
 export function planoSuficiente(planoAtual: string | null | undefined, planoMinimo: PlanoId): boolean {
+  if (MODO_MESA_LIVRE) return true
   const idxAtual = ORDEM_PLANOS.indexOf((planoAtual as PlanoId) ?? 'free')
   const idxMin = ORDEM_PLANOS.indexOf(planoMinimo)
   return idxAtual >= idxMin
 }
 
 export function podeUsar(planoId: string | null | undefined, recurso: keyof LimitesPlano): boolean {
+  if (MODO_MESA_LIVRE) return true
   const plano = getPlano(planoId)
   const limite = plano.limites[recurso]
   if (typeof limite === 'boolean') return limite

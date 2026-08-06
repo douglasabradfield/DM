@@ -7,7 +7,8 @@ import { PROMPTS_RAPIDOS } from '@/lib/claude/prompts'
 import { useBatalha } from '@/store/batalha'
 import { useCampanha } from '@/store/campanha'
 import { createClient } from '@/lib/supabase/client'
-import { LIMITES_IA } from '@/lib/ia/limites'
+import { getLimiteIA } from '@/lib/ia/limites'
+import { MODO_MESA_LIVRE } from '@/lib/planos'
 import { Bot, Send, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -54,8 +55,9 @@ export default function IAPage() {
 
   useEffect(() => { carregarUso() }, [carregarUso])
 
-  const limite = LIMITES_IA[plano] ?? 0
+  const limite = getLimiteIA(plano)
   const pctUso = limite === Infinity ? 0 : Math.min((usoMes / limite) * 100, 100)
+  const iaBloqueada = !MODO_MESA_LIVRE && plano === 'free'
 
   async function enviar(pergunta?: string) {
     const texto = pergunta ?? input.trim()
@@ -190,7 +192,7 @@ export default function IAPage() {
               />
             </div>
           )}
-          {plano === 'free' && (
+          {iaBloqueada && (
             <p className="text-[var(--red2)] text-[9px] mt-1 font-crimson">Plano gratuito sem acesso à IA</p>
           )}
         </div>
@@ -272,18 +274,18 @@ export default function IAPage() {
               placeholder="Pergunte sobre regras, peça ajuda com NPCs, encontros... (Enter para enviar)"
               rows={2}
               className="flex-1 input-dd resize-none text-sm"
-              disabled={plano === 'free'}
+              disabled={iaBloqueada}
             />
             <BotaoRunico
               variante="primario"
               onClick={() => enviar()}
-              disabled={!input.trim() || carregando || plano === 'free'}
+              disabled={!input.trim() || carregando || iaBloqueada}
               className="self-end"
             >
               <Send className="w-4 h-4" />
             </BotaoRunico>
           </div>
-          {plano === 'free' && (
+          {iaBloqueada && (
             <p className="text-[var(--red2)] text-xs text-center mt-1 font-crimson">
               Faça upgrade para acessar o Assistente IA
             </p>

@@ -8,6 +8,7 @@ import type { Campanha } from '@/types/database'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { cn } from '@/lib/utils'
+import { MODO_MESA_LIVRE } from '@/lib/planos'
 import { Plus, X, BookOpen, UserPlus, ChevronLeft, Link2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -501,12 +502,12 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
       )}
 
       {/* Jogadores com Plano Efetivo */}
-      {ehDm && ['mesa_pro', 'guild_master', 'dm_supremo'].includes(userPlano) && (
+      {ehDm && (MODO_MESA_LIVRE || ['mesa_pro', 'guild_master', 'dm_supremo'].includes(userPlano)) && (
         <SecaoMembrosEfetivos campanhaId={campanha.id} userPlano={userPlano} />
       )}
 
       {/* Zona de Perigo */}
-      {ehDm && ['guild_master', 'dm_supremo'].includes(userPlano) && (
+      {ehDm && (MODO_MESA_LIVRE || ['guild_master', 'dm_supremo'].includes(userPlano)) && (
         <div className="pt-4 border-t border-[var(--border)]">
           {!confirmandoApagar ? (
             <button

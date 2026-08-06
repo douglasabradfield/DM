@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { MODO_MESA_LIVRE } from '@/lib/planos'
 
 const LIMITE_POR_PLANO: Record<string, number> = {
   free: 1,
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
   const plano = perfil?.plano ?? 'free'
   const limite = LIMITE_POR_PLANO[plano]
 
-  if (limite !== undefined) {
+  if (!MODO_MESA_LIVRE && limite !== undefined) {
     const { count } = await admin
       .from('campaign_members')
       .select('*', { count: 'exact', head: true })

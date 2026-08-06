@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { Lock } from 'lucide-react'
+import { MODO_MESA_LIVRE } from '@/lib/planos'
 
 interface BloqueioPlanoProps {
   recurso: string
@@ -11,6 +12,7 @@ interface BloqueioPlanoProps {
 }
 
 export function BloqueioPlano({ recurso, planoNecessario, className = '', children }: BloqueioPlanoProps) {
+  if (MODO_MESA_LIVRE) return <>{children}</>
   return (
     <div className={`flex flex-col items-center justify-center p-8 text-center h-full ${className}`}>
       <div className="w-16 h-16 rounded-full border-2 border-[var(--border)] flex items-center justify-center mb-4">

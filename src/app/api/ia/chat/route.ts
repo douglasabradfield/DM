@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { getClaudeClient, MODELO_CLAUDE } from '@/lib/claude/client'
 import { buildSystemPrompt } from '@/lib/claude/prompts'
 import { createClient } from '@/lib/supabase/server'
-import { LIMITES_IA } from '@/lib/ia/limites'
+import { LIMITES_IA, getLimiteIA } from '@/lib/ia/limites'
 
 export { LIMITES_IA }
 
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     .single()
 
   const plano = profile?.plano ?? 'free'
-  const limite = LIMITES_IA[plano] ?? 0
+  const limite = getLimiteIA(plano)
 
   // Verificar uso atual
   const agora = new Date()
