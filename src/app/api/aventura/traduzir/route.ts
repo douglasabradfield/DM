@@ -1,36 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import type { Local, Capitulo, ConteudoAventura } from '@/types/database'
 
 export const maxDuration = 60
 
 const TAMANHO_LOTE = 6
-
-interface Local {
-  nome: string
-  codigo: string
-  notas_dm: string
-  texto_narrativo: string
-  tesouros: string[]
-  armadilhas: string[]
-  criaturas: string[]
-}
-
-interface Capitulo {
-  numero: number
-  titulo_pt: string
-  titulo_en: string
-  plano: string
-  nivel_recomendado: string
-  resumo: string
-  npcs: Array<{ nome: string; descricao: string }>
-  locais: Local[]
-  traduzido?: boolean
-}
-
-interface ConteudoAventura {
-  capitulos: Capitulo[]
-  [key: string]: unknown
-}
 
 function montarPrompt(lote: Local[]): string {
   return `Você é tradutor especializado em RPG de mesa D&D 5e. Traduza para português brasileiro.

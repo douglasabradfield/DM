@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import type { ConteudoAventura } from '@/types/database'
 
 export const maxDuration = 60
+
+// LIMITAÇÃO CONHECIDA: max_tokens=8096 e a aventura inteira é processada numa
+// única chamada à IA. Aventuras grandes truncam a resposta (ver flag `truncado`).
+// Solução futura: processar por capítulo, espelhando o padrão de offset em
+// src/app/api/aventura/traduzir/route.ts.
 
 export async function POST(req: NextRequest) {
   console.log('=== INICIO PROCESSAR AVENTURA ===')
@@ -93,88 +99,61 @@ INSTRUÇÕES:
 - Formato de origem: ${formatoDesc}
 - ${ext === 'pdf' ? 'O texto foi extraído de PDF e pode ter imperfeições: espaços extras, quebras de linha inesperadas, mistura de colunas, fragmentos de tabelas' : 'O texto está em formato legível (Markdown/texto simples) e deve estar bem estruturado'}
 - "Texto narrativo" = o que o DM lê em voz alta para os jogadores (frequentemente em itálico ou caixas destacadas nos livros impressos)
-- "Notas do DM" = instruções táticas, informações secretas, contexto de fundo, mecânicas — o que apenas o DM precisa saber
-- Se uma informação não existir no texto, use null ou [] — NUNCA invente conteúdo
-- Inclua TODOS os locais, salas, cenas e encontros mencionados — não pule nenhum
-- Para criaturas: se o CR não aparecer no texto, estime baseado no sistema e no contexto
+- "Notas do DM" = instruções táticas, informações secretas, contexto de fundo, mecânicas, armadilhas e segredos — tudo que apenas o DM precisa saber vai neste campo
+- Campos de texto nunca devem vir null — use string vazia ("")
+- tesouros[] e armadilhas[] são arrays de STRING, nunca de objeto. Cada elemento é uma frase descritiva completa em português (ex: "50 peças de ouro escondidas sob a tábua solta do assoalho")
+- criaturas[] é um array de SLUGS EM INGLÊS do SRD 5e, em minúsculas com hífen (ex: "goblin", "clay-golem", "adult-black-dragon", "vampire-spawn"). Nunca traduza esses valores, nunca use nome em português, nunca invente slug — se não houver criatura no local, devolva array vazio
+- artefato_central e mecanica_especial são opcionais: omita essas chaves do JSON se a aventura não tiver esses elementos
+- Inclua TODOS os locais, salas e cenas mencionados — não pule nenhum
 - Para aventuras sem estrutura de capítulos explícita: crie um único capítulo com todos os locais
-- Para stat blocks: extraia nome e CR; não invente atributos ausentes no texto
 - Onde havia imagem no PDF, ignore marcadores como [image] ou [figure]
 ${truncado ? '- ATENÇÃO: o texto foi truncado pois a aventura é muito grande. Processe o máximo possível com o texto disponível.' : ''}
 
 TEXTO DA AVENTURA (${formatoDesc}):
 ${textoAventura}
 
-Formato de saída (APENAS JSON válido):
+Formato de saída (APENAS JSON válido, nada além dele):
 {
   "titulo": "título da aventura em português",
+  "titulo_original": "título no idioma original do documento",
   "sistema": "D&D 5e",
   "nivel_recomendado": "1-4",
   "numero_jogadores": "3-5",
-  "sinopse": "resumo da trama em 2-3 frases",
+  "resumo_geral": "resumo da trama em 2-3 frases",
+  "npcs_globais": [
+    { "nome": "", "papel": "", "descricao": "", "motivacao": "" }
+  ],
   "capitulos": [
     {
       "numero": 1,
-      "titulo": "Nome do Capítulo",
-      "contexto_dm": "Resumo narrativo do capítulo para o DM entender o que acontece",
+      "titulo_pt": "Nome do capítulo em português",
+      "titulo_en": "Nome do capítulo no idioma original",
+      "plano": "Plano de existência ou região onde o capítulo se passa",
+      "nivel_recomendado": "3-5",
+      "resumo": "Resumo narrativo do capítulo para o DM",
+      "npcs": [ { "nome": "", "descricao": "" } ],
       "locais": [
         {
-          "id": "loc_1",
           "codigo": "C1-A",
           "nome": "Nome do Local",
-          "capitulo": "nome do capítulo pai",
-          "texto_narrativo": "Texto para leitura em voz alta aos jogadores, ou null",
-          "notas_dm": "Informações táticas, segredos e detalhes para o DM, ou null",
-          "detalhes_ocultos": "Armadilhas, itens escondidos, segredos do local, ou null",
-          "encontros": [
-            {
-              "nome": "Nome do Encontro ou criatura principal",
-              "cr": "1/4",
-              "quantidade": 3,
-              "notas": "táticas e comportamento",
-              "gatilho": "O que faz o encontro começar, ou null",
-              "recompensa_xp": 150
-            }
-          ],
-          "npcs": [
-            {
-              "nome": "Nome do NPC",
-              "descricao": "Aparência e personalidade",
-              "personalidade": "traços principais",
-              "objetivo": "O que quer",
-              "segredos": "O que esconde"
-            }
-          ],
-          "tesouros": [
-            {
-              "nome": "Item ou moeda",
-              "descricao": "Descrição",
-              "valor": "50 PO",
-              "localizacao": "Onde está"
-            }
-          ],
-          "ordem": 1
+          "texto_narrativo": "Texto de leitura em voz alta, ou string vazia",
+          "notas_dm": "Táticas, segredos, armadilhas e detalhes para o DM",
+          "criaturas": ["goblin", "adult-black-dragon"],
+          "tesouros": ["Cada item é uma frase descritiva completa"],
+          "armadilhas": ["Cada item é uma frase descritiva completa"]
         }
       ]
     }
   ],
-  "npcs_globais": [
-    {
-      "nome": "Nome do NPC global",
-      "descricao": "Descrição completa",
-      "personalidade": "traços principais",
-      "objetivo": "motivação",
-      "segredos": "o que esconde"
-    }
-  ],
-  "notas_gerais": "Informações gerais, tom da aventura, dicas para o DM"
+  "artefato_central": { "nome": "", "descricao": "", "fragmentos": [] },
+  "mecanica_especial": { "nome": "", "descricao": "" }
 }`,
       }],
     })
 
     console.log('10. Resposta recebida, fazendo parse...')
     const jsonStr = resposta.content[0].type === 'text' ? resposta.content[0].text : ''
-    let conteudo
+    let conteudo: ConteudoAventura
     try {
       const jsonLimpo = jsonStr
         .replace(/^```json\s*/i, '')
@@ -185,6 +164,22 @@ Formato de saída (APENAS JSON válido):
     } catch {
       console.error('JSON inválido (primeiros 500 chars):', jsonStr.slice(0, 500))
       return NextResponse.json({ erro: 'Erro ao interpretar estrutura retornada pela IA' }, { status: 500 })
+    }
+
+    console.log('10b. Validando slugs de criaturas contra o bestiário...')
+    const { data: monstrosBanco } = await admin.from('monsters').select('slug')
+    const slugsValidos = new Set((monstrosBanco ?? []).map(m => m.slug))
+    const criaturasDesconhecidas = new Set<string>()
+
+    for (const cap of conteudo.capitulos ?? []) {
+      for (const local of cap.locais ?? []) {
+        const criaturasOriginais = local.criaturas ?? []
+        local.criaturas = criaturasOriginais.filter(slug => {
+          if (slugsValidos.has(slug)) return true
+          criaturasDesconhecidas.add(slug)
+          return false
+        })
+      }
     }
 
     console.log('11. JSON parseado, salvando no banco...')
@@ -209,7 +204,7 @@ Formato de saída (APENAS JSON válido):
     }
 
     // 6. Salvar aventura
-    const { data: aventuraSalva, error: errAventura } = await supabase
+    const { error: errAventura } = await supabase
       .from('aventuras')
       .insert({
         campanha_id: campId,
@@ -220,38 +215,10 @@ Formato de saída (APENAS JSON válido):
         arquivo_url: storagePath,
         processada: true,
       })
-      .select('id')
-      .single()
 
     if (errAventura) throw errAventura
 
-    // 7. Salvar locais extraídos
-    if (conteudo.capitulos && aventuraSalva) {
-      type LocalBruto = {
-        codigo?: string; nome?: string; texto_narrativo?: string
-        notas_dm?: string; encontros?: unknown[]; npcs?: unknown[]; ordem?: number
-      }
-      const todosLocais = (conteudo.capitulos as Array<{ titulo: string; locais?: LocalBruto[] }>)
-        .flatMap((cap, capIdx) =>
-          (cap.locais ?? []).map((local, locIdx) => ({
-            aventura_id: aventuraSalva.id,
-            codigo: local.codigo ?? `C${capIdx + 1}-${locIdx + 1}`,
-            nome: local.nome ?? 'Local sem nome',
-            capitulo: cap.titulo,
-            texto_narrativo: local.texto_narrativo ?? null,
-            notas_dm: local.notas_dm ?? null,
-            encontros: local.encontros ?? [],
-            npcs: local.npcs ?? [],
-            ordem: local.ordem ?? locIdx,
-          }))
-        )
-
-      if (todosLocais.length > 0) {
-        await supabase.from('locais').insert(todosLocais)
-      }
-    }
-
-    const totalLocais = (conteudo.capitulos as Array<{ locais?: unknown[] }> | undefined)
+    const totalLocais = conteudo.capitulos
       ?.reduce((acc, cap) => acc + (cap.locais?.length ?? 0), 0) ?? 0
 
     console.log('12. Concluído com sucesso:', conteudo.titulo)
@@ -261,6 +228,7 @@ Formato de saída (APENAS JSON válido):
       locais: totalLocais,
       paginas: totalPaginas,
       truncado,
+      criaturas_desconhecidas: Array.from(criaturasDesconhecidas),
     })
 
   } catch (err: unknown) {

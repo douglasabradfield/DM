@@ -11,41 +11,7 @@ import { Upload, Copy, ScrollText, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getPlano } from '@/lib/planos'
 import { BloqueioPlano } from '@/components/ui/BloqueioPlano'
-
-interface Local {
-  codigo: string
-  nome: string
-  texto_narrativo: string
-  notas_dm: string
-  criaturas: string[]
-  tesouros: string[]
-  armadilhas: string[]
-}
-
-interface Capitulo {
-  numero: number
-  titulo_pt: string
-  titulo_en: string
-  plano: string
-  nivel_recomendado: string
-  resumo: string
-  npcs: Array<{ nome: string; descricao: string }>
-  locais: Local[]
-  traduzido?: boolean
-}
-
-interface ConteudoAventura {
-  titulo: string
-  titulo_original: string
-  sistema: string
-  nivel_recomendado: string
-  numero_jogadores: string
-  resumo_geral: string
-  npcs_globais: Array<{ nome: string; papel: string; descricao: string; motivacao: string }>
-  artefato_central?: { nome: string; descricao: string; fragmentos: string[] }
-  mecanica_especial?: { nome: string; descricao: string }
-  capitulos: Capitulo[]
-}
+import type { Local, Capitulo, ConteudoAventura } from '@/types/database'
 
 export default function AventuraPage() {
   const { campanhaAtiva, papelPorCampanha } = useCampanha()

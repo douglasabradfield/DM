@@ -50,51 +50,52 @@ export interface Aventura {
   titulo: string
   titulo_original: string | null
   idioma_original: string
-  conteudo_json: AventuraConteudo | null
+  conteudo_json: ConteudoAventura | null
   arquivo_url: string | null
   processada: boolean
   criado_em: string
 }
 
-export interface AventuraConteudo {
-  titulo: string
-  sistema: string
-  capitulos: Capitulo[]
-  npcs_globais: NPC[]
-  notas_gerais: string
+export interface Local {
+  codigo: string
+  nome: string
+  texto_narrativo: string
+  notas_dm: string
+  criaturas: string[]
+  tesouros: string[]
+  armadilhas: string[]
 }
 
 export interface Capitulo {
   numero: number
-  titulo: string
-  locais: LocalAventura[]
+  titulo_pt: string
+  titulo_en: string
+  plano: string
+  nivel_recomendado: string
+  resumo: string
+  npcs: Array<{ nome: string; descricao: string }>
+  locais: Local[]
+  traduzido?: boolean
 }
 
-export interface LocalAventura {
-  id: string
-  codigo: string
+export interface NPCGlobal {
   nome: string
-  capitulo: string
-  texto_narrativo: string
-  notas_dm: string
-  encontros: Encontro[]
-  npcs: NPC[]
-  ordem: number
-}
-
-export interface Encontro {
-  nome: string
-  cr: string
-  quantidade: number
-  notas: string
-}
-
-export interface NPC {
-  nome: string
+  papel: string
   descricao: string
-  personalidade: string
-  objetivo: string
-  segredos: string
+  motivacao: string
+}
+
+export interface ConteudoAventura {
+  titulo: string
+  titulo_original: string
+  sistema: string
+  nivel_recomendado: string
+  numero_jogadores: string
+  resumo_geral: string
+  npcs_globais: NPCGlobal[]
+  artefato_central?: { nome: string; descricao: string; fragmentos: string[] }
+  mecanica_especial?: { nome: string; descricao: string }
+  capitulos: Capitulo[]
 }
 
 export interface Sessao {
