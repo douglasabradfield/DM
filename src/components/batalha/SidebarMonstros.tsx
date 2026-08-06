@@ -2,12 +2,14 @@
 
 import { useState } from 'react'
 import { useBatalha } from '@/store/batalha'
+import { useCampanha } from '@/store/campanha'
 import { createClient } from '@/lib/supabase/client'
 import type { Monster } from '@/types/dnd'
 import { Search } from 'lucide-react'
 
 export function SidebarMonstros() {
   const { adicionarCombatente } = useBatalha()
+  const { campanhaAtiva } = useCampanha()
   const [busca, setBusca] = useState('')
   const [resultados, setResultados] = useState<Monster[]>([])
   const [carregando, setCarregando] = useState(false)
@@ -17,11 +19,15 @@ export function SidebarMonstros() {
     setCarregando(true)
     try {
       const supabase = createClient()
-      const { data } = await supabase
+      let query = supabase
         .from('monsters')
         .select('id, slug, name_pt, type_pt, challenge_rating, xp, armor_class, hit_points, str_score, dex_score, con_score, int_score, wis_score, cha_score, traits_pt, traits_rules_pt, actions_pt, actions_rules_pt')
         .ilike('name_pt', `%${termo}%`)
         .limit(10)
+      query = campanhaAtiva?.id
+        ? query.or(`criado_por.is.null,campanha_id.eq.${campanhaAtiva.id}`)
+        : query.is('criado_por', null)
+      const { data } = await query
       setResultados((data ?? []) as Monster[])
     } finally {
       setCarregando(false)

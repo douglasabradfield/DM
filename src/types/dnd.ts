@@ -119,6 +119,9 @@ export interface Monster {
   blindsight_ft: number | null
   tremorsense_ft: number | null
   truesight_ft: number | null
+  criado_por?: string | null
+  campanha_id?: string | null
+  visivel_jogadores?: boolean
 }
 
 export interface MonsterAction {

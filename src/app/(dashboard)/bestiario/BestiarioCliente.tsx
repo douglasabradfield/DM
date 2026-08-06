@@ -7,6 +7,7 @@ import type { Monster, MonsterDetailed, MonsterAction } from '@/types/dnd'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { useBatalha } from '@/store/batalha'
 import { usePermissao } from '@/hooks/usePermissao'
+import { useCampanha } from '@/store/campanha'
 import { calcularModificadorAtributo, formatarModificador, cn } from '@/lib/utils'
 import { Search, Swords, Plus, X, Trash2, Pencil, ShieldAlert } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -16,7 +17,7 @@ import { getPlano } from '@/lib/planos'
 
 const CRS = ['0', '1/8', '1/4', '1/2', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '23', '24', '30']
 
-type MonsterStub = Pick<Monster, 'id' | 'slug' | 'name_pt' | 'name_en' | 'type_pt' | 'challenge_rating' | 'armor_class' | 'hit_points'>
+type MonsterStub = Pick<Monster, 'id' | 'slug' | 'name_pt' | 'name_en' | 'type_pt' | 'challenge_rating' | 'armor_class' | 'hit_points' | 'criado_por'>
 
 interface MonstroPersonalizado {
   id: string
@@ -489,23 +490,40 @@ const SECOES_ADMIN = [
 
 type SecaoAdmin = typeof SECOES_ADMIN[number]['id']
 
-function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
-  monstro: MonsterDetailed
+const MONSTRO_VAZIO = {
+  name_pt: '', name_en: '', size_pt: '', type_pt: '', alignment_pt: '',
+  armor_class: 10, hit_points: 10, hit_dice: '', speed_pt: '9 m',
+  str_score: 10, dex_score: 10, con_score: 10, int_score: 10, wis_score: 10, cha_score: 10,
+  challenge_rating: '1', xp: 0, proficiency_bonus: 2, passive_perception: 10,
+  darkvision_ft: 0, blindsight_ft: 0, tremorsense_ft: 0, truesight_ft: 0,
+  senses_pt: '', languages_pt: '',
+}
+
+function gerarSlugBase(nome: string): string {
+  return nome
+    .toLowerCase()
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+}
+
+function gerarSufixoAleatorio(): string {
+  return Math.random().toString(36).slice(2, 6)
+}
+
+function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose, onSaved }: {
+  modo: 'criar' | 'editar'
+  monstro?: MonsterDetailed
+  criadoPor?: string
+  campanhaId?: string | null
   onClose: () => void
   onSaved: (m: MonsterDetailed) => void
 }) {
   const lbl = "text-[var(--text3)] text-[9px] font-cinzel uppercase"
   const inp = "w-full input-dd text-sm mt-0.5"
 
-  const scoreMap = {
-    STR: monstro.str_score, DEX: monstro.dex_score, CON: monstro.con_score,
-    INT: monstro.int_score, WIS: monstro.wis_score, CHA: monstro.cha_score,
-  }
-
-  const [secao, setSecao] = useState<SecaoAdmin>('basico')
-  const [salvando, setSalvando] = useState(false)
-
-  const [basico, setBasico] = useState({
+  const dadosIniciais = modo === 'editar' && monstro ? {
     name_pt: monstro.name_pt,
     name_en: monstro.name_en,
     size_pt: monstro.size_pt ?? '',
@@ -531,10 +549,24 @@ function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
     truesight_ft: monstro.truesight_ft ?? 0,
     senses_pt: monstro.senses_pt ?? '',
     languages_pt: monstro.languages_pt ?? '',
-  })
+  } : MONSTRO_VAZIO
+
+  const scoreMap = {
+    STR: dadosIniciais.str_score, DEX: dadosIniciais.dex_score, CON: dadosIniciais.con_score,
+    INT: dadosIniciais.int_score, WIS: dadosIniciais.wis_score, CHA: dadosIniciais.cha_score,
+  }
+
+  const [secao, setSecao] = useState<SecaoAdmin>('basico')
+  const [salvando, setSalvando] = useState(false)
+  const [visivelJogadores, setVisivelJogadores] = useState(monstro?.visivel_jogadores ?? false)
+  const [sufixoSlug] = useState(() => gerarSufixoAleatorio())
+
+  const [basico, setBasico] = useState(dadosIniciais)
+
+  const slugGerado = `${gerarSlugBase(basico.name_pt) || 'monstro'}-${sufixoSlug}`
 
   const [savesForm, setSavesForm] = useState<Record<string, { ativo: boolean; bonus: number }>>(() => {
-    const saveMap = new Map(monstro.monster_saves?.map(s => [s.ability.toUpperCase(), s.bonus]) ?? [])
+    const saveMap = new Map(monstro?.monster_saves?.map(s => [s.ability.toUpperCase(), s.bonus]) ?? [])
     return Object.fromEntries(SAVE_KEYS.map(k => [k, {
       ativo: saveMap.has(k),
       bonus: saveMap.has(k) ? saveMap.get(k)! : Math.floor((scoreMap[k] - 10) / 2),
@@ -542,11 +574,11 @@ function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
   })
 
   const [skillsForm, setSkillsForm] = useState(() =>
-    (monstro.monster_skills ?? []).map(s => ({ skill_pt: s.skill_pt, skill_en: s.skill_en ?? '', bonus: s.bonus }))
+    (monstro?.monster_skills ?? []).map(s => ({ skill_pt: s.skill_pt, skill_en: s.skill_en ?? '', bonus: s.bonus }))
   )
 
   const [modifiersForm, setModifiersForm] = useState(() =>
-    (monstro.monster_damage_modifiers ?? []).map(d => ({
+    (monstro?.monster_damage_modifiers ?? []).map(d => ({
       modifier_type: d.modifier_type,
       damage_type_pt: d.damage_type_pt,
       note_pt: d.note_pt ?? '',
@@ -554,22 +586,21 @@ function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
   )
 
   const [condImmunities, setCondImmunities] = useState<string[]>(() =>
-    (monstro.monster_condition_immunities ?? []).map(ci => ci.condition_pt)
+    (monstro?.monster_condition_immunities ?? []).map(ci => ci.condition_pt)
   )
 
   const [acoesForm, setAcoesForm] = useState<MonsterAction[]>(() =>
-    monstro.monster_actions ?? []
+    monstro?.monster_actions ?? []
   )
 
-  const [textoTracos, setTextoTracos] = useState(monstro.traits_rules_pt ?? '')
-  const [textoAcoes, setTextoAcoes] = useState(monstro.actions_rules_pt ?? '')
+  const [textoTracos, setTextoTracos] = useState(monstro?.traits_rules_pt ?? '')
+  const [textoAcoes, setTextoAcoes] = useState(monstro?.actions_rules_pt ?? '')
 
   async function salvar() {
     setSalvando(true)
     const supabase = createClient()
-    const mid = monstro.id
 
-    const { error: e1 } = await supabase.from('monsters').update({
+    const dadosBasicos = {
       ...basico,
       hit_dice: basico.hit_dice || null,
       speed_pt: basico.speed_pt || null,
@@ -580,8 +611,28 @@ function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
       languages_pt: basico.languages_pt || null,
       traits_rules_pt: textoTracos || null,
       actions_rules_pt: textoAcoes || null,
-    }).eq('id', mid)
-    if (e1) { toast.error('Erro ao salvar dados básicos'); setSalvando(false); return }
+    }
+
+    let mid: string | number
+
+    if (modo === 'criar') {
+      const { data, error } = await supabase.from('monsters').insert({
+        ...dadosBasicos,
+        slug: slugGerado,
+        criado_por: criadoPor,
+        campanha_id: campanhaId,
+        visivel_jogadores: visivelJogadores,
+      }).select('id').single()
+      if (error || !data) { toast.error('Erro ao criar monstro'); setSalvando(false); return }
+      mid = data.id as string | number
+    } else {
+      mid = monstro!.id
+      const { error: e1 } = await supabase.from('monsters').update({
+        ...dadosBasicos,
+        ...(monstro!.criado_por ? { visivel_jogadores: visivelJogadores } : {}),
+      }).eq('id', mid)
+      if (e1) { toast.error('Erro ao salvar dados básicos'); setSalvando(false); return }
+    }
 
     await supabase.from('monster_saves').delete().eq('monster_id', mid)
     const savesToInsert = Object.entries(savesForm)
@@ -623,7 +674,7 @@ function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
       monster_damage_modifiers(*), monster_condition_immunities(*), monster_actions(*)
     `).eq('id', mid).single()
 
-    toast.success('Monstro atualizado!')
+    toast.success(modo === 'criar' ? 'Monstro criado!' : 'Monstro atualizado!')
     onSaved(data as MonsterDetailed)
     setSalvando(false)
     onClose()
@@ -634,7 +685,9 @@ function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
       <div className="bg-[var(--bg3)] border border-[var(--border2)] rounded-lg w-full max-w-3xl shadow-2xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-[var(--border)] flex-shrink-0">
-          <h2 className="font-cinzel text-[var(--gold)] font-bold">✏️ Editar — {monstro.name_pt}</h2>
+          <h2 className="font-cinzel text-[var(--gold)] font-bold">
+            {modo === 'criar' ? '✨ Criar Monstro' : `✏️ Editar — ${monstro?.name_pt}`}
+          </h2>
           <button onClick={onClose} className="text-[var(--border)] hover:text-[var(--red2)]"><X className="w-4 h-4" /></button>
         </div>
 
@@ -660,6 +713,23 @@ function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
               {/* ── BÁSICO ── */}
               {secao === 'basico' && (
                 <>
+                  {(modo === 'criar' || monstro?.criado_por) && (
+                    <div className="flex items-center gap-4 p-3 rounded border border-[var(--gold)]/30 bg-[var(--gold)]/5">
+                      <div className="flex-1">
+                        <label className={lbl}>Slug (gerado automaticamente)</label>
+                        <p className="text-[var(--text2)] text-sm font-mono mt-0.5">{modo === 'criar' ? slugGerado : monstro?.slug}</p>
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={visivelJogadores}
+                          onChange={e => setVisivelJogadores(e.target.checked)}
+                          className="accent-[var(--gold)]"
+                        />
+                        <span className="font-cinzel text-sm text-[var(--text2)]">Visível para jogadores</span>
+                      </label>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className={lbl}>Nome PT</label><input className={inp} value={basico.name_pt} onChange={e => setBasico(b => ({ ...b, name_pt: e.target.value }))} /></div>
                     <div><label className={lbl}>Nome EN</label><input className={inp} value={basico.name_en} onChange={e => setBasico(b => ({ ...b, name_en: e.target.value }))} /></div>
@@ -874,10 +944,10 @@ function ModalAdminEditarMonstro({ monstro, onClose, onSaved }: {
               <button onClick={onClose} className="px-3 py-1.5 text-xs font-cinzel text-[var(--text3)] border border-[var(--border)] rounded hover:border-[var(--border2)] transition-colors">Cancelar</button>
               <button
                 onClick={salvar}
-                disabled={salvando}
+                disabled={salvando || !basico.name_pt.trim()}
                 className="px-4 py-1.5 text-xs font-cinzel text-[var(--gold)] bg-[var(--surface)] border border-[var(--gold)]/50 rounded hover:bg-[var(--gold)]/10 transition-colors disabled:opacity-50"
               >
-                {salvando ? 'Salvando...' : '💾 Salvar Tudo'}
+                {salvando ? 'Salvando...' : modo === 'criar' ? '✨ Criar Monstro' : '💾 Salvar Tudo'}
               </button>
             </div>
       </div>
@@ -897,11 +967,15 @@ export function BestiarioCliente() {
   const [userPlano, setUserPlano] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
-  const [modalAdminAberto, setModalAdminAberto] = useState(false)
+  const [modalMonstroAberto, setModalMonstroAberto] = useState<'criar' | 'editar' | null>(null)
   const [aba, setAba] = useState<'oficial' | 'personalizado'>('oficial')
+  const [nomesAutores, setNomesAutores] = useState<Record<string, string>>({})
   const { adicionarCombatente } = useBatalha()
   const { ehJogador } = usePermissao()
+  const { campanhaAtiva, papelPorCampanha } = useCampanha()
   const router = useRouter()
+
+  const dmDaCampanhaAtiva = !!campanhaAtiva && papelPorCampanha[campanhaAtiva.id] === 'dm'
 
   useEffect(() => {
     const supabase = createClient()
@@ -928,11 +1002,16 @@ export function BestiarioCliente() {
     async function carregar() {
       setCarregando(true)
       const supabase = createClient()
+      let monstersQuery = supabase
+        .from('monsters')
+        .select('id, slug, name_pt, name_en, type_pt, challenge_rating, armor_class, hit_points, criado_por')
+        .order('name_pt')
+      monstersQuery = campanhaAtiva?.id
+        ? monstersQuery.or(`criado_por.is.null,campanha_id.eq.${campanhaAtiva.id}`)
+        : monstersQuery.is('criado_por', null)
+
       const [monstersRes, actionsRes] = await Promise.all([
-        supabase
-          .from('monsters')
-          .select('id, slug, name_pt, name_en, type_pt, challenge_rating, armor_class, hit_points')
-          .order('name_pt'),
+        monstersQuery,
         supabase.from('monster_actions').select('monster_id'),
       ])
       setLista((monstersRes.data ?? []) as MonsterStub[])
@@ -940,7 +1019,20 @@ export function BestiarioCliente() {
       setCarregando(false)
     }
     carregar()
-  }, [])
+  }, [campanhaAtiva?.id])
+
+  useEffect(() => {
+    const idsAutores = Array.from(new Set(lista.map(m => m.criado_por).filter((id): id is string => !!id)))
+    if (idsAutores.length === 0) { setNomesAutores({}); return }
+    const supabase = createClient()
+    supabase.from('profiles').select('id, nome, username').in('id', idsAutores).then(({ data }) => {
+      const mapa: Record<string, string> = {}
+      for (const p of data ?? []) {
+        mapa[p.id as string] = (p.nome as string | null) ?? (p.username as string | null) ?? 'Mestre'
+      }
+      setNomesAutores(mapa)
+    })
+  }, [lista])
 
   async function selecionarMonstro(stub: MonsterStub) {
     if (selecionado?.id === stub.id) return
@@ -961,6 +1053,45 @@ export function BestiarioCliente() {
     setSelecionado(data as MonsterDetailed)
     setCarregandoDetalhe(false)
     setVisao('detalhe')
+  }
+
+  function monstroSalvo(m: MonsterDetailed) {
+    setSelecionado(m)
+    const stub: MonsterStub = {
+      id: m.id, slug: m.slug, name_pt: m.name_pt, name_en: m.name_en,
+      type_pt: m.type_pt, challenge_rating: m.challenge_rating,
+      armor_class: m.armor_class, hit_points: m.hit_points, criado_por: m.criado_por ?? null,
+    }
+    setLista(prev => {
+      const existe = prev.some(p => p.id === m.id)
+      const proxima = existe ? prev.map(p => p.id === m.id ? stub : p) : [...prev, stub]
+      return proxima.sort((a, b) => a.name_pt.localeCompare(b.name_pt, 'pt-BR'))
+    })
+    setMonstrosComAcoes(prev => {
+      const proximo = new Set(prev)
+      if ((m.monster_actions?.length ?? 0) > 0) proximo.add(String(m.id))
+      else proximo.delete(String(m.id))
+      return proximo
+    })
+  }
+
+  async function excluirMonstro(m: MonsterDetailed) {
+    if (!confirm(`Excluir o monstro "${m.name_pt}" permanentemente?`)) return
+    const supabase = createClient()
+    const mid = m.id
+    await Promise.all([
+      supabase.from('monster_saves').delete().eq('monster_id', mid),
+      supabase.from('monster_skills').delete().eq('monster_id', mid),
+      supabase.from('monster_damage_modifiers').delete().eq('monster_id', mid),
+      supabase.from('monster_condition_immunities').delete().eq('monster_id', mid),
+      supabase.from('monster_actions').delete().eq('monster_id', mid),
+    ])
+    const { error } = await supabase.from('monsters').delete().eq('id', mid)
+    if (error) { toast.error('Erro ao excluir monstro'); return }
+    setLista(prev => prev.filter(p => p.id !== mid))
+    setSelecionado(null)
+    setVisao('lista')
+    toast.success('Monstro excluído')
   }
 
   const filtrados = useMemo(() => lista.filter(m => {
@@ -1075,6 +1206,14 @@ export function BestiarioCliente() {
               visao === 'detalhe' ? "hidden md:flex" : "flex"
             )}>
               <div className="p-3 border-b border-[var(--border)]">
+                {dmDaCampanhaAtiva && (
+                  <button
+                    onClick={() => setModalMonstroAberto('criar')}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 mb-2 bg-[var(--accent2)]/10 border border-[var(--accent2)]/40 text-[var(--accent2)] rounded text-sm font-cinzel hover:bg-[var(--accent2)]/20 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" /> Criar Monstro
+                  </button>
+                )}
                 <div className="relative mb-2">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
                   <input
@@ -1112,6 +1251,14 @@ export function BestiarioCliente() {
                           </span>
                           {monstrosComAcoes.has(String(m.id)) && (
                             <span className="text-[var(--green2)] text-[9px] flex-shrink-0" title="Dados completos">✓</span>
+                          )}
+                          {m.criado_por && (
+                            <span
+                              className="text-[var(--gold)] text-[9px] flex-shrink-0"
+                              title={`Criado por ${nomesAutores[m.criado_por] ?? 'Mestre'}`}
+                            >
+                              ✦
+                            </span>
                           )}
                         </div>
                         <span className="text-xs text-[var(--dd-text2)] truncate">
@@ -1202,6 +1349,9 @@ export function BestiarioCliente() {
                   }))
                   .filter(g => g.acoes.length > 0)
 
+                const podeEditarMonstro = isAdmin || (!!userId && m.criado_por === userId)
+                const podeExcluirMonstro = podeEditarMonstro && !!m.criado_por
+
                 return (
                   <div className="max-w-3xl">
                     {/* Cabeçalho */}
@@ -1214,6 +1364,11 @@ export function BestiarioCliente() {
                               ✓ Dados completos
                             </span>
                           )}
+                          {m.criado_por && (
+                            <span className="text-[9px] px-1.5 py-0.5 bg-[var(--gold)]/10 border border-[var(--gold)]/30 text-[var(--gold)] rounded font-cinzel">
+                              ✦ Criado por {nomesAutores[m.criado_por] ?? 'Mestre'}
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-[var(--dd-text2)] italic">{m.name_en}</p>
                         <p className="text-[var(--text2)] text-sm mt-1">
@@ -1224,9 +1379,18 @@ export function BestiarioCliente() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {isAdmin && (
+                        {podeExcluirMonstro && (
                           <button
-                            onClick={() => setModalAdminAberto(true)}
+                            onClick={() => excluirMonstro(m)}
+                            className="p-2 text-[var(--red2)] hover:bg-[var(--red2)]/10 rounded transition-colors"
+                            title="Excluir monstro"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        {podeEditarMonstro && (
+                          <button
+                            onClick={() => setModalMonstroAberto('editar')}
                             className="flex items-center gap-1.5 px-3 py-2 bg-[var(--bg3)] border border-[var(--border2)] text-[var(--text2)] rounded text-sm font-cinzel hover:bg-[var(--surface)] transition-colors"
                           >
                             <Pencil className="w-3.5 h-3.5" /> Editar
@@ -1414,11 +1578,21 @@ export function BestiarioCliente() {
         )}
       </div>
 
-      {modalAdminAberto && selecionado && (
+      {modalMonstroAberto === 'editar' && selecionado && (
         <ModalAdminEditarMonstro
+          modo="editar"
           monstro={selecionado}
-          onClose={() => setModalAdminAberto(false)}
-          onSaved={(m) => setSelecionado(m)}
+          onClose={() => setModalMonstroAberto(null)}
+          onSaved={monstroSalvo}
+        />
+      )}
+      {modalMonstroAberto === 'criar' && userId && (
+        <ModalAdminEditarMonstro
+          modo="criar"
+          criadoPor={userId}
+          campanhaId={campanhaAtiva?.id ?? null}
+          onClose={() => setModalMonstroAberto(null)}
+          onSaved={(m) => { monstroSalvo(m); setVisao('detalhe') }}
         />
       )}
     </div>
