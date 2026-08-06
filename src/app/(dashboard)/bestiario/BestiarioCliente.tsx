@@ -491,12 +491,54 @@ const SECOES_ADMIN = [
 type SecaoAdmin = typeof SECOES_ADMIN[number]['id']
 
 const MONSTRO_VAZIO = {
-  name_pt: '', name_en: '', size_pt: '', type_pt: '', alignment_pt: '',
-  armor_class: 10, hit_points: 10, hit_dice: '', speed_pt: '9 m',
+  name_pt: '', name_en: '', size_pt: 'Médio', type_pt: 'humanoide', alignment_pt: 'neutro',
+  armor_class: 10, hit_points: 1, hit_dice: '', speed_pt: '9 m',
   str_score: 10, dex_score: 10, con_score: 10, int_score: 10, wis_score: 10, cha_score: 10,
-  challenge_rating: '1', xp: 0, proficiency_bonus: 2, passive_perception: 10,
-  darkvision_ft: 0, blindsight_ft: 0, tremorsense_ft: 0, truesight_ft: 0,
+  challenge_rating: '1', xp: 200, proficiency_bonus: '+2', passive_perception: null as number | null,
+  darkvision_ft: null as number | null, blindsight_ft: null as number | null,
+  tremorsense_ft: null as number | null, truesight_ft: null as number | null,
   senses_pt: '', languages_pt: '',
+}
+
+// Campos NOT NULL na tabela monsters sem default no banco — precisam de
+// valor antes do insert/update, senão o PostgREST retorna 400.
+const CAMPOS_OBRIGATORIOS: { chave: keyof typeof MONSTRO_VAZIO; secao: SecaoAdmin; rotulo: string }[] = [
+  { chave: 'name_pt', secao: 'basico', rotulo: 'Nome PT' },
+  { chave: 'size_pt', secao: 'basico', rotulo: 'Tamanho' },
+  { chave: 'type_pt', secao: 'basico', rotulo: 'Tipo' },
+  { chave: 'alignment_pt', secao: 'basico', rotulo: 'Alinhamento' },
+  { chave: 'armor_class', secao: 'basico', rotulo: 'CA' },
+  { chave: 'hit_points', secao: 'basico', rotulo: 'PV' },
+  { chave: 'speed_pt', secao: 'basico', rotulo: 'Deslocamento' },
+  { chave: 'str_score', secao: 'basico', rotulo: 'FOR' },
+  { chave: 'dex_score', secao: 'basico', rotulo: 'DES' },
+  { chave: 'con_score', secao: 'basico', rotulo: 'CON' },
+  { chave: 'int_score', secao: 'basico', rotulo: 'INT' },
+  { chave: 'wis_score', secao: 'basico', rotulo: 'SAB' },
+  { chave: 'cha_score', secao: 'basico', rotulo: 'CAR' },
+  { chave: 'challenge_rating', secao: 'basico', rotulo: 'ND' },
+  { chave: 'xp', secao: 'basico', rotulo: 'XP' },
+  { chave: 'proficiency_bonus', secao: 'basico', rotulo: 'Bônus Prof.' },
+]
+
+// Colunas integer opcionais (nullable) — "" ou NaN precisam virar null,
+// nunca string vazia, senão o Postgres rejeita com invalid input syntax.
+const CAMPOS_INTEIRO_OPCIONAIS = [
+  'darkvision_ft', 'blindsight_ft', 'tremorsense_ft', 'truesight_ft', 'passive_perception',
+] as const
+
+function paraInteiroOpcional(v: unknown): number | null {
+  if (v === '' || v === undefined || v === null) return null
+  const n = Number(v)
+  return Number.isNaN(n) ? null : n
+}
+
+function validarObrigatorios(b: typeof MONSTRO_VAZIO) {
+  return CAMPOS_OBRIGATORIOS.filter(campo => {
+    const valor = b[campo.chave]
+    if (typeof valor === 'number') return Number.isNaN(valor)
+    return valor === null || valor === undefined || String(valor).trim() === ''
+  })
 }
 
 function gerarSlugBase(nome: string): string {
@@ -541,12 +583,12 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
     cha_score: monstro.cha_score,
     challenge_rating: monstro.challenge_rating,
     xp: monstro.xp ?? 0,
-    proficiency_bonus: monstro.proficiency_bonus ?? 2,
-    passive_perception: monstro.passive_perception ?? 10,
-    darkvision_ft: monstro.darkvision_ft ?? 0,
-    blindsight_ft: monstro.blindsight_ft ?? 0,
-    tremorsense_ft: monstro.tremorsense_ft ?? 0,
-    truesight_ft: monstro.truesight_ft ?? 0,
+    proficiency_bonus: monstro.proficiency_bonus ?? '+2',
+    passive_perception: monstro.passive_perception ?? null,
+    darkvision_ft: monstro.darkvision_ft ?? null,
+    blindsight_ft: monstro.blindsight_ft ?? null,
+    tremorsense_ft: monstro.tremorsense_ft ?? null,
+    truesight_ft: monstro.truesight_ft ?? null,
     senses_pt: monstro.senses_pt ?? '',
     languages_pt: monstro.languages_pt ?? '',
   } : MONSTRO_VAZIO
@@ -560,10 +602,14 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
   const [salvando, setSalvando] = useState(false)
   const [visivelJogadores, setVisivelJogadores] = useState(monstro?.visivel_jogadores ?? false)
   const [sufixoSlug] = useState(() => gerarSufixoAleatorio())
+  const [camposInvalidos, setCamposInvalidos] = useState<Set<string>>(new Set())
 
   const [basico, setBasico] = useState(dadosIniciais)
 
+  useEffect(() => { setCamposInvalidos(new Set()) }, [basico])
+
   const slugGerado = `${gerarSlugBase(basico.name_pt) || 'monstro'}-${sufixoSlug}`
+  const campoInvalido = (chave: string) => cn(inp, camposInvalidos.has(chave) && 'border-[var(--red2)]')
 
   const [savesForm, setSavesForm] = useState<Record<string, { ativo: boolean; bonus: number }>>(() => {
     const saveMap = new Map(monstro?.monster_saves?.map(s => [s.ability.toUpperCase(), s.bonus]) ?? [])
@@ -597,20 +643,36 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
   const [textoAcoes, setTextoAcoes] = useState(monstro?.actions_rules_pt ?? '')
 
   async function salvar() {
+    const faltando = validarObrigatorios(basico)
+    if (faltando.length > 0) {
+      toast.error(`Preencha os campos obrigatórios: ${faltando.map(f => f.rotulo).join(', ')}`)
+      setSecao(faltando[0].secao)
+      setCamposInvalidos(new Set(faltando.map(f => f.chave)))
+      return
+    }
+
     setSalvando(true)
     const supabase = createClient()
 
-    const dadosBasicos = {
+    const dadosBasicos: Record<string, unknown> = {
       ...basico,
+      armor_class: Number(basico.armor_class),
+      hit_points: Number(basico.hit_points),
+      str_score: Number(basico.str_score),
+      dex_score: Number(basico.dex_score),
+      con_score: Number(basico.con_score),
+      int_score: Number(basico.int_score),
+      wis_score: Number(basico.wis_score),
+      cha_score: Number(basico.cha_score),
+      xp: Number(basico.xp),
       hit_dice: basico.hit_dice || null,
-      speed_pt: basico.speed_pt || null,
-      size_pt: basico.size_pt || null,
-      type_pt: basico.type_pt || null,
-      alignment_pt: basico.alignment_pt || null,
       senses_pt: basico.senses_pt || null,
       languages_pt: basico.languages_pt || null,
       traits_rules_pt: textoTracos || null,
       actions_rules_pt: textoAcoes || null,
+    }
+    for (const campo of CAMPOS_INTEIRO_OPCIONAIS) {
+      dadosBasicos[campo] = paraInteiroOpcional(basico[campo])
     }
 
     let mid: string | number
@@ -618,12 +680,17 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
     if (modo === 'criar') {
       const { data, error } = await supabase.from('monsters').insert({
         ...dadosBasicos,
+        name_en: basico.name_en.trim() || basico.name_pt,
+        size_en: basico.size_pt,
+        type_en: basico.type_pt,
+        alignment_en: basico.alignment_pt,
+        speed_en: basico.speed_pt,
         slug: slugGerado,
         criado_por: criadoPor,
         campanha_id: campanhaId,
         visivel_jogadores: visivelJogadores,
       }).select('id').single()
-      if (error || !data) { toast.error('Erro ao criar monstro'); setSalvando(false); return }
+      if (error || !data) { toast.error(error?.message ?? 'Erro ao criar monstro'); setSalvando(false); return }
       mid = data.id as string | number
     } else {
       mid = monstro!.id
@@ -631,34 +698,40 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
         ...dadosBasicos,
         ...(monstro!.criado_por ? { visivel_jogadores: visivelJogadores } : {}),
       }).eq('id', mid)
-      if (e1) { toast.error('Erro ao salvar dados básicos'); setSalvando(false); return }
+      if (e1) { toast.error(e1.message); setSalvando(false); return }
     }
 
     await supabase.from('monster_saves').delete().eq('monster_id', mid)
     const savesToInsert = Object.entries(savesForm)
       .filter(([, v]) => v.ativo)
       .map(([ability, v]) => ({ monster_id: Number(mid), ability, bonus: v.bonus }))
-    if (savesToInsert.length > 0) await supabase.from('monster_saves').insert(savesToInsert)
+    if (savesToInsert.length > 0) {
+      const { error } = await supabase.from('monster_saves').insert(savesToInsert)
+      if (error) toast.error(`Erro ao salvar saves: ${error.message}`)
+    }
 
     await supabase.from('monster_skills').delete().eq('monster_id', mid)
     if (skillsForm.length > 0) {
-      await supabase.from('monster_skills').insert(
+      const { error } = await supabase.from('monster_skills').insert(
         skillsForm.filter(s => s.skill_pt).map(s => ({ ...s, monster_id: Number(mid) }))
       )
+      if (error) toast.error(`Erro ao salvar perícias: ${error.message}`)
     }
 
     await supabase.from('monster_damage_modifiers').delete().eq('monster_id', mid)
     if (modifiersForm.length > 0) {
-      await supabase.from('monster_damage_modifiers').insert(
+      const { error } = await supabase.from('monster_damage_modifiers').insert(
         modifiersForm.filter(d => d.damage_type_pt).map(d => ({ ...d, note_pt: d.note_pt || null, monster_id: Number(mid) }))
       )
+      if (error) toast.error(`Erro ao salvar resistências: ${error.message}`)
     }
 
     await supabase.from('monster_condition_immunities').delete().eq('monster_id', mid)
     if (condImmunities.length > 0) {
-      await supabase.from('monster_condition_immunities').insert(
+      const { error } = await supabase.from('monster_condition_immunities').insert(
         condImmunities.map(c => ({ monster_id: Number(mid), condition_pt: c }))
       )
+      if (error) toast.error(`Erro ao salvar imunidades: ${error.message}`)
     }
 
     await supabase.from('monster_actions').delete().eq('monster_id', mid)
@@ -666,7 +739,8 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
       const acoesParaInserir = acoesForm
         .filter(a => a.name_pt)
         .map(({ id: _id, monster_id: _mid, ...rest }) => ({ ...rest, monster_id: Number(mid) }))
-      await supabase.from('monster_actions').insert(acoesParaInserir)
+      const { error } = await supabase.from('monster_actions').insert(acoesParaInserir)
+      if (error) toast.error(`Erro ao salvar ações: ${error.message}`)
     }
 
     const { data } = await supabase.from('monsters').select(`
@@ -731,22 +805,22 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
                     </div>
                   )}
                   <div className="grid grid-cols-2 gap-3">
-                    <div><label className={lbl}>Nome PT</label><input className={inp} value={basico.name_pt} onChange={e => setBasico(b => ({ ...b, name_pt: e.target.value }))} /></div>
-                    <div><label className={lbl}>Nome EN</label><input className={inp} value={basico.name_en} onChange={e => setBasico(b => ({ ...b, name_en: e.target.value }))} /></div>
+                    <div><label className={lbl}>Nome PT <span className="text-[var(--red2)]">*</span></label><input className={campoInvalido('name_pt')} value={basico.name_pt} onChange={e => setBasico(b => ({ ...b, name_pt: e.target.value }))} /></div>
+                    <div><label className={lbl}>Nome EN</label><input className={inp} value={basico.name_en} onChange={e => setBasico(b => ({ ...b, name_en: e.target.value }))} placeholder="(opcional — usa o nome PT se vazio)" /></div>
                   </div>
                   <div className="grid grid-cols-3 gap-3">
-                    <div><label className={lbl}>Tamanho</label><input className={inp} value={basico.size_pt} onChange={e => setBasico(b => ({ ...b, size_pt: e.target.value }))} /></div>
-                    <div><label className={lbl}>Tipo</label><input className={inp} value={basico.type_pt} onChange={e => setBasico(b => ({ ...b, type_pt: e.target.value }))} /></div>
-                    <div><label className={lbl}>Alinhamento</label><input className={inp} value={basico.alignment_pt} onChange={e => setBasico(b => ({ ...b, alignment_pt: e.target.value }))} /></div>
+                    <div><label className={lbl}>Tamanho <span className="text-[var(--red2)]">*</span></label><input className={campoInvalido('size_pt')} value={basico.size_pt} onChange={e => setBasico(b => ({ ...b, size_pt: e.target.value }))} /></div>
+                    <div><label className={lbl}>Tipo <span className="text-[var(--red2)]">*</span></label><input className={campoInvalido('type_pt')} value={basico.type_pt} onChange={e => setBasico(b => ({ ...b, type_pt: e.target.value }))} /></div>
+                    <div><label className={lbl}>Alinhamento <span className="text-[var(--red2)]">*</span></label><input className={campoInvalido('alignment_pt')} value={basico.alignment_pt} onChange={e => setBasico(b => ({ ...b, alignment_pt: e.target.value }))} /></div>
                   </div>
                   <div className="grid grid-cols-4 gap-3">
-                    <div><label className={lbl}>CA</label><input type="number" className={inp} value={basico.armor_class} onChange={e => setBasico(b => ({ ...b, armor_class: +e.target.value }))} /></div>
-                    <div><label className={lbl}>PV</label><input type="number" className={inp} value={basico.hit_points} onChange={e => setBasico(b => ({ ...b, hit_points: +e.target.value }))} /></div>
+                    <div><label className={lbl}>CA <span className="text-[var(--red2)]">*</span></label><input type="number" className={campoInvalido('armor_class')} value={basico.armor_class} onChange={e => setBasico(b => ({ ...b, armor_class: +e.target.value }))} /></div>
+                    <div><label className={lbl}>PV <span className="text-[var(--red2)]">*</span></label><input type="number" className={campoInvalido('hit_points')} value={basico.hit_points} onChange={e => setBasico(b => ({ ...b, hit_points: +e.target.value }))} /></div>
                     <div><label className={lbl}>Dado de Vida</label><input className={inp} value={basico.hit_dice} onChange={e => setBasico(b => ({ ...b, hit_dice: e.target.value }))} placeholder="4d8+4" /></div>
-                    <div><label className={lbl}>Deslocamento</label><input className={inp} value={basico.speed_pt} onChange={e => setBasico(b => ({ ...b, speed_pt: e.target.value }))} placeholder="9m" /></div>
+                    <div><label className={lbl}>Deslocamento <span className="text-[var(--red2)]">*</span></label><input className={campoInvalido('speed_pt')} value={basico.speed_pt} onChange={e => setBasico(b => ({ ...b, speed_pt: e.target.value }))} placeholder="9m" /></div>
                   </div>
                   <div>
-                    <label className={lbl}>Atributos</label>
+                    <label className={lbl}>Atributos <span className="text-[var(--red2)]">*</span></label>
                     <div className="grid grid-cols-6 gap-2 mt-1">
                       {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map((k, i) => {
                         const labels = ['FOR', 'DES', 'CON', 'INT', 'SAB', 'CAR']
@@ -754,23 +828,23 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
                         return (
                           <div key={k} className="text-center">
                             <div className="text-[var(--text3)] text-[9px] font-cinzel mb-0.5">{labels[i]}</div>
-                            <input type="number" min={1} max={30} className="w-full input-dd text-center text-sm" value={basico[key] as number} onChange={e => setBasico(b => ({ ...b, [key]: +e.target.value }))} />
+                            <input type="number" min={1} max={30} className={cn('w-full input-dd text-center text-sm', camposInvalidos.has(key) && 'border-[var(--red2)]')} value={basico[key] as number} onChange={e => setBasico(b => ({ ...b, [key]: +e.target.value }))} />
                           </div>
                         )
                       })}
                     </div>
                   </div>
                   <div className="grid grid-cols-4 gap-3">
-                    <div><label className={lbl}>ND</label><input className={inp} value={basico.challenge_rating} onChange={e => setBasico(b => ({ ...b, challenge_rating: e.target.value }))} /></div>
-                    <div><label className={lbl}>XP</label><input type="number" className={inp} value={basico.xp} onChange={e => setBasico(b => ({ ...b, xp: +e.target.value }))} /></div>
-                    <div><label className={lbl}>Bônus Prof.</label><input type="number" className={inp} value={basico.proficiency_bonus} onChange={e => setBasico(b => ({ ...b, proficiency_bonus: +e.target.value }))} /></div>
-                    <div><label className={lbl}>Percepção Passiva</label><input type="number" className={inp} value={basico.passive_perception} onChange={e => setBasico(b => ({ ...b, passive_perception: +e.target.value }))} /></div>
+                    <div><label className={lbl}>ND <span className="text-[var(--red2)]">*</span></label><input className={campoInvalido('challenge_rating')} value={basico.challenge_rating} onChange={e => setBasico(b => ({ ...b, challenge_rating: e.target.value }))} /></div>
+                    <div><label className={lbl}>XP <span className="text-[var(--red2)]">*</span></label><input type="number" className={campoInvalido('xp')} value={basico.xp} onChange={e => setBasico(b => ({ ...b, xp: +e.target.value }))} /></div>
+                    <div><label className={lbl}>Bônus Prof. <span className="text-[var(--red2)]">*</span></label><input className={campoInvalido('proficiency_bonus')} value={basico.proficiency_bonus} onChange={e => setBasico(b => ({ ...b, proficiency_bonus: e.target.value }))} placeholder="+2" /></div>
+                    <div><label className={lbl}>Percepção Passiva</label><input type="number" className={inp} value={basico.passive_perception ?? ''} onChange={e => setBasico(b => ({ ...b, passive_perception: e.target.value !== '' ? +e.target.value : null }))} /></div>
                   </div>
                   <div className="grid grid-cols-4 gap-3">
-                    <div><label className={lbl}>Visão Escura (ft)</label><input type="number" className={inp} value={basico.darkvision_ft} onChange={e => setBasico(b => ({ ...b, darkvision_ft: +e.target.value }))} /></div>
-                    <div><label className={lbl}>Visão Cega (ft)</label><input type="number" className={inp} value={basico.blindsight_ft} onChange={e => setBasico(b => ({ ...b, blindsight_ft: +e.target.value }))} /></div>
-                    <div><label className={lbl}>Sentido Sísmico (ft)</label><input type="number" className={inp} value={basico.tremorsense_ft} onChange={e => setBasico(b => ({ ...b, tremorsense_ft: +e.target.value }))} /></div>
-                    <div><label className={lbl}>Visão Verdadeira (ft)</label><input type="number" className={inp} value={basico.truesight_ft} onChange={e => setBasico(b => ({ ...b, truesight_ft: +e.target.value }))} /></div>
+                    <div><label className={lbl}>Visão Escura (ft)</label><input type="number" className={inp} value={basico.darkvision_ft ?? ''} onChange={e => setBasico(b => ({ ...b, darkvision_ft: e.target.value !== '' ? +e.target.value : null }))} /></div>
+                    <div><label className={lbl}>Visão Cega (ft)</label><input type="number" className={inp} value={basico.blindsight_ft ?? ''} onChange={e => setBasico(b => ({ ...b, blindsight_ft: e.target.value !== '' ? +e.target.value : null }))} /></div>
+                    <div><label className={lbl}>Sentido Sísmico (ft)</label><input type="number" className={inp} value={basico.tremorsense_ft ?? ''} onChange={e => setBasico(b => ({ ...b, tremorsense_ft: e.target.value !== '' ? +e.target.value : null }))} /></div>
+                    <div><label className={lbl}>Visão Verdadeira (ft)</label><input type="number" className={inp} value={basico.truesight_ft ?? ''} onChange={e => setBasico(b => ({ ...b, truesight_ft: e.target.value !== '' ? +e.target.value : null }))} /></div>
                   </div>
                   <div><label className={lbl}>Sentidos (texto)</label><input className={inp} value={basico.senses_pt} onChange={e => setBasico(b => ({ ...b, senses_pt: e.target.value }))} /></div>
                   <div><label className={lbl}>Idiomas</label><input className={inp} value={basico.languages_pt} onChange={e => setBasico(b => ({ ...b, languages_pt: e.target.value }))} /></div>
@@ -1432,7 +1506,7 @@ export function BestiarioCliente() {
                     <PainelGrimorio titulo="Atributos" compacto className="mb-3">
                       {m.proficiency_bonus != null && (
                         <p className="text-[var(--text3)] text-xs font-cinzel mb-2">
-                          Bônus de proficiência: <span className="text-[var(--text2)]">+{m.proficiency_bonus}</span>
+                          Bônus de proficiência: <span className="text-[var(--text2)]">{m.proficiency_bonus}</span>
                         </p>
                       )}
                       <div className="grid grid-cols-6 gap-2 text-center mb-2">

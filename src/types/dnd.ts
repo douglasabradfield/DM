@@ -106,7 +106,7 @@ export interface Monster {
   cha_score: number
   challenge_rating: string
   xp: number | null
-  proficiency_bonus: number | null
+  proficiency_bonus: string | null
   passive_perception: number | null
   senses_pt: string | null
   languages_pt: string | null
