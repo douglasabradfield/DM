@@ -255,8 +255,11 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     setSalvando(true)
     try {
       const supabase = createClient()
+      // slots_magia é gravado só por salvarSlotsDb(); dados.slots_magia é um snapshot
+      // congelado do carregamento da ficha e sobrescreveria ajustes feitos depois.
+      const { slots_magia: _ignorado, ...dadosParaSalvar } = dados
       const { error } = await supabase.from('personagens').update({
-        ...dados,
+        ...dadosParaSalvar,
         inventario,
         nivel: parseInt(String(dados.nivel)) || 1,
         bonus_proficiencia: parseInt(String(dados.bonus_proficiencia)) || 2,
@@ -559,7 +562,9 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
   async function copiarParaCampanha(campId: string) {
     const supabase = createClient()
-    const { id: _id, criado_em: _c, atualizado_em: _a, campanha_id: _camp, ...resto } = dados
+    // slots_magia é gravado só por salvarSlotsDb(); dados.slots_magia é um snapshot
+    // congelado do carregamento da ficha e não deve ser copiado para o personagem novo.
+    const { id: _id, criado_em: _c, atualizado_em: _a, campanha_id: _camp, slots_magia: _ignorado, ...resto } = dados
     const { error } = await supabase.from('personagens').insert({
       ...resto,
       campanha_id: campId,
