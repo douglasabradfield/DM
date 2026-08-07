@@ -31,7 +31,7 @@ import toast from 'react-hot-toast'
 export function TabelaCombate() {
   const {
     combatentes, rodadaAtual, turnoAtual, ativa,
-    statusBatalha, nomeBatalha,
+    statusBatalha, nomeBatalha, batalhaId,
     iniciarBatalha, encerrarBatalha, pausarBatalha, retomarBatalha, carregarBatalhaAtiva,
     resetarBatalha,
     adicionarCombatente, confirmarIniciativa, rolarIniciativasMonstros,
@@ -40,6 +40,14 @@ export function TabelaCombate() {
     xpGanhoNaBatalha, xpDistribuido,
   } = useBatalha()
   const { campanhaAtiva } = useCampanha()
+
+  // Canal Realtime da batalha — assina quando batalhaId aparece, encerra no
+  // cleanup (troca de batalha ou saída da tela) para não vazar o canal.
+  useEffect(() => {
+    if (!batalhaId) return
+    useBatalha.getState().assinarRealtime()
+    return () => { useBatalha.getState().encerrarRealtime() }
+  }, [batalhaId])
 
   const [aba, setAba] = useState<'combate' | 'dados' | 'log' | 'monstros'>('combate')
   const [condicoesDisponiveis, setCondicoesDisponiveis] = useState<string[]>(TODAS_CONDICOES)
