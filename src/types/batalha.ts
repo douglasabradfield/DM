@@ -1,4 +1,5 @@
 import type { TipoDano, MonsterAction } from './dnd'
+import type { ModoRevelacao } from '@/lib/batalha/visibilidade-pv'
 
 export type TipoCombatente = 'jogador' | 'monstro' | 'npc'
 
@@ -31,6 +32,7 @@ export interface Combatente {
   vulnerabilidades: TipoDano[]
   espacos_magia: EspacosMagiaBatalha
   notas: string
+  pv_revelado: boolean
   dados_monstro: DadosMonstroSimples | null
   dados_personagem?: {
     nivel: number
@@ -137,6 +139,7 @@ export interface BatalhaDB {
   turno_combatente_id: string | null
   iniciativa_confirmada: boolean
   xp_distribuido: boolean
+  revelacao_pv: ModoRevelacao
   criado_por: string | null
   criado_em: string
   encerrada_em: string | null
@@ -170,6 +173,7 @@ export interface CombatenteDB {
   } | null
   nivel: number | null
   notas: string | null
+  pv_revelado: boolean
   resistencias: TipoDano[]
   imunidades: TipoDano[]
   vulnerabilidades: TipoDano[]

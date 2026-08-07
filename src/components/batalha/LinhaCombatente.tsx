@@ -14,7 +14,7 @@ import { PopupCondicao } from './PopupCondicao'
 import { SeletorTipoDano } from './SeletorTipoDano'
 import { TooltipCombatente } from './TooltipCombatente'
 import { cn } from '@/lib/utils'
-import { Trash2, Plus, GripVertical, X, Pencil, Wand2 } from 'lucide-react'
+import { Trash2, Plus, GripVertical, X, Pencil, Wand2, Eye } from 'lucide-react'
 import type { TipoDano } from '@/types/dnd'
 
 interface LinhaCombatenteProps {
@@ -32,6 +32,7 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
     setarDanoInput, setarTipoDano,
     adicionarCondicao, removerCondicao,
     definirIniciativa, setVantagem, usarInspiracao,
+    togglePvRevelado,
   } = useBatalha()
   const pausada = useBatalha(s => s.statusBatalha === 'pausada')
 
@@ -274,6 +275,18 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
             <span onClick={() => setEditandoPVMax(true)} className="text-[var(--text3)] text-xs cursor-pointer hover:text-[var(--text2)]">
               {c.pv_maximo}
             </span>
+          )}
+          {c.tipo !== 'jogador' && (
+            <button
+              onClick={() => togglePvRevelado(c.id)}
+              title="Revelar estado deste combatente aos jogadores"
+              className={cn(
+                'transition-colors',
+                c.pv_revelado ? 'text-[var(--gold)]' : 'text-[var(--border)] hover:text-[var(--text3)]'
+              )}
+            >
+              <Eye className="w-3 h-3" />
+            </button>
           )}
         </div>
         <BarraVida atual={c.pv_atual} maximo={c.pv_maximo} temporarios={c.pv_temporarios} className="mt-0.5" />

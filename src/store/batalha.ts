@@ -7,6 +7,7 @@ import type {
 } from '@/types/batalha'
 import type { TipoDano } from '@/types/dnd'
 import { aplicarResistencias } from '@/lib/dados-dnd/tipos-dano'
+import type { ModoRevelacao } from '@/lib/batalha/visibilidade-pv'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
@@ -54,6 +55,7 @@ function combatenteParaLinha(c: Combatente, batalhaId: string) {
     vulnerabilidades: c.vulnerabilidades,
     morto: c.morto,
     ausente: c.ausente,
+    pv_revelado: c.pv_revelado,
     vantagem: c.vantagem ?? null,
     inspiracao: c.inspiracao ?? 0,
     dano_total: c.dano_total,
@@ -85,6 +87,7 @@ function combatenteFromDB(row: CombatenteDB): Combatente {
     vulnerabilidades: row.vulnerabilidades,
     espacos_magia: row.espacos_magia,
     notas: row.notas ?? '',
+    pv_revelado: row.pv_revelado,
     dados_monstro: row.dados_monstro,
     dados_personagem: row.dados_personagem ?? null,
     ordem: row.ordem,
@@ -284,6 +287,9 @@ interface EstadoBatalhaStore {
   xpGanhoNaBatalha: number
   xpDistribuido: boolean
   marcarXPDistribuido: (xpPorJogador: number, nomes: string[]) => void
+  revelacaoPv: ModoRevelacao
+  definirRevelacaoPv: (modo: ModoRevelacao) => void
+  togglePvRevelado: (combatenteId: string) => void
 
   // Sessão / persistência
   sessaoId: string | null
@@ -468,6 +474,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       const igual = state.rodadaAtual === novo.rodada_atual
         && state.turnoCombatenteId === novo.turno_combatente_id
         && state.xpDistribuido === novo.xp_distribuido
+        && state.revelacaoPv === novo.revelacao_pv
         && (state.statusBatalha === 'pausada') === (novo.status === 'pausada')
         && (state.statusBatalha === 'concluida') === (novo.status === 'encerrada')
       if (igual) return
@@ -479,6 +486,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         s.turnoCombatenteId = novo.turno_combatente_id
         s.turnoAtual = calcularIndiceTurno(s.combatentes, novo.turno_combatente_id)
         s.xpDistribuido = novo.xp_distribuido
+        s.revelacaoPv = novo.revelacao_pv
       })
     }
 
@@ -560,6 +568,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       nomeBatalha: '',
       statusBatalha: 'inativa',
       iniciadaEm: null,
+      revelacaoPv: 'oculto',
 
       assinarRealtime,
       encerrarRealtime,
@@ -644,6 +653,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           state.turnoAtual = 0
           state.turnoCombatenteId = null
           state.iniciadaEm = new Date()
+          state.revelacaoPv = batalha.revelacao_pv
           state.combatentes.forEach(c => { c.batalha_id = batalha.id })
           state.log.push(entradaInicial)
         })
@@ -795,6 +805,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           state.turnoCombatenteId = batalha.turno_combatente_id
           state.iniciadaEm = new Date(batalha.criado_em)
           state.xpDistribuido = batalha.xp_distribuido
+          state.revelacaoPv = batalha.revelacao_pv
         })
 
         assinarRealtime()
@@ -816,6 +827,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           state.nomeBatalha = ''
           state.statusBatalha = 'inativa'
           state.iniciadaEm = null
+          state.revelacaoPv = 'oculto'
         })
       },
 
@@ -1381,6 +1393,17 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             })
         }
       },
+
+      definirRevelacaoPv: (modo) => {
+        const anterior = get().revelacaoPv
+        if (anterior === modo) return
+        set(state => { state.revelacaoPv = modo })
+        persistirBatalha({ revelacao_pv: modo }).then(ok => {
+          if (!ok) set(state => { state.revelacaoPv = anterior })
+        })
+      },
+
+      togglePvRevelado: (id) => mutarCombatente(id, c => { c.pv_revelado = !c.pv_revelado }),
     }
   })
 )
