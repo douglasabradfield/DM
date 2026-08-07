@@ -119,3 +119,81 @@ export interface ResultadoDado {
   critico?: boolean
   falha?: boolean
 }
+
+// =============================================================================
+// Batalha Viva (Fase 1) — tabelas batalhas / batalha_combatentes / batalha_log
+// Coexistem com os tipos acima; nada foi removido nesta etapa.
+// =============================================================================
+
+export type StatusBatalhaDB = 'preparacao' | 'ativa' | 'pausada' | 'encerrada'
+
+export interface BatalhaDB {
+  id: string
+  campanha_id: string
+  sessao_id: string | null
+  nome: string
+  status: StatusBatalhaDB
+  rodada_atual: number
+  turno_combatente_id: string | null
+  iniciativa_confirmada: boolean
+  xp_distribuido: boolean
+  criado_por: string | null
+  criado_em: string
+  encerrada_em: string | null
+}
+
+export type TipoCombatenteDB = 'jogador' | 'monstro' | 'npc' | 'aliado'
+
+export interface CombatenteDB {
+  id: string
+  batalha_id: string
+  personagem_id: string | null
+  monster_id: number | null
+  controlado_por: string | null
+  nome: string
+  tipo: TipoCombatenteDB
+  ordem: number
+  iniciativa: number | null
+  ca: number
+  pv_maximo: number
+  pv_atual: number
+  pv_temporarios: number
+  condicoes: TipoCondicao[]
+  espacos_magia: EspacosMagiaBatalha
+  slots_monstro: Record<string, number> | null
+  ataques_estruturados: MonsterAction[] | null
+  dados_monstro: DadosMonstroSimples | null
+  dados_personagem: {
+    nivel: number
+    classe: string | null
+    ataques: Array<{ nome: string; bonus: string; dano: string }>
+  } | null
+  nivel: number | null
+  notas: string | null
+  resistencias: TipoDano[]
+  imunidades: TipoDano[]
+  vulnerabilidades: TipoDano[]
+  morto: boolean
+  ausente: boolean
+  vantagem: 'vantagem' | 'desvantagem' | null
+  inspiracao: number
+  dano_total: number
+  cura_total: number
+  criado_em: string
+}
+
+export interface LogDB {
+  id: string
+  batalha_id: string
+  rodada: number
+  turno: number | null
+  tipo: TipoEntradaLog
+  autor_id: string | null
+  autor_nome: string | null
+  alvo_id: string | null
+  alvo_nome: string | null
+  valor: number | null
+  tipo_dano: TipoDano | null
+  descricao: string | null
+  criado_em: string
+}
