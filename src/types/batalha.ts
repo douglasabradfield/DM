@@ -17,6 +17,7 @@ export interface ArmaEmpunhada {
   nome: string
   bonus: string
   dano: string
+  tipo_dano?: string
 }
 
 export interface Combatente {

@@ -204,6 +204,16 @@ export interface Spell {
   description_pt: string | null
   classes_pt: string | null
   classes_en: string | null
+  damage_dice?: string | null
+  damage_type_en?: string | null
+  damage_type_pt?: string | null
+  save_ability?: string | null
+  save_effect?: string | null
+  attack_type?: string | null
+  upcast_dice?: string | null
+  heal_dice?: string | null
+  aoe_type?: string | null
+  aoe_size_ft?: number | null
 }
 
 export interface MagicItem {

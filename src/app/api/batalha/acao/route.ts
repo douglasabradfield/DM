@@ -27,6 +27,10 @@ interface AcaoPayload {
   nomeAcao?: string
   vantagem?: 'vantagem' | 'desvantagem' | null
   descricao?: string
+  // Nome do efeito persistente do conjurador (ex: magia de concentração) —
+  // apenas anotado em efeitos_ativos para o DM lembrar; o app não aplica
+  // sozinho (detalhado na Fase 3.C).
+  marcarEfeitoAtivo?: string
 }
 
 type SlotsMagiaDb = Record<string, { total: number; usados: number }>
@@ -220,8 +224,18 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (ehReacao) {
-    await admin.from('batalha_combatentes').update({ reacao_usada: true }).eq('id', ator.id)
+  // Efeitos colaterais sobre a própria linha do ator: reação consumida,
+  // vantagem/desvantagem escolhida (acompanha a ação, vira o estado atual
+  // do combatente) e, se pedido, a anotação de efeito persistente.
+  const patchAtor: Record<string, unknown> = {}
+  if (ehReacao) patchAtor.reacao_usada = true
+  if (payload.vantagem !== undefined) patchAtor.vantagem = payload.vantagem
+  if (payload.marcarEfeitoAtivo) {
+    const efeitosAtuais = (ator.efeitos_ativos ?? []) as { nome: string; rodada_inicio: number }[]
+    patchAtor.efeitos_ativos = [...efeitosAtuais, { nome: payload.marcarEfeitoAtivo, rodada_inicio: batalha.rodada_atual }]
+  }
+  if (Object.keys(patchAtor).length > 0) {
+    await admin.from('batalha_combatentes').update(patchAtor).eq('id', ator.id)
   }
 
   const nivelLabel = nivelMagia !== undefined ? (nivelMagia === 0 ? ' (Truque)' : ` (N${nivelMagia})`) : ''
