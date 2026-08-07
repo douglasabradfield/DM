@@ -1,5 +1,6 @@
 import { Sidebar, BottomNav } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
+import { BannerBatalhaAtiva } from '@/components/batalha/BannerBatalhaAtiva'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
@@ -40,6 +41,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </main>
       </div>
       <BottomNav isAdmin={profile?.is_admin === true} plano={profile?.plano} />
+      <BannerBatalhaAtiva />
     </div>
   )
 }

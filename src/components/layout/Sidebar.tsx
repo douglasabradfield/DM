@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Campanha } from '@/types/database'
 import {
   Swords, Users, Wand2, Package,
-  Map, BookMarked, Bot, Shield,
+  Map, BookMarked, Bot, Shield, Dices,
   ChevronRight, Skull, ChevronDown, Plus, X, ImageIcon, Compass, ShieldCheck, Scroll, Lock,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -22,6 +22,7 @@ type ItemNav = {
 }
 
 const itensNav: ItemNav[] = [
+  { href: '/mesa',          icone: Dices,       label: 'Mesa',          cor: '#f39c12'                },
   { href: '/batalha',       icone: Swords,     label: 'Batalha',       cor: '#e74c3c', dmOnly: true  },
   { href: '/personagens',   icone: Users,       label: 'Personagens',   cor: '#3498db'                },
   { href: '/bestiario',     icone: Skull,       label: 'Bestiário',     cor: '#9b59b6', dmOnly: true  },
@@ -360,6 +361,7 @@ export function BottomNav({ isAdmin, plano: _plano }: { isAdmin?: boolean; plano
     : false
 
   const itensDm = [
+    { href: '/mesa',        icone: Dices,        label: 'Mesa'     },
     { href: '/batalha',     icone: Swords,      label: 'Batalha'  },
     { href: '/personagens', icone: Users,        label: 'Persona.' },
     { href: '/bestiario',   icone: Skull,        label: 'Bestia.'  },
@@ -368,6 +370,7 @@ export function BottomNav({ isAdmin, plano: _plano }: { isAdmin?: boolean; plano
   ]
 
   const itensJogador = [
+    { href: '/mesa',        icone: Dices,        label: 'Mesa'     },
     { href: '/personagens', icone: Users,        label: 'Persona.' },
     { href: '/magias',      icone: Wand2,        label: 'Magias'   },
     { href: '/itens',       icone: Package,      label: 'Itens'    },
