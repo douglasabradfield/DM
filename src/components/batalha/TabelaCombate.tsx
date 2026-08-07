@@ -765,6 +765,7 @@ function ModalCarregarPersonagens({ campanhaId, onFechar }: { campanhaId: string
             nome: a.nome,
             bonus: a.bonus_ataque,
             dano: a.dano,
+            tipo_dano: a.tipo_dano || undefined,
           })),
         },
         ordem: 999,

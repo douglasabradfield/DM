@@ -6,7 +6,7 @@ import type {
   CombatenteDB, LogDB, BatalhaDB,
 } from '@/types/batalha'
 import type { TipoDano } from '@/types/dnd'
-import { aplicarResistencias } from '@/lib/dados-dnd/tipos-dano'
+import { calcularDano, aplicarCura as calcularCura, consumirEspaco } from '@/lib/batalha/motor'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
@@ -58,6 +58,8 @@ function combatenteParaLinha(c: Combatente, batalhaId: string) {
     inspiracao: c.inspiracao ?? 0,
     dano_total: c.dano_total,
     cura_total: c.cura_total,
+    reacao_usada: c.reacao_usada,
+    efeitos_ativos: c.efeitos_ativos,
   }
 }
 
@@ -93,6 +95,8 @@ function combatenteFromDB(row: CombatenteDB): Combatente {
     nivel: row.nivel ?? undefined,
     slots_monstro: row.slots_monstro ?? undefined,
     ataques_estruturados: row.ataques_estruturados ?? undefined,
+    reacao_usada: row.reacao_usada,
+    efeitos_ativos: row.efeitos_ativos ?? [],
     dano_input: 0,
     dano_tipo: 'cortante',
     dano_total: row.dano_total,
@@ -304,7 +308,7 @@ interface EstadoBatalhaStore {
   encerrarRealtime: () => void
 
   // Combatentes
-  adicionarCombatente: (c: Omit<Combatente, 'id' | 'batalha_id' | 'dano_input' | 'dano_tipo' | 'dano_total' | 'cura_total' | 'flash'>) => void
+  adicionarCombatente: (c: Omit<Combatente, 'id' | 'batalha_id' | 'dano_input' | 'dano_tipo' | 'dano_total' | 'cura_total' | 'flash' | 'reacao_usada' | 'efeitos_ativos'>) => void
   removerCombatente: (id: string) => void
   atualizarCombatente: (id: string, dados: Partial<Combatente>) => void
 
@@ -683,6 +687,27 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
         const conteudo = montarConteudoDiario({ nomeBatalha, rodadaAtual, iniciadaEm, log, combatentes })
 
+        // Cobre a lacuna de sincronização em tempo real: espaços de magia usados
+        // durante a batalha (EspacosMagia.tsx -> usarEspaco) só existem em
+        // batalha_combatentes até este ponto — nunca voltaram para a ficha.
+        // PV/PV temp já são sincronizados a cada aplicarDano/aplicarCura, mas
+        // regravamos aqui também para garantir consistência no encerramento.
+        await Promise.all(
+          combatentes
+            .filter(c => c.personagem_id)
+            .map(c => {
+              const slotsMagia: Record<string, { total: number; usados: number }> = {}
+              Object.entries(c.espacos_magia).forEach(([nivel, espaco]) => {
+                slotsMagia[nivel] = { total: espaco.total, usados: espaco.utilizados }
+              })
+              return supabase.from('personagens').update({
+                pv_atual: c.pv_atual,
+                pv_temporarios: c.pv_temporarios,
+                slots_magia: slotsMagia,
+              }).eq('id', c.personagem_id as string)
+            })
+        ).catch(err => console.error('Erro ao sincronizar fichas ao encerrar batalha:', err))
+
         await supabase.from('sessoes').update({
           status: 'concluida',
           concluida_em: new Date().toISOString(),
@@ -848,6 +873,8 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           dano_tipo: 'cortante',
           dano_total: 0,
           cura_total: 0,
+          reacao_usada: false,
+          efeitos_ativos: [],
           flash: null,
         }
         set(state => { state.combatentes.push(novo) })
@@ -956,19 +983,11 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         const combatenteAtivo = ativos[state0.turnoAtual] || null
         const nomeAtacante = combatenteAtivo?.nome || 'DM'
 
-        const { danoFinal, modificador } = aplicarResistencias(dano, tipo, c.resistencias, c.imunidades, c.vulnerabilidades)
+        const { danoFinal, absorvidoTemporario, modificador } = calcularDano(dano, tipo, c)
 
         const pvAntes = c.pv_atual
-        let novoPvTemp = c.pv_temporarios
-        let novoPv: number
-        if (c.pv_temporarios > 0) {
-          const absTemp = Math.min(c.pv_temporarios, danoFinal)
-          novoPvTemp = c.pv_temporarios - absTemp
-          const resto = danoFinal - absTemp
-          novoPv = Math.max(0, c.pv_atual - resto)
-        } else {
-          novoPv = Math.max(0, c.pv_atual - danoFinal)
-        }
+        const novoPvTemp = c.pv_temporarios - absorvidoTemporario
+        const novoPv = Math.max(0, c.pv_atual - (danoFinal - absorvidoTemporario))
 
         const caiu = pvAntes > 0 && novoPv === 0
         const xpGanho = caiu && c.tipo === 'monstro' && c.dados_monstro?.xp ? c.dados_monstro.xp : 0
@@ -1039,7 +1058,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         const ativos = ordenados.filter(x => !x.ausente && !x.morto)
         const nomeAtacante = ativos[state0.turnoAtual]?.nome || 'DM'
 
-        const novoPv = Math.min(c.pv_maximo, c.pv_atual + cura)
+        const { pvFinal: novoPv } = calcularCura(cura, c)
         const novoCuraTotal = c.cura_total + cura
 
         const entrada = !silencioso ? novaEntradaLog(state0.rodadaAtual, state0.turnoAtual, {
@@ -1197,8 +1216,8 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       },
 
       usarEspaco: (id, nivel) => mutarCombatente(id, c => {
-        const espaco = c.espacos_magia[nivel]
-        if (espaco && espaco.utilizados < espaco.total) espaco.utilizados++
+        const { novosEspacos, ok } = consumirEspaco(c.espacos_magia, nivel)
+        if (ok) c.espacos_magia = novosEspacos
       }),
 
       recuperarEspaco: (id, nivel) => mutarCombatente(id, c => {
@@ -1267,11 +1286,13 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         const primeiroAtivo = ordenados.find(c => !c.ausente && !c.morto)
         const novoId = primeiroAtivo?.id ?? null
         const novaRodadaAtual = state0.rodadaAtual + 1
+        const idsComReacaoUsada = state0.combatentes.filter(c => c.reacao_usada).map(c => c.id)
 
         set(state => {
           state.rodadaAtual = novaRodadaAtual
           state.turnoCombatenteId = novoId
           state.turnoAtual = calcularIndiceTurno(state.combatentes, novoId)
+          state.combatentes.forEach(c => { c.reacao_usada = false })
         })
 
         persistirBatalha({ turno_combatente_id: novoId, rodada_atual: novaRodadaAtual }).then(ok => {
@@ -1281,6 +1302,14 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             state.rodadaAtual = anterior.rodadaAtual
           })
         })
+
+        if (state0.batalhaId && idsComReacaoUsada.length > 0) {
+          createClient()
+            .from('batalha_combatentes')
+            .update({ reacao_usada: false })
+            .in('id', idsComReacaoUsada)
+            .then(({ error }) => { if (error) console.error('Erro ao resetar reação da rodada:', error) })
+        }
       },
 
       toggleAusencia: (id) => mutarCombatente(id, c => { c.ausente = !c.ausente }),

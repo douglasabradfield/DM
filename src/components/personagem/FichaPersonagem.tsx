@@ -113,6 +113,40 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [combatenteAtivo?.pv_atual, combatenteAtivo?.pv_temporarios])
 
+  // Campos voláteis (PV, PV temp, espaços de magia, inspiração) ficam travados
+  // quando este personagem está numa batalha não encerrada — a tela de mesa é
+  // quem manda nesses valores enquanto o combate dura. Consultado direto no
+  // banco (não via useBatalha) porque essa página pode abrir sem a store de
+  // batalha carregada, ex: jogador acessando a ficha em outra aba.
+  const [emCombate, setEmCombate] = useState(false)
+  useEffect(() => {
+    if (!campanhaAtiva?.id) { setEmCombate(false); return }
+    const idCampanha = campanhaAtiva.id
+    const supabase = createClient()
+    let cancelado = false
+
+    async function verificarCombate() {
+      const { data } = await supabase
+        .from('batalha_combatentes')
+        .select('id, batalhas!inner(status, campanha_id)')
+        .eq('personagem_id', p.id)
+        .eq('batalhas.campanha_id', idCampanha)
+        .neq('batalhas.status', 'encerrada')
+        .limit(1)
+      if (!cancelado) setEmCombate((data?.length ?? 0) > 0)
+    }
+
+    verificarCombate()
+
+    const canal = supabase
+      .channel(`ficha-combate-${p.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'batalha_combatentes', filter: `personagem_id=eq.${p.id}` }, verificarCombate)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'batalhas', filter: `campanha_id=eq.${idCampanha}` }, verificarCombate)
+      .subscribe()
+
+    return () => { cancelado = true; supabase.removeChannel(canal) }
+  }, [p.id, campanhaAtiva?.id])
+
   useEffect(() => {
     const supabase = createClient()
     const canal = supabase
@@ -637,6 +671,11 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           <p className="text-[var(--text3)] text-sm font-cinzel">👁️ Você está visualizando este personagem em modo leitura</p>
         </div>
       )}
+      {emCombate && (
+        <div className="mb-4 p-3 bg-[var(--red2)]/10 border border-[var(--red2)]/40 rounded-xl text-center">
+          <p className="text-[var(--red2)] text-sm font-cinzel">⚔️ Em combate — altere pela tela de mesa</p>
+        </div>
+      )}
       {/* Cabeçalho */}
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -726,6 +765,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
             <InspiracaoHeroica
               valor={typeof dados.inspiracao === 'number' ? dados.inspiracao : 0}
               onChange={val => atualizar('inspiracao', val as never)}
+              disabled={emCombate}
             />
             <div>
               <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Raça</label>
@@ -911,11 +951,11 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                 </div>
                 <div>
                   <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase block">PV Atual</label>
-                  <input type="number" value={dados.pv_atual} onChange={e => atualizar('pv_atual', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
+                  <input type="number" value={dados.pv_atual} onChange={e => atualizar('pv_atual', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar || emCombate} />
                 </div>
                 <div>
                   <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase block">PV Temp</label>
-                  <input type="number" value={dados.pv_temporarios} onChange={e => atualizar('pv_temporarios', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
+                  <input type="number" value={dados.pv_temporarios} onChange={e => atualizar('pv_temporarios', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar || emCombate} />
                 </div>
               </div>
 
@@ -1202,7 +1242,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                           onChange={e => alterarTotalNivel(nivel, Math.max(0, Math.min(9, parseInt(e.target.value) || 0)))}
                           onBlur={() => salvarTotalNivel(nivel)}
                           className="w-full input-dd text-center"
-                          disabled={!podeEditar}
+                          disabled={!podeEditar || emCombate}
                         />
                       ) : (
                         <>
@@ -1211,7 +1251,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                               <button
                                 key={i}
                                 onClick={() => toggleEspaco(nivel, i)}
-                                disabled={!podeEditar}
+                                disabled={!podeEditar || emCombate}
                                 className={`text-base transition-colors ${
                                   i < utilizados ? 'text-[var(--text3)]/40' : 'text-[var(--accent)]'
                                 } hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed`}
@@ -1248,11 +1288,12 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               <div className="flex items-center gap-2">
                 <button
                   onClick={descansarLongo}
-                  className="text-xs font-cinzel text-[var(--green)] border border-[var(--green)]/40 px-3 py-1 rounded hover:bg-[var(--green)]/10 transition-colors"
+                  disabled={emCombate}
+                  className="text-xs font-cinzel text-[var(--green)] border border-[var(--green)]/40 px-3 py-1 rounded hover:bg-[var(--green)]/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   🌙 Descanso Longo
                 </button>
-                {podeEditar && (
+                {podeEditar && !emCombate && (
                   <button
                     onClick={() => setModoAjuste(true)}
                     className="text-xs font-cinzel text-[var(--text3)] border border-[var(--border)] px-3 py-1 rounded hover:border-[var(--border2)] transition-colors"
@@ -1661,7 +1702,7 @@ function InputNumerico({ value, onChange, min = 0, max, className, placeholder }
   )
 }
 
-function InspiracaoHeroica({ valor, onChange }: { valor: number; onChange: (novo: number) => void }) {
+function InspiracaoHeroica({ valor, onChange, disabled }: { valor: number; onChange: (novo: number) => void; disabled?: boolean }) {
   return (
     <div>
       <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Inspiração Heroica</label>
@@ -1671,8 +1712,9 @@ function InspiracaoHeroica({ valor, onChange }: { valor: number; onChange: (novo
             key={i}
             type="button"
             onClick={() => onChange(valor === i ? i - 1 : i)}
-            title={i <= valor ? `Usar inspiração (${valor} restante${valor !== 1 ? 's' : ''})` : `${i} inspiração`}
-            className="text-xl transition-all hover:scale-110 leading-none"
+            disabled={disabled}
+            title={disabled ? 'Em combate — altere pela tela de mesa' : i <= valor ? `Usar inspiração (${valor} restante${valor !== 1 ? 's' : ''})` : `${i} inspiração`}
+            className="text-xl transition-all hover:scale-110 leading-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
             {i <= valor ? '⭐' : '☆'}
           </button>

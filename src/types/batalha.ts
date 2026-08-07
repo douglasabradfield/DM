@@ -35,7 +35,7 @@ export interface Combatente {
   dados_personagem?: {
     nivel: number
     classe: string | null
-    ataques: Array<{ nome: string; bonus: string; dano: string }>
+    ataques: Array<{ nome: string; bonus: string; dano: string; tipo_dano?: string }>
   } | null
   ordem: number
   vantagem?: 'vantagem' | 'desvantagem' | null
@@ -45,6 +45,10 @@ export interface Combatente {
   slots_monstro?: Record<string, number>
   // ataques estruturados do bestiário (quando monstro tem monster_actions)
   ataques_estruturados?: MonsterAction[]
+  // reset automático a cada nova rodada — uma reação por rodada (regra 5e)
+  reacao_usada: boolean
+  // efeitos persistentes do conjurador: [{ nome, rodada_inicio }] — o app lembra, não aplica sozinho
+  efeitos_ativos: { nome: string; rodada_inicio: number }[]
   // estado local (não salvo)
   dano_input: number
   dano_tipo: TipoDano
@@ -166,7 +170,7 @@ export interface CombatenteDB {
   dados_personagem: {
     nivel: number
     classe: string | null
-    ataques: Array<{ nome: string; bonus: string; dano: string }>
+    ataques: Array<{ nome: string; bonus: string; dano: string; tipo_dano?: string }>
   } | null
   nivel: number | null
   notas: string | null
@@ -179,6 +183,8 @@ export interface CombatenteDB {
   inspiracao: number
   dano_total: number
   cura_total: number
+  reacao_usada: boolean
+  efeitos_ativos: { nome: string; rodada_inicio: number }[]
   criado_em: string
 }
 
