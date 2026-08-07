@@ -129,6 +129,7 @@ function AbaPersonalizadoBestiario({ userId }: { userId: string }) {
       vulnerabilidades: [],
       espacos_magia: {},
       notas: '',
+      pv_revelado: false,
       dados_monstro: {
         cr: m.dados.cr,
         tipo: m.dados.tipo,
@@ -1370,6 +1371,7 @@ export function BestiarioCliente() {
       vulnerabilidades: [],
       espacos_magia: {},
       notas: '',
+      pv_revelado: false,
       dados_monstro: {
         cr: m.challenge_rating,
         tipo: m.type_pt ?? '',

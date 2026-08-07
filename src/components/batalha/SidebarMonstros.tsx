@@ -58,6 +58,7 @@ export function SidebarMonstros() {
         vulnerabilidades: [],
         espacos_magia: {},
         notas: '',
+        pv_revelado: false,
         dados_monstro: {
           cr: m.challenge_rating ?? '?',
           tipo: m.type_pt ?? '',

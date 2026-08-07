@@ -1,5 +1,6 @@
 import { Sidebar, BottomNav } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
+import { BannerBatalhaAtiva } from '@/components/batalha/BannerBatalhaAtiva'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
@@ -28,7 +29,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .single()
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--bg)]">
+    <div className="flex h-dvh overflow-hidden bg-[var(--bg)]">
       <Sidebar isAdmin={profile?.is_admin === true} plano={profile?.plano} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header
@@ -40,6 +41,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </main>
       </div>
       <BottomNav isAdmin={profile?.is_admin === true} plano={profile?.plano} />
+      <BannerBatalhaAtiva />
     </div>
   )
 }

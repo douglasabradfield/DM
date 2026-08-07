@@ -1,4 +1,5 @@
 import type { TipoDano, MonsterAction } from './dnd'
+import type { ModoRevelacao } from '@/lib/batalha/visibilidade-pv'
 
 export type TipoCombatente = 'jogador' | 'monstro' | 'npc'
 
@@ -10,6 +11,12 @@ export type TipoCondicao =
 
 export interface EspacosMagiaBatalha {
   [nivel: number]: { total: number; utilizados: number }
+}
+
+export interface ArmaEmpunhada {
+  nome: string
+  bonus: string
+  dano: string
 }
 
 export interface Combatente {
@@ -31,6 +38,7 @@ export interface Combatente {
   vulnerabilidades: TipoDano[]
   espacos_magia: EspacosMagiaBatalha
   notas: string
+  pv_revelado: boolean
   dados_monstro: DadosMonstroSimples | null
   dados_personagem?: {
     nivel: number
@@ -41,6 +49,8 @@ export interface Combatente {
   vantagem?: 'vantagem' | 'desvantagem' | null
   inspiracao?: number
   nivel?: number
+  arma_esquerda?: ArmaEmpunhada | null
+  arma_direita?: ArmaEmpunhada | null
   // slots restantes por nível (local, para monstros/NPCs sem personagem_id)
   slots_monstro?: Record<string, number>
   // ataques estruturados do bestiário (quando monstro tem monster_actions)
@@ -145,6 +155,7 @@ export interface BatalhaDB {
   turno_combatente_id: string | null
   iniciativa_confirmada: boolean
   xp_distribuido: boolean
+  revelacao_pv: ModoRevelacao
   criado_por: string | null
   criado_em: string
   encerrada_em: string | null
@@ -178,6 +189,9 @@ export interface CombatenteDB {
   } | null
   nivel: number | null
   notas: string | null
+  pv_revelado: boolean
+  arma_esquerda: ArmaEmpunhada | null
+  arma_direita: ArmaEmpunhada | null
   resistencias: TipoDano[]
   imunidades: TipoDano[]
   vulnerabilidades: TipoDano[]

@@ -38,6 +38,7 @@ export function TabelaCombate() {
     proximoTurno, turnoAnterior, proximaRodada,
     aplicarTodosDanos, aplicarTodasCuras, zerarContadores, reordenarCombatentes,
     xpGanhoNaBatalha, xpDistribuido,
+    revelacaoPv, definirRevelacaoPv,
   } = useBatalha()
   const { campanhaAtiva } = useCampanha()
 
@@ -118,6 +119,7 @@ export function TabelaCombate() {
       vulnerabilidades: [],
       espacos_magia: {},
       notas: '',
+      pv_revelado: false,
       dados_monstro: null,
       ordem: 999,
     })
@@ -141,6 +143,7 @@ export function TabelaCombate() {
       vulnerabilidades: [],
       espacos_magia: {},
       notas: '',
+      pv_revelado: false,
       dados_monstro: null,
       ordem: 999,
     })
@@ -171,6 +174,28 @@ export function TabelaCombate() {
           {combatenteAtivo && ativa && (
             <span className="text-[var(--gold2)] text-sm font-cinzel">⚔️ {combatenteAtivo.nome}</span>
           )}
+
+          <div
+            className="flex items-center gap-0.5 bg-[var(--bg3)] border border-[var(--border)] rounded px-1 py-1"
+            title="Padrão: jogadores só veem o nome dos monstros. Use o 👁️ na linha para revelar o estado de um monstro específico. Exato: jogadores veem todos os números."
+          >
+            {([
+              { valor: 'padrao', label: '🙈 Padrão' },
+              { valor: 'exato', label: '🔢 Exato' },
+            ] as const).map(opt => (
+              <button
+                key={opt.valor}
+                onClick={() => definirRevelacaoPv(opt.valor)}
+                className={`px-2 py-1 rounded text-xs font-cinzel transition-colors ${
+                  revelacaoPv === opt.valor
+                    ? 'bg-[var(--gold)] text-[var(--bg)]'
+                    : 'text-[var(--text3)] hover:text-[var(--text2)]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
 
           <div className="flex-1" />
 
@@ -757,6 +782,7 @@ function ModalCarregarPersonagens({ campanhaId, onFechar }: { campanhaId: string
         vulnerabilidades: p.vulnerabilidades ?? [],
         espacos_magia: espacos,
         notas: '',
+        pv_revelado: false,
         dados_monstro: null,
         dados_personagem: {
           nivel: p.nivel ?? 1,
