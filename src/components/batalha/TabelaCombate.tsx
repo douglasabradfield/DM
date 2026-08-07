@@ -1110,11 +1110,18 @@ function ModalRegistrarAcao({
 
     const alvosValidos = alvos.filter(a => a.combatenteId && a.valor > 0)
 
+    // Aplica silenciosamente (sem gerar a entrada 'dano'/'cura' automática de
+    // aplicarDano/aplicarCura) e guarda o valor final pós-resistência/cap para
+    // as entradas contábeis abaixo — a UI mostra a narrativa, a agregação do
+    // diário lê as contábeis.
+    const resumosContabeis: { nome: string; valor: number; efeitoTipo: 'dano' | 'cura' }[] = []
     for (const alvo of alvosValidos) {
       if (alvo.efeitoTipo === 'cura') {
-        aplicarCura(alvo.combatenteId, alvo.valor, true)
+        const resultado = aplicarCura(alvo.combatenteId, alvo.valor, true)
+        resumosContabeis.push({ nome: alvo.nome, valor: resultado?.curaEfetiva ?? alvo.valor, efeitoTipo: 'cura' })
       } else {
-        aplicarDano(alvo.combatenteId, alvo.valor, 'cortante', true)
+        const resultado = aplicarDano(alvo.combatenteId, alvo.valor, 'cortante', true)
+        resumosContabeis.push({ nome: alvo.nome, valor: resultado?.danoFinal ?? alvo.valor, efeitoTipo: 'dano' })
       }
     }
 
@@ -1136,6 +1143,18 @@ function ModalRegistrarAcao({
       valor: alvosValidos.reduce((sum, a) => sum + a.valor, 0),
       tipo_dano: null,
       descricao: partes.join(' '),
+    })
+
+    resumosContabeis.forEach(r => {
+      adicionarEntradaLog({
+        tipo: r.efeitoTipo,
+        origem: origemNome,
+        alvo: r.nome,
+        valor: r.valor,
+        tipo_dano: r.efeitoTipo === 'dano' ? 'cortante' : null,
+        descricao: `${origemNome} → ${r.nome}: ${r.valor} ${r.efeitoTipo}`,
+        resumo: true,
+      })
     })
 
     onFechar()

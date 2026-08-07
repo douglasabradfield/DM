@@ -46,7 +46,9 @@ const iconesTipo: Record<string, string> = {
 export function LogBatalha() {
   const { log, rodadaAtual } = useBatalha()
 
-  const ultimas = log.slice(-50).reverse()
+  // Entradas "resumo" são contábeis (alimentam a agregação do diário) e
+  // duplicam uma entrada narrativa já exibida — escondidas aqui de propósito.
+  const ultimas = log.filter(l => !l.resumo).slice(-50).reverse()
 
   return (
     <div className="h-full flex flex-col">

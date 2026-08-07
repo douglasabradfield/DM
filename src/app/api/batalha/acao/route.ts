@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
   const mapaAlvos = new Map(combatentesAlvo.map(c => [c.id as string, c]))
 
   const atualizacoes: { id: string; patch: Record<string, unknown>; personagemId: string | null }[] = []
-  const resultados: { nome: string; valor: number; morreu: boolean }[] = []
+  const resultados: { id: string; nome: string; valor: number; morreu: boolean; tipoDano: TipoDano | null }[] = []
   let xpGanho = 0
 
   for (const alvoPayload of alvos) {
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
         patch: { pv_atual: pvFinal, cura_total: (alvo.cura_total as number) + alvoPayload.valor },
         personagemId: alvo.personagem_id as string | null,
       })
-      resultados.push({ nome: alvo.nome as string, valor: alvoPayload.valor, morreu: false })
+      resultados.push({ id: alvo.id as string, nome: alvo.nome as string, valor: alvoPayload.valor, morreu: false, tipoDano: null })
     } else {
       const tipoDano = (alvoPayload.tipoDano ?? 'cortante') as TipoDano
       const { danoFinal, absorvidoTemporario } = calcularDano(alvoPayload.valor, tipoDano, alvo as {
@@ -170,7 +170,7 @@ export async function POST(req: NextRequest) {
         },
         personagemId: alvo.personagem_id as string | null,
       })
-      resultados.push({ nome: alvo.nome as string, valor: danoFinal, morreu })
+      resultados.push({ id: alvo.id as string, nome: alvo.nome as string, valor: danoFinal, morreu, tipoDano })
 
       if (morreu && alvo.tipo === 'monstro') {
         const dadosMonstro = alvo.dados_monstro as { xp?: number } | null
@@ -236,7 +236,10 @@ export async function POST(req: NextRequest) {
     payload.descricao ? `(${payload.descricao})` : '',
   ].filter(Boolean).join(' ')
 
-  const { data: logInserido, error: erroLog } = await admin.from('batalha_log').insert({
+  // Uma entrada narrativa (o que aparece no log ao vivo) + uma entrada
+  // contábil por alvo afetado (resumo=true — some da UI, mas alimenta a
+  // agregação de dano/cura do diário via montarConteudoDiario).
+  const linhaNarrativa = {
     batalha_id: batalhaId,
     rodada: batalha.rodada_atual,
     turno: null,
@@ -248,7 +251,28 @@ export async function POST(req: NextRequest) {
     valor: resultados.reduce((soma, r) => soma + r.valor, 0),
     tipo_dano: efeitoCura ? null : (alvos.find(a => a.tipoDano)?.tipoDano ?? null),
     descricao: descricaoFinal,
-  }).select().single()
+    resumo: false,
+  }
+
+  const linhasContabeis = resultados.map(r => ({
+    batalha_id: batalhaId,
+    rodada: batalha.rodada_atual,
+    turno: null,
+    tipo: efeitoCura ? ('cura' as const) : ('dano' as const),
+    autor_id: ator.id,
+    autor_nome: ator.nome,
+    alvo_id: r.id,
+    alvo_nome: r.nome,
+    valor: r.valor,
+    tipo_dano: efeitoCura ? null : r.tipoDano,
+    descricao: `${ator.nome} → ${r.nome}: ${r.valor} ${efeitoCura ? 'cura' : 'dano'}${r.morreu ? ' — caiu! 💀' : ''}`,
+    resumo: true,
+  }))
+
+  const { data: logInserido, error: erroLog } = await admin
+    .from('batalha_log')
+    .insert([linhaNarrativa, ...linhasContabeis])
+    .select()
 
   if (erroLog) {
     console.error('Erro ao gravar log da ação (efeito já aplicado):', erroLog)
@@ -258,6 +282,6 @@ export async function POST(req: NextRequest) {
     ok: true,
     combatentesAfetados: resultados,
     xpGanho,
-    log: logInserido ?? null,
+    log: logInserido?.find(l => !l.resumo) ?? null,
   })
 }

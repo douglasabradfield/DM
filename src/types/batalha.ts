@@ -113,6 +113,10 @@ export interface EntradaLog {
   valor: number | null
   tipo_dano: TipoDano | null
   descricao: string
+  // Entrada contábil (dano/cura por alvo) gerada junto de uma entrada narrativa
+  // que já descreve a mesma ação — existe para a agregação de estatísticas
+  // (montarConteudoDiario), mas a UI do log ao vivo a esconde para não repetir.
+  resumo: boolean
   criado_em: string
 }
 
@@ -201,5 +205,6 @@ export interface LogDB {
   valor: number | null
   tipo_dano: TipoDano | null
   descricao: string | null
+  resumo: boolean
   criado_em: string
 }

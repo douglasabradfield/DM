@@ -116,6 +116,7 @@ function logFromDB(row: LogDB): EntradaLog {
     valor: row.valor,
     tipo_dano: row.tipo_dano,
     descricao: row.descricao ?? '',
+    resumo: row.resumo,
     criado_em: row.criado_em,
   }
 }
@@ -205,8 +206,10 @@ function montarConteudoDiario(params: {
     ].join('\n'))
   }
 
+  // Entradas resumo (contábeis) entram na agregação acima, mas não aqui —
+  // a entrada narrativa da mesma ação já cobre a mesma informação.
   const linhasRegistro = log
-    .filter(l => l.tipo !== 'sistema')
+    .filter(l => l.tipo !== 'sistema' && !l.resumo)
     .map(l => {
       if (l.tipo === 'dano') return `R${l.rodada} · ${l.origem} → ${l.alvo}: ${l.valor} de dano${l.tipo_dano ? ` (${l.tipo_dano})` : ''}`
       if (l.tipo === 'cura') return `R${l.rodada} · ${l.origem} → ${l.alvo}: ${l.valor} de cura`
@@ -223,10 +226,11 @@ function montarConteudoDiario(params: {
 function novaEntradaLog(
   rodada: number,
   turno: number,
-  partial: Omit<EntradaLog, 'id' | 'rodada' | 'turno' | 'criado_em'>
+  partial: Omit<EntradaLog, 'id' | 'rodada' | 'turno' | 'criado_em' | 'resumo'> & { resumo?: boolean }
 ): EntradaLog {
   return {
     ...partial,
+    resumo: partial.resumo ?? false,
     id: crypto.randomUUID(),
     rodada,
     turno,
@@ -318,8 +322,8 @@ interface EstadoBatalhaStore {
   confirmarIniciativa: () => void
 
   // PV
-  aplicarDano: (id: string, dano: number, tipo: TipoDano, silencioso?: boolean) => void
-  aplicarCura: (id: string, cura: number, silencioso?: boolean) => void
+  aplicarDano: (id: string, dano: number, tipo: TipoDano, silencioso?: boolean) => { danoFinal: number; morreu: boolean } | undefined
+  aplicarCura: (id: string, cura: number, silencioso?: boolean) => { curaEfetiva: number } | undefined
   atualizarPV: (id: string, pvAtual: number) => void
   atualizarPVMax: (id: string, pvMax: number) => void
   setarDanoInput: (id: string, valor: number) => void
@@ -327,7 +331,7 @@ interface EstadoBatalhaStore {
   aplicarTodosDanos: () => void
   aplicarTodasCuras: () => void
   zerarContadores: () => void
-  adicionarEntradaLog: (entrada: Omit<EntradaLog, 'id' | 'rodada' | 'turno' | 'criado_em'>) => void
+  adicionarEntradaLog: (entrada: Omit<EntradaLog, 'id' | 'rodada' | 'turno' | 'criado_em' | 'resumo'> & { resumo?: boolean }) => void
 
   // Condições
   adicionarCondicao: (id: string, condicao: TipoCondicao) => void
@@ -407,6 +411,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         valor: entrada.valor,
         tipo_dano: entrada.tipo_dano,
         descricao: entrada.descricao,
+        resumo: entrada.resumo,
       })
       if (error) {
         console.error('Erro ao salvar log:', error)
@@ -635,6 +640,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           valor: null,
           tipo_dano: null,
           descricao: linhasResumo.join(' | '),
+          resumo: false,
           criado_em: new Date().toISOString(),
         }
 
@@ -1047,6 +1053,8 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             if (comb) comb.flash = null
           })
         }, 600)
+
+        return { danoFinal, morreu: caiu }
       },
 
       aplicarCura: (id, cura, silencioso = false) => {
@@ -1058,7 +1066,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         const ativos = ordenados.filter(x => !x.ausente && !x.morto)
         const nomeAtacante = ativos[state0.turnoAtual]?.nome || 'DM'
 
-        const { pvFinal: novoPv } = calcularCura(cura, c)
+        const { pvFinal: novoPv, curaEfetiva } = calcularCura(cura, c)
         const novoCuraTotal = c.cura_total + cura
 
         const entrada = !silencioso ? novaEntradaLog(state0.rodadaAtual, state0.turnoAtual, {
@@ -1095,6 +1103,8 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             if (comb) comb.flash = null
           })
         }, 600)
+
+        return { curaEfetiva }
       },
 
       atualizarPV: (id, pvAtual) => {
