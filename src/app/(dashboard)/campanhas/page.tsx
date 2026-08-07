@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { useCampanha } from '@/store/campanha'
 import type { Campanha } from '@/types/database'
@@ -9,7 +8,7 @@ import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { cn } from '@/lib/utils'
 import { MODO_MESA_LIVRE } from '@/lib/planos'
-import { Plus, X, BookOpen, UserPlus, ChevronLeft, Link2 } from 'lucide-react'
+import { Plus, X, UserPlus, ChevronLeft, Link2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const SISTEMAS = ['D&D 5e', 'Pathfinder', 'Call of Cthulhu', 'Tormenta', 'Vampiro: A Máscara', 'Outro']
@@ -21,7 +20,6 @@ export default function CampanhasPage() {
   const [criandoNova, setCriandoNova] = useState(false)
   const [nomeCriando, setNomeCriando] = useState('')
   const [salvandoNova, setSalvandoNova] = useState(false)
-  const [cronicaModal, setCronicaModal] = useState<{ nome: string; resumo: string } | null>(null)
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { carregarCampanhas() }, [])
@@ -175,31 +173,9 @@ export default function CampanhasPage() {
             onEncerrar={() => { carregarCampanhas(); setSelecionada(null) }}
             onReativar={() => carregarCampanhas()}
             onSetarAtiva={setCampanhaAtiva}
-            onCronica={(nome, resumo) => setCronicaModal({ nome, resumo })}
           />
         )}
       </div>
-
-      {/* Modal Crônica */}
-      {cronicaModal && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setCronicaModal(null)}>
-          <div className="bg-[var(--bg2)] border border-[var(--gold)] rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-cinzel text-[var(--gold)] text-xl font-bold">Crônica Final</h3>
-                <p className="text-[var(--text3)] text-sm font-crimson italic">{cronicaModal.nome}</p>
-              </div>
-              <button onClick={() => setCronicaModal(null)} className="text-[var(--border)] hover:text-[var(--text)]">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              <p className="text-[var(--text)] font-crimson text-base leading-relaxed whitespace-pre-wrap">{cronicaModal.resumo}</p>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
     </div>
   )
 }
@@ -236,7 +212,7 @@ function CampanhaListItem({ campanha, ativa, selecionada, papel, onSelecionar, e
   )
 }
 
-function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerrar, onReativar, onSetarAtiva, onCronica }: {
+function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerrar, onReativar, onSetarAtiva }: {
   campanha: Campanha
   ehDm: boolean
   campanhaAtiva: Campanha | null
@@ -244,7 +220,6 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
   onEncerrar: () => void
   onReativar: () => void
   onSetarAtiva: (c: Campanha) => void
-  onCronica: (nome: string, resumo: string) => void
 }) {
   const [form, setForm] = useState({
     nome: campanha.nome,
@@ -311,21 +286,13 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
   }
 
   async function encerrar() {
-    if (!confirm(`Encerrar "${campanha.nome}"? A IA irá gerar uma crônica final.`)) return
+    if (!confirm(`Encerrar "${campanha.nome}"?`)) return
     setEncerrando(true)
     try {
-      let resumo = ''
-      try {
-        const res = await fetch('/api/ia/resumo-campanha', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campanhaId: campanha.id }) })
-        const d = await res.json()
-        resumo = d.resumo || ''
-      } catch { /* IA falhou — encerra sem crônica */ }
-
       const supabase = createClient()
       await supabase.from('campanhas').update({ ativa: false }).eq('id', campanha.id)
       toast.success('Campanha encerrada!')
       onEncerrar()
-      if (resumo) onCronica(campanha.nome, resumo)
     } catch { toast.error('Erro ao encerrar') }
     finally { setEncerrando(false) }
   }
@@ -380,14 +347,6 @@ function DetalhesCampanha({ campanha, ehDm, campanhaAtiva, onAtualizar, onEncerr
               className="text-xs px-2 py-1 border border-[var(--gold)] text-[var(--gold)] rounded hover:bg-[var(--gold)]/10 transition-colors font-cinzel"
             >
               Usar
-            </button>
-          )}
-          {campanha.resumo_final && (
-            <button
-              onClick={() => onCronica(campanha.nome, campanha.resumo_final!)}
-              className="flex items-center gap-1 text-xs px-2 py-1 border border-[var(--accent)] text-[var(--accent)] rounded hover:bg-[var(--accent)]/10 transition-colors"
-            >
-              <BookOpen className="w-3 h-3" /> Crônica
             </button>
           )}
         </div>

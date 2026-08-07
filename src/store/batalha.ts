@@ -116,6 +116,106 @@ function logFromDB(row: LogDB): EntradaLog {
   }
 }
 
+function formatarDuracao(inicio: Date | null): string {
+  if (!inicio) return 'duração desconhecida'
+  const minutos = Math.max(0, Math.round((Date.now() - inicio.getTime()) / 60000))
+  if (minutos < 60) return `${minutos} min`
+  const horas = Math.floor(minutos / 60)
+  const resto = minutos % 60
+  return resto > 0 ? `${horas}h ${resto}min` : `${horas}h`
+}
+
+// Monta a entrada de diário a partir de batalha_log — puramente factual,
+// sem IA. batalha_log é a fonte da verdade: os totais aqui são somados a
+// partir das entradas do log, nunca dos campos acumulados em
+// batalha_combatentes (dano_total/cura_total), que existem só para exibição
+// em tempo real. Esta mesma agregação é a base prevista para a futura tela
+// de estatísticas de campanha (ainda não implementada).
+function montarConteudoDiario(params: {
+  nomeBatalha: string
+  rodadaAtual: number
+  iniciadaEm: Date | null
+  log: EntradaLog[]
+  combatentes: Combatente[]
+}): string {
+  const { nomeBatalha, rodadaAtual, iniciadaEm, log, combatentes } = params
+
+  const danoPorAtacante = new Map<string, { total: number; acertos: number }>()
+  const curaPorAtacante = new Map<string, number>()
+  const baixas: { nome: string; rodada: number }[] = []
+
+  log.forEach(l => {
+    if (l.tipo === 'dano' && l.valor != null) {
+      const atual = danoPorAtacante.get(l.origem) ?? { total: 0, acertos: 0 }
+      atual.total += l.valor
+      if (l.valor > 0) atual.acertos++
+      danoPorAtacante.set(l.origem, atual)
+    }
+    if (l.tipo === 'cura' && l.valor != null) {
+      curaPorAtacante.set(l.origem, (curaPorAtacante.get(l.origem) ?? 0) + l.valor)
+    }
+    if (l.tipo === 'morte') {
+      baixas.push({ nome: l.alvo, rodada: l.rodada })
+    }
+  })
+
+  const entradaXP = [...log].reverse().find(l =>
+    l.tipo === 'sistema' && l.origem === 'DM' && l.alvo === 'Grupo' && l.valor != null
+  )
+  const jogadoresAtivos = combatentes.filter(c => c.tipo === 'jogador' && !c.ausente).length
+
+  const secoes: string[] = []
+  secoes.push(`## ${nomeBatalha}`)
+  secoes.push(`${rodadaAtual} rodada${rodadaAtual !== 1 ? 's' : ''} · ${formatarDuracao(iniciadaEm)}`)
+
+  if (danoPorAtacante.size > 0) {
+    secoes.push([
+      '### Dano causado',
+      ...[...danoPorAtacante.entries()]
+        .sort((a, b) => b[1].total - a[1].total)
+        .map(([nome, d]) => `- ${nome}: ${d.total} (${d.acertos} acerto${d.acertos !== 1 ? 's' : ''})`),
+    ].join('\n'))
+  }
+
+  if (curaPorAtacante.size > 0) {
+    secoes.push([
+      '### Cura realizada',
+      ...[...curaPorAtacante.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([nome, total]) => `- ${nome}: ${total}`),
+    ].join('\n'))
+  }
+
+  if (baixas.length > 0) {
+    secoes.push([
+      '### Baixas',
+      ...baixas.map(b => `- ${b.nome} caiu na rodada ${b.rodada}`),
+    ].join('\n'))
+  }
+
+  if (entradaXP && jogadoresAtivos > 0) {
+    const xpPorJogador = entradaXP.valor ?? 0
+    secoes.push([
+      '### XP',
+      `${xpPorJogador * jogadoresAtivos} XP · ${xpPorJogador} por jogador`,
+    ].join('\n'))
+  }
+
+  const linhasRegistro = log
+    .filter(l => l.tipo !== 'sistema')
+    .map(l => {
+      if (l.tipo === 'dano') return `R${l.rodada} · ${l.origem} → ${l.alvo}: ${l.valor} de dano${l.tipo_dano ? ` (${l.tipo_dano})` : ''}`
+      if (l.tipo === 'cura') return `R${l.rodada} · ${l.origem} → ${l.alvo}: ${l.valor} de cura`
+      return `R${l.rodada} · ${l.descricao}`
+    })
+  secoes.push([
+    '### Registro completo',
+    ...(linhasRegistro.length > 0 ? linhasRegistro : ['_Nenhuma ação registrada_']),
+  ].join('\n'))
+
+  return secoes.join('\n\n')
+}
+
 function novaEntradaLog(
   rodada: number,
   turno: number,
@@ -193,7 +293,7 @@ interface EstadoBatalhaStore {
 
   // Ações de gerenciamento
   iniciarBatalha: (nome: string, campanhaId: string) => Promise<string>
-  encerrarBatalha: () => Promise<{ resumoIA: string }>
+  encerrarBatalha: () => Promise<string | null>
   pausarBatalha: () => Promise<void>
   retomarBatalha: () => Promise<void>
   carregarBatalhaAtiva: (campanhaId: string) => Promise<void>
@@ -569,118 +669,39 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       },
 
       encerrarBatalha: async () => {
-        const { sessaoId, batalhaId, combatentes, log, rodadaAtual, nomeBatalha } = get()
+        const { sessaoId, batalhaId, combatentes, log, rodadaAtual, nomeBatalha, iniciadaEm } = get()
 
         set(state => {
           state.ativa = false
           state.statusBatalha = 'concluida'
         })
 
-        if (!sessaoId) return { resumoIA: '' }
+        if (!sessaoId) return null
 
         const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
 
-        const mortos = combatentes.filter(c => c.morto || c.pv_atual <= 0)
-        const totalDano = log.filter(l => l.tipo === 'dano').reduce((acc, l) => acc + (l.valor || 0), 0)
-        const totalCura = log.filter(l => l.tipo === 'cura').reduce((acc, l) => acc + (l.valor || 0), 0)
-
-        const narrativaLog = log
-          .filter(l => l.tipo !== 'sistema')
-          .map(l => `[Rodada ${l.rodada}] ${l.descricao}`)
-          .join('\n')
-
-        let resumoIA = ''
-        try {
-          const resp = await fetch('/api/ia/resumo-batalha', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              nomeBatalha,
-              rodadas: rodadaAtual,
-              totalDano,
-              totalCura,
-              mortos: mortos.map(c => c.nome),
-              combatentes: combatentes.map(c => ({
-                nome: c.nome, tipo: c.tipo, pvFinal: c.pv_atual, pvMax: c.pv_maximo,
-                status: c.morto || c.pv_atual <= 0 ? 'morto' : 'vivo',
-                condicoes: c.condicoes,
-              })),
-              log: narrativaLog.slice(0, 3000),
-            }),
-          })
-          const data = await resp.json()
-          resumoIA = data.resumo || ''
-        } catch (e) {
-          console.error('Erro ao gerar resumo IA:', e)
-        }
-
-        const tabelaTecnica = [
-          '## 📊 Resumo Técnico',
-          '',
-          '| Combatente | Tipo | PV Final | PV Máx | Status |',
-          '|------------|------|----------|--------|--------|',
-          ...combatentes.map(c =>
-            `| ${c.nome} | ${c.tipo} | ${c.pv_atual} | ${c.pv_maximo} | ${c.morto ? '💀 Morto' : '✅ Vivo'} |`
-          ),
-          '',
-          `**Total de rodadas:** ${rodadaAtual}`,
-          `**Dano total causado:** ${totalDano}`,
-          `**Cura total:** ${totalCura}`,
-          `**Baixas:** ${mortos.length} (${mortos.map(m => m.nome).join(', ') || 'nenhuma'})`,
-        ].join('\n')
-
-        const logNarrativo = log
-          .filter(l => l.tipo !== 'sistema')
-          .map(l => `**[R${l.rodada}]** ${l.descricao}`)
-          .join('\n')
-
-        const TIPOS_MANUAIS = [
-          'ataque', 'ataque_extra', 'magia', 'usar_item', 'ajudar', 'agarrar', 'recuar',
-          'acao_bonus_ataque', 'acao_bonus_magia', 'cura_bonus', 'forma_alternativa',
-          'ataque_oportunidade', 'contra_magia', 'escudo', 'absorver_elementos', 'queda_controlada', 'outra_reacao',
-          'pv_temporarios', 'estabilizar', 'condicao_aplicada', 'condicao_removida', 'concentracao', 'outro',
-        ]
-        const acoesManuais = log.filter(l => TIPOS_MANUAIS.includes(l.tipo))
-        const categorias: Array<{ titulo: string; tipos: string[] }> = [
-          { titulo: '⚔️ Ações Principais', tipos: ['ataque', 'ataque_extra', 'magia', 'usar_item', 'ajudar', 'agarrar', 'recuar'] },
-          { titulo: '✨ Ações Bônus', tipos: ['acao_bonus_ataque', 'acao_bonus_magia', 'cura_bonus', 'forma_alternativa'] },
-          { titulo: '🛡️ Reações', tipos: ['ataque_oportunidade', 'contra_magia', 'escudo', 'absorver_elementos', 'queda_controlada', 'outra_reacao'] },
-          { titulo: '🔮 Efeitos/Resultados', tipos: ['pv_temporarios', 'estabilizar', 'condicao_aplicada', 'condicao_removida', 'concentracao'] },
-          { titulo: '📝 Outros', tipos: ['outro'] },
-        ]
-        const acoesSection = acoesManuais.length > 0
-          ? `## ⚔️ Ações Registradas\n\n${categorias
-              .map(cat => {
-                const itens = acoesManuais.filter(l => cat.tipos.includes(l.tipo))
-                if (!itens.length) return ''
-                return `### ${cat.titulo}\n${itens.map(l => `- [R${l.rodada}] ${l.descricao}`).join('\n')}`
-              })
-              .filter(Boolean)
-              .join('\n\n')}`
-          : ''
-
-        const conteudoFinal = [
-          resumoIA ? `## 📜 Narrativa da Batalha\n\n${resumoIA}` : '',
-          acoesSection,
-          `## 📋 Log de Ações\n\n${logNarrativo || '_Nenhuma ação registrada_'}`,
-          tabelaTecnica,
-        ].filter(Boolean).join('\n\n')
+        const conteudo = montarConteudoDiario({ nomeBatalha, rodadaAtual, iniciadaEm, log, combatentes })
 
         await supabase.from('sessoes').update({
           status: 'concluida',
           concluida_em: new Date().toISOString(),
           total_rodadas: rodadaAtual,
-          resumo_ia: resumoIA,
           batalha_estado: null,
         }).eq('id', sessaoId)
 
-        await supabase.from('diario_entradas')
+        const { data: entradaDiario } = await supabase.from('diario_entradas')
           .update({
-            conteudo: conteudoFinal,
+            conteudo,
             titulo: `⚔️ ${nomeBatalha} — ${rodadaAtual} rodada${rodadaAtual !== 1 ? 's' : ''}`,
+            visibilidade: 'grupo',
+            criado_por: user?.id ?? null,
+            tipo: 'batalha',
           })
           .eq('sessao_id', sessaoId)
           .eq('tipo', 'batalha')
+          .select('id')
+          .single()
 
         if (batalhaId) {
           await supabase.from('batalhas').update({
@@ -691,7 +712,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
         encerrarRealtime()
 
-        return { resumoIA }
+        return entradaDiario?.id ?? null
       },
 
       pausarBatalha: async () => {
