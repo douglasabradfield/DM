@@ -29,7 +29,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .single()
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--bg)]">
+    <div className="flex h-dvh overflow-hidden bg-[var(--bg)]">
       <Sidebar isAdmin={profile?.is_admin === true} plano={profile?.plano} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import Link from 'next/link'
 import { useBatalha } from '@/store/batalha'
 import { useCampanha } from '@/store/campanha'
 import { usePermissao } from '@/hooks/usePermissao'
@@ -10,9 +11,9 @@ import { pvVisivelParaJogador, ESTADO_VAGO_INFO, type ModoRevelacao } from '@/li
 import { vantagemDerivada } from '@/lib/batalha/vantagem-por-condicao'
 import { getCondicao } from '@/lib/dados-dnd/condicoes'
 import { BarraVida } from '@/components/batalha/BarraVida'
-import type { Combatente, EntradaLog, TipoCondicao, EspacosMagiaBatalha } from '@/types/batalha'
+import type { ArmaEmpunhada, Combatente, EntradaLog, TipoCondicao, EspacosMagiaBatalha } from '@/types/batalha'
 import { cn } from '@/lib/utils'
-import { Swords, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { Swords, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface InfoPersonagem {
@@ -21,6 +22,19 @@ interface InfoPersonagem {
   nivel: number | null
   deslocamento: number | null
   user_id: string | null
+}
+
+interface AtaqueDisponivel {
+  nome: string
+  bonus: string
+  dano: string
+}
+
+interface MagiaExibida {
+  id: string
+  nome: string
+  nivel: number
+  preparada: boolean
 }
 
 function ordenarPorNome(combatentes: Combatente[]): Combatente[] {
@@ -40,15 +54,14 @@ function mensagemToast(entrada: EntradaLog): string | null {
   return null
 }
 
-function formatarLogCurto(e: EntradaLog): string {
-  if (e.tipo === 'dano' && e.valor != null) {
-    return `R${e.rodada} · ${e.origem} → ${e.alvo}: ${e.valor} de dano${e.tipo_dano ? ` (${e.tipo_dano})` : ''}`
-  }
-  if (e.tipo === 'cura' && e.valor != null) {
-    return `R${e.rodada} · ${e.origem} → ${e.alvo}: ${e.valor} de cura`
-  }
-  if (e.tipo === 'morte') return `R${e.rodada} · ${e.alvo} caiu`
-  return `R${e.rodada} · ${e.descricao}`
+// Degradação graciosa: prioriza magias preparadas; se nenhuma estiver
+// marcada como preparada (caso comum hoje — a ficha ainda não expõe esse
+// toggle), mostra todas com um aviso em vez de uma lista vazia enganosa.
+function selecionarMagiasExibidas(magias: MagiaExibida[]): { magias: MagiaExibida[]; aviso: string | null } {
+  if (magias.length === 0) return { magias: [], aviso: null }
+  const preparadas = magias.filter(m => m.preparada)
+  if (preparadas.length > 0) return { magias: preparadas, aviso: null }
+  return { magias, aviso: 'Nenhuma magia marcada como preparada na ficha' }
 }
 
 function Avatar({ nome, imagemUrl, tamanho = 44 }: { nome: string; imagemUrl?: string | null; tamanho?: number }) {
@@ -80,26 +93,18 @@ function EspacosMagiaLeitura({ espacos }: { espacos: EspacosMagiaBatalha }) {
   const niveis = Object.entries(espacos)
     .filter(([, e]) => e.total > 0)
     .map(([n, e]) => ({ nivel: parseInt(n), ...e }))
+    .sort((a, b) => a.nivel - b.nivel)
 
   if (niveis.length === 0) return null
 
   return (
-    <div className="flex flex-wrap gap-2.5">
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px]">
       {niveis.map(({ nivel, total, utilizados }) => (
-        <div key={nivel} className="flex items-center gap-1">
-          <span className="text-[var(--text3)] text-[10px] font-cinzel">{nivel}º</span>
-          <div className="flex gap-0.5">
-            {Array.from({ length: total }).map((_, i) => (
-              <span
-                key={i}
-                className="w-2.5 h-2.5 rounded-full border"
-                style={{
-                  borderColor: 'var(--accent2)',
-                  backgroundColor: i < utilizados ? 'transparent' : 'var(--accent2)',
-                }}
-              />
-            ))}
-          </div>
+        <div key={nivel} className="flex items-center gap-0.5">
+          <span className="text-[var(--text3)] font-cinzel">N{nivel}</span>
+          <span style={{ color: 'var(--accent2)' }}>
+            {'●'.repeat(Math.max(0, total - utilizados))}{'○'.repeat(Math.min(total, utilizados))}
+          </span>
         </div>
       ))}
     </div>
@@ -145,28 +150,109 @@ function ModalCondicao({ condicao, onFechar }: { condicao: TipoCondicao; onFecha
   )
 }
 
-// Participantes — NUNCA em ordem de iniciativa (a mesa sorteia por cartas a
-// cada rodada; vazar a ordem deixaria os jogadores planejarem sabendo quem
-// vem depois). Jogador vê só os PJs; DM vê todos, PJs primeiro. O único
-// indício de sequência permitido é o anel de quem age AGORA.
+// Popup de combatente — substitui as antigas listas de Aliados/Inimigos.
+// Fase 2: só leitura. Fase 3 reaproveita este mesmo popup como seletor de alvo.
+function PopupCombatente({
+  combatente: c, info, revelacaoPv, ehDM, onFechar,
+}: {
+  combatente: Combatente
+  info: InfoPersonagem | undefined
+  revelacaoPv: ModoRevelacao
+  ehDM: boolean
+  onFechar: () => void
+}) {
+  const [condicaoAberta, setCondicaoAberta] = useState<TipoCondicao | null>(null)
+  const estaMorto = c.morto || c.pv_atual <= 0
+  const visibilidade = ehDM ? { modo: 'exato' as const } : pvVisivelParaJogador(c, revelacaoPv)
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/60 p-3" onClick={onFechar}>
+      <div
+        className="bg-[var(--bg3)] border border-[var(--border2)] rounded-xl shadow-2xl w-full max-w-xs p-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 mb-3">
+          <Avatar nome={c.nome} imagemUrl={info?.imagem_url} tamanho={48} />
+          <div className="min-w-0 flex-1">
+            <p className="font-cinzel text-[var(--gold)] font-bold text-base truncate">{c.nome}{estaMorto ? ' 💀' : ''}</p>
+            {c.ausente && <p className="text-[var(--text3)] text-xs font-crimson">Ausente</p>}
+          </div>
+          <button onClick={onFechar} className="text-[var(--border)] hover:text-[var(--red2)] p-1 -m-1">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3 mb-3">
+          {visibilidade.modo === 'exato' && (
+            <>
+              <span className="text-[var(--text2)] text-sm font-cinzel">PV {c.pv_atual}/{c.pv_maximo}</span>
+              <span className="text-[var(--text2)] text-sm font-cinzel">CA {c.ca}</span>
+            </>
+          )}
+          {visibilidade.modo === 'vago' && visibilidade.estado && (
+            <span
+              className="px-2 py-0.5 rounded border text-xs font-cinzel font-bold"
+              style={{ color: ESTADO_VAGO_INFO[visibilidade.estado].cor, borderColor: ESTADO_VAGO_INFO[visibilidade.estado].cor }}
+            >
+              {ESTADO_VAGO_INFO[visibilidade.estado].label}
+            </span>
+          )}
+          {visibilidade.modo === 'oculto' && (
+            <span className="text-[var(--text3)] text-xs font-crimson italic">PV desconhecido</span>
+          )}
+        </div>
+
+        {c.condicoes.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {c.condicoes.map(cond => (
+              <button
+                key={cond}
+                onClick={() => setCondicaoAberta(cond)}
+                className="px-2.5 rounded-full bg-[var(--surface)] border border-[var(--accent2)]/50 text-[var(--accent2)] text-xs font-crimson flex items-center gap-1 min-h-[36px]"
+              >
+                <span>{getCondicao(cond)?.icone}</span>{cond}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[var(--text3)] text-xs font-crimson italic">Sem condições ativas</p>
+        )}
+
+        {condicaoAberta && <ModalCondicao condicao={condicaoAberta} onFechar={() => setCondicaoAberta(null)} />}
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// Barra de participantes — NUNCA em ordem de iniciativa (a mesa sorteia por
+// cartas a cada rodada; vazar a ordem deixaria os jogadores planejarem
+// sabendo quem vem depois). Jogador vê só os PJs; DM vê todos, PJs primeiro.
+// O único indício de sequência permitido é o anel de quem age AGORA.
+// Tocar um avatar abre o popup de detalhes (substitui as listas removidas).
 function BarraParticipantes({
-  participantes, turnoCombatenteId, ativa, infoPersonagens, meuCombatenteIds,
+  participantes, turnoCombatenteId, ativa, infoPersonagens, meuCombatenteIds, onTocar,
 }: {
   participantes: Combatente[]
   turnoCombatenteId: string | null
   ativa: boolean
   infoPersonagens: Record<string, InfoPersonagem>
   meuCombatenteIds: Set<string>
+  onTocar: (id: string) => void
 }) {
   return (
-    <div className="sticky top-0 z-10 flex gap-2 overflow-x-auto px-3 py-2 bg-[var(--bg2)] border-b border-[var(--border)]">
+    <div className="flex-shrink-0 flex gap-2 overflow-x-auto px-3 py-2 bg-[var(--bg2)] border-b border-[var(--border)]">
       {participantes.map(c => {
         const info = c.personagem_id ? infoPersonagens[c.personagem_id] : undefined
         const estaAtivo = ativa && c.id === turnoCombatenteId
         const estaMorto = c.morto || c.pv_atual <= 0
         const ehMeu = meuCombatenteIds.has(c.id)
         return (
-          <div key={c.id} className={cn('flex-shrink-0 flex flex-col items-center gap-1 w-14', (estaMorto || c.ausente) && 'opacity-40')}>
+          <button
+            key={c.id}
+            onClick={() => onTocar(c.id)}
+            className={cn('flex-shrink-0 flex flex-col items-center gap-0.5 w-14', (estaMorto || c.ausente) && 'opacity-40')}
+          >
             <div
               className="rounded-full p-0.5"
               style={{ boxShadow: estaAtivo ? '0 0 0 2px var(--gold)' : ehMeu ? '0 0 0 2px var(--accent2)' : '0 0 0 1px var(--border)' }}
@@ -174,48 +260,57 @@ function BarraParticipantes({
               <div className="relative">
                 <Avatar nome={c.nome} imagemUrl={info?.imagem_url} tamanho={44} />
                 {c.condicoes.length > 0 && (
-                  <span
-                    title={c.condicoes.join(', ')}
-                    className="absolute -top-1 -right-1 text-[11px] leading-none bg-[var(--bg2)] rounded-full w-4 h-4 flex items-center justify-center"
-                  >
-                    {getCondicao(c.condicoes[0])?.icone ?? '⚠️'}
-                  </span>
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[var(--red2)] border border-[var(--bg2)]" />
                 )}
               </div>
             </div>
             <span className="text-[9px] text-[var(--text3)] truncate w-full text-center font-crimson">{c.nome}</span>
-          </div>
+          </button>
         )
       })}
     </div>
   )
 }
 
-function IndicadorVez({
-  ativa, rodadaAtual, combatenteDoTurno, ehMeuTurno,
+function StatusRodada({
+  ativa, statusBatalha, rodadaAtual, combatenteDoTurno, ehMeuTurno,
 }: {
   ativa: boolean
+  statusBatalha: string
   rodadaAtual: number
   combatenteDoTurno: Combatente | null
   ehMeuTurno: boolean
 }) {
-  if (!ativa || !combatenteDoTurno) return null
-
+  if (statusBatalha === 'pausada') {
+    return (
+      <div className="flex-shrink-0 py-1.5 text-center">
+        <span className="text-[var(--gold)] text-xs font-cinzel animate-pulse">⏸ Pausada</span>
+      </div>
+    )
+  }
+  if (!ativa || !combatenteDoTurno) {
+    return (
+      <div className="flex-shrink-0 py-1.5 text-center text-[var(--text3)] text-xs font-crimson">
+        Rodada {rodadaAtual}
+      </div>
+    )
+  }
   if (ehMeuTurno) {
     return (
-      <div className="px-3 py-2.5 bg-[var(--gold)] text-[var(--bg)] text-center font-cinzel font-bold text-sm">
+      <div className="flex-shrink-0 py-1.5 bg-[var(--gold)] text-[var(--bg)] text-center font-cinzel font-bold text-xs">
         ⚔️ É a sua vez! · Rodada {rodadaAtual}
       </div>
     )
   }
-
   return (
-    <div className="px-3 py-1.5 text-center text-[var(--text3)] text-xs font-crimson">
+    <div className="flex-shrink-0 py-1.5 text-center text-[var(--text3)] text-xs font-crimson">
       Vez de {combatenteDoTurno.nome} · Rodada {rodadaAtual}
     </div>
   )
 }
 
+// Cartão central — único elemento que pode encolher. Sem scroll: quando o
+// conteúdo aperta, a densidade (fonte/espaçamento) cede, nunca overflow.
 function CartaoPersonagem({
   combatente: c, info, meusCombatentes, selecionadoId, onSelecionar,
 }: {
@@ -227,77 +322,66 @@ function CartaoPersonagem({
 }) {
   const [condicaoAberta, setCondicaoAberta] = useState<TipoCondicao | null>(null)
   const estaMorto = c.morto || c.pv_atual <= 0
-  const subtitulo = [info?.classe, info?.nivel ? `Nível ${info.nivel}` : null].filter(Boolean).join(' · ')
+  const subtitulo = [info?.classe, info?.nivel ? `Nv${info.nivel}` : null].filter(Boolean).join(' · ')
+  const derivada = useMemo(() => vantagemDerivada(c.condicoes), [c.condicoes])
 
   return (
-    <div className="mx-3 my-3 p-4 rounded-xl bg-[var(--bg2)] border border-[var(--gold)]/40 shadow-lg">
+    <div className="h-full flex flex-col gap-1.5 overflow-hidden rounded-xl bg-[var(--bg2)] border border-[var(--gold)]/40 shadow-lg p-3">
       {meusCombatentes.length > 1 && (
         <select
           value={selecionadoId ?? ''}
           onChange={e => onSelecionar(e.target.value)}
-          className="input-dd w-full mb-3 text-sm"
+          className="input-dd w-full text-xs py-1 flex-shrink-0"
         >
           {meusCombatentes.map(mc => <option key={mc.id} value={mc.id}>{mc.nome}</option>)}
         </select>
       )}
 
-      <div className="flex items-center gap-3 mb-3">
-        <Avatar nome={c.nome} imagemUrl={info?.imagem_url} tamanho={64} />
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <Avatar nome={c.nome} imagemUrl={info?.imagem_url} tamanho={44} />
         <div className="min-w-0 flex-1">
-          <h2 className="font-cinzel text-[var(--gold)] text-lg font-bold truncate">{c.nome}{estaMorto ? ' 💀' : ''}</h2>
-          {subtitulo && <p className="text-[var(--text3)] text-xs font-crimson">{subtitulo}</p>}
+          <h2 className="font-cinzel text-[var(--gold)] text-sm font-bold truncate leading-tight">{c.nome}{estaMorto ? ' 💀' : ''}</h2>
+          {subtitulo && <p className="text-[var(--text3)] text-[10px] font-crimson leading-tight">{subtitulo}</p>}
         </div>
-      </div>
-
-      <div className="mb-3">
-        <div className="flex items-baseline gap-1 mb-1">
-          <span className="text-2xl font-cinzel font-bold text-[var(--text)]">{c.pv_atual}</span>
-          <span className="text-[var(--text3)] text-sm">/ {c.pv_maximo} PV</span>
-          {c.pv_temporarios > 0 && (
-            <span className="text-[var(--accent2)] text-xs font-cinzel ml-1">+{c.pv_temporarios} temp</span>
-          )}
-        </div>
-        <BarraVida atual={c.pv_atual} maximo={c.pv_maximo} temporarios={c.pv_temporarios} />
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 mb-3">
-        <div className="bg-[var(--surface)] rounded-lg p-2 text-center">
-          <p className="text-[var(--text3)] text-[9px] font-cinzel uppercase">CA</p>
-          <p className="text-[var(--text)] font-bold text-lg font-cinzel">{c.ca}</p>
-        </div>
-        <div className="bg-[var(--surface)] rounded-lg p-2 text-center">
-          <p className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Iniciativa</p>
-          <p className="text-[var(--text)] font-bold text-lg font-cinzel">{c.iniciativa}</p>
-        </div>
-        <div className="bg-[var(--surface)] rounded-lg p-2 text-center">
-          <p className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Desloc.</p>
-          <p className="text-[var(--text)] font-bold text-lg font-cinzel">
-            {info?.deslocamento ? `${info.deslocamento}m` : '—'}
+        <div className="text-right flex-shrink-0">
+          <p className="text-lg font-cinzel font-bold text-[var(--text)] leading-none">
+            {c.pv_atual}<span className="text-[var(--text3)] text-xs">/{c.pv_maximo}</span>
           </p>
+          {c.pv_temporarios > 0 && <p className="text-[var(--accent2)] text-[10px] font-cinzel leading-tight">+{c.pv_temporarios} temp</p>}
         </div>
+      </div>
+
+      <BarraVida atual={c.pv_atual} maximo={c.pv_maximo} temporarios={c.pv_temporarios} className="flex-shrink-0" />
+
+      <div className="flex items-center gap-3 flex-shrink-0 text-xs font-cinzel text-[var(--text2)]">
+        <span>CA <b className="text-[var(--text)]">{c.ca}</b></span>
+        <span>Desloc. <b className="text-[var(--text)]">{info?.deslocamento ? `${info.deslocamento}m` : '—'}</b></span>
       </div>
 
       {c.condicoes.length > 0 && (
-        <div className="mb-3">
-          <p className="text-[var(--text3)] text-[9px] font-cinzel uppercase tracking-wider mb-1.5">Condições</p>
-          <div className="flex flex-wrap gap-1.5">
-            {c.condicoes.map(cond => (
-              <button
-                key={cond}
-                onClick={() => setCondicaoAberta(cond)}
-                className="px-2.5 rounded-full bg-[var(--surface)] border border-[var(--accent2)]/50 text-[var(--accent2)] text-xs font-crimson flex items-center gap-1 min-h-[38px]"
-              >
-                <span>{getCondicao(cond)?.icone}</span>
-                {cond}
-              </button>
-            ))}
-          </div>
+        <div className="flex flex-wrap gap-1 flex-shrink-0">
+          {c.condicoes.map(cond => (
+            <button
+              key={cond}
+              onClick={() => setCondicaoAberta(cond)}
+              className="px-2 py-1 rounded-full bg-[var(--surface)] border border-[var(--accent2)]/50 text-[var(--accent2)] text-[10px] font-crimson flex items-center gap-1"
+            >
+              <span>{getCondicao(cond)?.icone}</span>{cond}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {derivada.motivos.length > 0 && (
+        <div className="flex-shrink-0 space-y-0.5 overflow-hidden">
+          {derivada.motivos.map((m, i) => (
+            <p key={i} className="text-[var(--gold)] text-[10px] font-crimson leading-tight truncate">⚠️ {m}</p>
+          ))}
         </div>
       )}
 
       {Object.keys(c.espacos_magia).length > 0 && (
-        <div>
-          <p className="text-[var(--text3)] text-[9px] font-cinzel uppercase tracking-wider mb-1.5">Espaços de magia</p>
+        <div className="flex-shrink-0">
           <EspacosMagiaLeitura espacos={c.espacos_magia} />
         </div>
       )}
@@ -307,132 +391,10 @@ function CartaoPersonagem({
   )
 }
 
-function LinhaCombatenteMesa({
-  combatente: c, revelacaoPv, ehDM, info,
-}: {
-  combatente: Combatente
-  revelacaoPv: ModoRevelacao
-  ehDM: boolean
-  info: InfoPersonagem | undefined
-}) {
-  const estaMorto = c.morto || c.pv_atual <= 0
-  const visibilidade = ehDM ? { modo: 'exato' as const } : pvVisivelParaJogador(c, revelacaoPv)
-
-  return (
-    <div className={cn(
-      'flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-[var(--bg2)] border border-[var(--border)]',
-      (estaMorto || c.ausente) && 'opacity-50'
-    )}>
-      <Avatar nome={c.nome} imagemUrl={info?.imagem_url} tamanho={36} />
-      <div className="min-w-0 flex-1">
-        <p className="text-[var(--text)] text-sm font-crimson truncate">{c.nome}{estaMorto ? ' 💀' : ''}</p>
-        {c.condicoes.length > 0 && (
-          <div className="flex gap-1 mt-0.5">
-            {c.condicoes.map(cond => (
-              <span key={cond} title={cond} className="text-xs">{getCondicao(cond)?.icone ?? '⚠️'}</span>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="flex-shrink-0 text-right">
-        {visibilidade.modo === 'exato' && (
-          <span className="text-[var(--text2)] text-sm font-cinzel">{c.pv_atual} / {c.pv_maximo}</span>
-        )}
-        {visibilidade.modo === 'vago' && visibilidade.estado && (
-          <span
-            className="px-2 py-0.5 rounded border text-[10px] font-cinzel font-bold"
-            style={{ color: ESTADO_VAGO_INFO[visibilidade.estado].cor, borderColor: ESTADO_VAGO_INFO[visibilidade.estado].cor }}
-          >
-            {ESTADO_VAGO_INFO[visibilidade.estado].label}
-          </span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ListaCombatentes({
-  combatentes, revelacaoPv, ehDM, infoPersonagens, ocultarIds,
-}: {
-  combatentes: Combatente[]
-  revelacaoPv: ModoRevelacao
-  ehDM: boolean
-  infoPersonagens: Record<string, InfoPersonagem>
-  ocultarIds: Set<string>
-}) {
-  const visiveis = combatentes.filter(c => !ocultarIds.has(c.id))
-  // Ordem alfabética de propósito — a ordem de array vem do fetch por
-  // `ordem` (posição de iniciativa) e não pode vazar aqui.
-  const aliados = ordenarPorNome(visiveis.filter(c => c.tipo !== 'monstro'))
-  const inimigos = ordenarPorNome(visiveis.filter(c => c.tipo === 'monstro'))
-
-  if (visiveis.length === 0) return null
-
-  return (
-    <div className="px-3 pb-3 space-y-4">
-      {aliados.length > 0 && (
-        <div>
-          <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider mb-1.5">Aliados</p>
-          <div className="space-y-1.5">
-            {aliados.map(c => (
-              <LinhaCombatenteMesa
-                key={c.id}
-                combatente={c}
-                revelacaoPv={revelacaoPv}
-                ehDM={ehDM}
-                info={c.personagem_id ? infoPersonagens[c.personagem_id] : undefined}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-      {inimigos.length > 0 && (
-        <div>
-          <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider mb-1.5">Inimigos</p>
-          <div className="space-y-1.5">
-            {inimigos.map(c => (
-              <LinhaCombatenteMesa key={c.id} combatente={c} revelacaoPv={revelacaoPv} ehDM={ehDM} info={undefined} />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function LogResumido({ log }: { log: EntradaLog[] }) {
-  const [aberto, setAberto] = useState(false)
-  const relevantes = useMemo(() => log.filter(l => l.tipo !== 'sistema').slice(-10).reverse(), [log])
-
-  if (relevantes.length === 0) return null
-
-  return (
-    <div className="border-t border-[var(--border)] bg-[var(--bg2)]">
-      <button
-        onClick={() => setAberto(o => !o)}
-        className="w-full flex items-center justify-between px-3 py-2.5 min-h-[44px]"
-      >
-        <span className="text-[var(--text3)] text-xs font-cinzel uppercase tracking-wider">📜 Log da batalha</span>
-        {aberto ? <ChevronUp className="w-4 h-4 text-[var(--text3)]" /> : <ChevronDown className="w-4 h-4 text-[var(--text3)]" />}
-      </button>
-      {aberto && (
-        <div className="px-3 pb-3 space-y-1 max-h-48 overflow-y-auto">
-          {relevantes.map(e => (
-            <p key={e.id} className="text-[var(--text3)] text-[11px] font-crimson">{formatarLogCurto(e)}</p>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Faixa de vantagem/desvantagem — Fase 2: somente leitura. O toggle
-// reflete o campo `vantagem` já persistido no store (o mesmo que o DM
-// ajusta em TabelaCombate); o aviso acima é derivado das condições e é
-// puramente informativo — a mesa decide, o toggle é que vale.
+// Fase 2: somente leitura. Reflete o campo `vantagem` já persistido no
+// store (o mesmo que o DM ajusta em TabelaCombate) — quando a Fase 3
+// habilitar escrita aqui, basta tirar o `disabled`.
 function FaixaVantagem({ combatente }: { combatente: Combatente }) {
-  const derivada = useMemo(() => vantagemDerivada(combatente.condicoes), [combatente.condicoes])
-
   const opcoes = [
     { valor: 'desvantagem' as const, label: '▼ Desvantagem', corAtiva: 'var(--red2)' },
     { valor: null, label: 'Normal', corAtiva: 'var(--surface2)' },
@@ -440,17 +402,7 @@ function FaixaVantagem({ combatente }: { combatente: Combatente }) {
   ]
 
   return (
-    <div className="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg2)] px-3 py-2">
-      {derivada.motivos.length > 0 && (
-        <div className="mb-2 space-y-0.5">
-          {derivada.motivos.map((m, i) => (
-            <p key={i} className="text-[var(--gold)] text-[11px] font-crimson">⚠️ {m}</p>
-          ))}
-          <p className="text-[var(--text3)] text-[10px] font-crimson italic">
-            Informativo — a mesa decide, o toggle abaixo é que vale.
-          </p>
-        </div>
-      )}
+    <div className="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg2)] px-3 py-1.5">
       <div className="flex items-center rounded-lg overflow-hidden border border-[var(--border)]">
         {opcoes.map(opt => {
           const ativa = combatente.vantagem === opt.valor
@@ -460,7 +412,7 @@ function FaixaVantagem({ combatente }: { combatente: Combatente }) {
               disabled
               title="Ajustável em breve — hoje reflete o que o mestre define"
               className={cn(
-                'flex-1 text-center py-2.5 text-xs font-cinzel cursor-not-allowed transition-colors min-h-[44px]',
+                'flex-1 text-center py-2 text-[11px] font-cinzel cursor-not-allowed transition-colors min-h-[38px]',
                 ativa ? 'text-[var(--text)]' : 'text-[var(--text3)] opacity-60'
               )}
               style={ativa ? { backgroundColor: opt.corAtiva } : undefined}
@@ -474,45 +426,280 @@ function FaixaVantagem({ combatente }: { combatente: Combatente }) {
   )
 }
 
-// Barra de ações — rodapé fixo, alcance do polegar. Fase 2 reserva o
-// espaço e valida a ergonomia: todos os botões ficam desabilitados até a
-// Fase 3 dar poder de escrita a esta tela.
-function BarraAcoes({ ehMeuTurno }: { ehMeuTurno: boolean }) {
-  const acoesPrincipais = [
-    { label: 'Ataque', icone: '⚔️' },
-    { label: 'Magia', icone: '✨' },
-    { label: 'Item', icone: '🎒' },
-  ]
+function ModalEscolherArma({
+  ataques, armaAtual, onEscolher, onLimpar, onFechar,
+}: {
+  ataques: AtaqueDisponivel[]
+  armaAtual: ArmaEmpunhada | null | undefined
+  onEscolher: (arma: ArmaEmpunhada) => void
+  onLimpar: () => void
+  onFechar: () => void
+}) {
+  return createPortal(
+    <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/60 p-3" onClick={onFechar}>
+      <div
+        className="bg-[var(--bg3)] border border-[var(--border2)] rounded-xl shadow-2xl w-full max-w-xs p-4 max-h-[70vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-cinzel text-[var(--gold)] font-bold text-sm">Empunhar arma</h3>
+          <button onClick={onFechar} className="text-[var(--border)] hover:text-[var(--red2)] p-1 -m-1">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="space-y-1.5">
+          {ataques.map((a, i) => (
+            <button
+              key={i}
+              onClick={() => onEscolher(a)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg bg-[var(--surface)] hover:bg-[var(--bg2)] border border-[var(--border)] text-left min-h-[44px] transition-colors"
+            >
+              <span className="text-[var(--text)] text-sm font-crimson truncate">{a.nome}</span>
+              <span className="text-[var(--text3)] text-xs font-cinzel flex-shrink-0">{a.bonus} · {a.dano}</span>
+            </button>
+          ))}
+        </div>
+        {armaAtual && (
+          <button
+            onClick={onLimpar}
+            className="w-full mt-3 py-2.5 rounded-lg border border-[var(--red2)]/50 text-[var(--red2)] text-xs font-cinzel min-h-[44px]"
+          >
+            ✕ Desempunhar
+          </button>
+        )}
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// Slot de arma empunhada — a única escrita permitida na Fase 2 (preferência
+// de UI, não ação de jogo). Toque num slot vazio abre o seletor; toque num
+// slot preenchido não ataca ainda (isso é Fase 3) — só o ícone de troca abre
+// o seletor de novo.
+function SlotArma({
+  arma, ataquesDisponiveis, onEscolher, onLimpar,
+}: {
+  arma: ArmaEmpunhada | null | undefined
+  ataquesDisponiveis: AtaqueDisponivel[]
+  onEscolher: (arma: ArmaEmpunhada) => void
+  onLimpar: () => void
+}) {
+  const [abrindoPicker, setAbrindoPicker] = useState(false)
+
+  if (!arma && ataquesDisponiveis.length === 0) {
+    return (
+      <div className="flex-shrink-0 w-16 min-h-[56px] flex items-center justify-center rounded-lg border border-dashed border-[var(--border)] text-[var(--text3)] text-[9px] font-crimson text-center px-1 leading-tight">
+        Sem ataques na ficha
+      </div>
+    )
+  }
+
+  if (!arma) {
+    return (
+      <>
+        <button
+          onClick={() => setAbrindoPicker(true)}
+          className="flex-shrink-0 w-16 min-h-[56px] flex flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-[var(--accent2)]/60 text-[var(--accent2)] text-[10px] font-cinzel"
+        >
+          <span className="text-base leading-none">+</span>
+          Empunhar
+        </button>
+        {abrindoPicker && (
+          <ModalEscolherArma
+            ataques={ataquesDisponiveis}
+            armaAtual={null}
+            onEscolher={a => { onEscolher(a); setAbrindoPicker(false) }}
+            onLimpar={() => setAbrindoPicker(false)}
+            onFechar={() => setAbrindoPicker(false)}
+          />
+        )}
+      </>
+    )
+  }
 
   return (
-    <div className="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg2)] px-2 py-2 flex items-stretch gap-2">
-      <div className="flex-1 grid grid-cols-3 gap-2">
-        {acoesPrincipais.map(a => (
+    <>
+      <div className="relative flex-shrink-0 w-16 min-h-[56px] rounded-lg border border-[var(--border)] bg-[var(--surface)] flex flex-col items-center justify-center px-1 text-center">
+        <p className="text-[var(--text)] text-[11px] font-cinzel font-bold truncate w-full leading-tight">{arma.nome}</p>
+        <p className="text-[var(--text3)] text-[10px] font-crimson leading-tight">{arma.dano}</p>
+        <button
+          onClick={() => setAbrindoPicker(true)}
+          title="Trocar arma"
+          aria-label="Trocar arma"
+          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[var(--bg3)] border border-[var(--border)] text-[var(--text3)] flex items-center justify-center text-[10px]"
+        >
+          ⇄
+        </button>
+      </div>
+      {abrindoPicker && (
+        <ModalEscolherArma
+          ataques={ataquesDisponiveis}
+          armaAtual={arma}
+          onEscolher={a => { onEscolher(a); setAbrindoPicker(false) }}
+          onLimpar={() => { onLimpar(); setAbrindoPicker(false) }}
+          onFechar={() => setAbrindoPicker(false)}
+        />
+      )}
+    </>
+  )
+}
+
+function ModalMagias({ personagemId, personagemNome, onFechar }: { personagemId: string; personagemNome: string; onFechar: () => void }) {
+  const [carregando, setCarregando] = useState(true)
+  const [magias, setMagias] = useState<MagiaExibida[]>([])
+
+  useEffect(() => {
+    let cancelado = false
+    createClient()
+      .from('magias_personagem')
+      .select('id, preparada, nivel, spell:spells!spell_id(name_pt)')
+      .eq('personagem_id', personagemId)
+      .order('nivel')
+      .then(({ data }) => {
+        if (cancelado) return
+        const linhas = (data ?? []) as unknown as { id: string; preparada: boolean; nivel: number; spell: { name_pt: string } | null }[]
+        setMagias(linhas.map(m => ({ id: m.id, nome: m.spell?.name_pt ?? '(sem nome)', nivel: m.nivel, preparada: m.preparada })))
+        setCarregando(false)
+      })
+    return () => { cancelado = true }
+  }, [personagemId])
+
+  const { magias: exibidas, aviso } = selecionarMagiasExibidas(magias)
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/60 p-3" onClick={onFechar}>
+      <div
+        className="bg-[var(--bg3)] border border-[var(--border2)] rounded-xl shadow-2xl w-full max-w-xs p-4 max-h-[70vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-cinzel text-[var(--gold)] font-bold text-sm truncate">✨ Magias — {personagemNome}</h3>
+          <button onClick={onFechar} className="text-[var(--border)] hover:text-[var(--red2)] p-1 -m-1 flex-shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {carregando ? (
+          <p className="text-[var(--text3)] text-xs font-crimson text-center py-4">Carregando...</p>
+        ) : magias.length === 0 ? (
+          <div className="text-center py-4 space-y-2">
+            <p className="text-[var(--text3)] text-xs font-crimson">Nenhuma magia na ficha</p>
+            <Link href={`/personagens/${personagemId}`} className="text-[var(--accent2)] text-xs font-cinzel hover:underline">
+              Ver ficha do personagem →
+            </Link>
+          </div>
+        ) : (
+          <>
+            {aviso && <p className="text-[var(--gold)] text-[11px] font-crimson italic mb-2">⚠️ {aviso}</p>}
+            <div className="space-y-1">
+              {exibidas.map(m => (
+                <div key={m.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-[var(--surface)] border border-[var(--border)]">
+                  <span className="text-[var(--text)] text-sm font-crimson truncate">{m.nome}</span>
+                  <span className="text-[var(--text3)] text-xs font-cinzel flex-shrink-0 ml-2">{m.nivel === 0 ? 'Truque' : `N${m.nivel}`}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        <p className="text-[var(--text3)] text-[10px] font-crimson italic mt-3 text-center">Conjurar chega na Fase 3</p>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// Rodapé fixo — alcance do polegar. Fase 2 reserva o espaço e valida a
+// ergonomia: Ataque e Item ficam desabilitados (escrita é Fase 3); Magia é
+// exceção deliberada — é só leitura (lista as magias da ficha), então fica
+// habilitada. Armas empunhadas são a única escrita real desta fase.
+function BarraAcoes({
+  combatente, ehMeuTurno, onDefinirArma,
+}: {
+  combatente: Combatente
+  ehMeuTurno: boolean
+  onDefinirArma: (lado: 'esquerda' | 'direita', arma: ArmaEmpunhada | null) => void
+}) {
+  const [modalMagiaAberto, setModalMagiaAberto] = useState(false)
+  const ataquesDisponiveis: AtaqueDisponivel[] = combatente.dados_personagem?.ataques ?? []
+
+  return (
+    <div className="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg2)] px-2 py-1.5 space-y-1">
+      <div className="flex items-stretch gap-1.5">
+        <SlotArma
+          arma={combatente.arma_esquerda}
+          ataquesDisponiveis={ataquesDisponiveis}
+          onEscolher={a => onDefinirArma('esquerda', a)}
+          onLimpar={() => onDefinirArma('esquerda', null)}
+        />
+
+        <div className="flex-1 grid grid-cols-3 gap-1.5">
           <button
-            key={a.label}
             disabled
             aria-label="Disponível em breve"
             title="Disponível em breve"
             className={cn(
               'flex flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface)]',
-              'text-[var(--text2)] font-cinzel text-xs min-h-[56px] cursor-not-allowed transition-opacity',
+              'text-[var(--text2)] font-cinzel text-[10px] min-h-[56px] cursor-not-allowed transition-opacity',
               !ehMeuTurno && 'opacity-40'
             )}
           >
-            <span className="text-lg leading-none">{a.icone}</span>
-            {a.label}
+            <span className="text-base leading-none">⚔️</span>
+            Ataque
           </button>
-        ))}
+          <button
+            onClick={() => setModalMagiaAberto(true)}
+            aria-label="Ver magias"
+            title="Ver magias — conjurar chega na Fase 3"
+            className={cn(
+              'flex flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface)]',
+              'text-[var(--text2)] font-cinzel text-[10px] min-h-[56px] transition-opacity',
+              !ehMeuTurno && 'opacity-40'
+            )}
+          >
+            <span className="text-base leading-none">✨</span>
+            Magia
+          </button>
+          <button
+            disabled
+            aria-label="Disponível em breve"
+            title="Disponível em breve"
+            className={cn(
+              'flex flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface)]',
+              'text-[var(--text2)] font-cinzel text-[10px] min-h-[56px] cursor-not-allowed transition-opacity',
+              !ehMeuTurno && 'opacity-40'
+            )}
+          >
+            <span className="text-base leading-none">🎒</span>
+            Item
+          </button>
+        </div>
+
+        <SlotArma
+          arma={combatente.arma_direita}
+          ataquesDisponiveis={ataquesDisponiveis}
+          onEscolher={a => onDefinirArma('direita', a)}
+          onLimpar={() => onDefinirArma('direita', null)}
+        />
       </div>
+
       <button
         disabled
         aria-label="Disponível em breve"
         title="Disponível em breve"
-        className="flex-shrink-0 w-16 flex flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--accent2)]/50 bg-[var(--surface)] text-[var(--accent2)] font-cinzel text-xs min-h-[56px] cursor-not-allowed"
+        className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--accent2)]/50 bg-[var(--surface)] text-[var(--accent2)] font-cinzel text-xs py-1 min-h-[30px] cursor-not-allowed"
       >
-        <span className="text-lg leading-none">⚡</span>
-        Reação
+        <span className="text-sm leading-none">⚡</span> Reação
       </button>
+
+      {modalMagiaAberto && combatente.personagem_id && (
+        <ModalMagias
+          personagemId={combatente.personagem_id}
+          personagemNome={combatente.nome}
+          onFechar={() => setModalMagiaAberto(false)}
+        />
+      )}
     </div>
   )
 }
@@ -520,7 +707,7 @@ function BarraAcoes({ ehMeuTurno }: { ehMeuTurno: boolean }) {
 export function MesaCliente() {
   const {
     combatentes, log, rodadaAtual, turnoAtual, turnoCombatenteId, ativa,
-    statusBatalha, batalhaId, revelacaoPv, carregarBatalhaAtiva,
+    statusBatalha, batalhaId, revelacaoPv, carregarBatalhaAtiva, definirArmaEmpunhada,
   } = useBatalha()
   const { campanhaAtiva } = useCampanha()
   const { ehDM } = usePermissao()
@@ -529,6 +716,7 @@ export function MesaCliente() {
   const [infoPersonagens, setInfoPersonagens] = useState<Record<string, InfoPersonagem>>({})
   const [carregandoBatalha, setCarregandoBatalha] = useState(true)
   const [personagemSelecionadoId, setPersonagemSelecionadoId] = useState<string | null>(null)
+  const [popupCombatenteId, setPopupCombatenteId] = useState<string | null>(null)
 
   useEffect(() => {
     createClient().auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null))
@@ -623,6 +811,8 @@ export function MesaCliente() {
   const combatenteDoTurno = ativa ? ativosOrdenados[turnoAtual] ?? null : null
   const ehMeuTurno = !!combatenteDoTurno && meuCombatenteIds.has(combatenteDoTurno.id)
 
+  const combatentePopup = popupCombatenteId ? combatentes.find(c => c.id === popupCombatenteId) ?? null : null
+
   if (carregandoBatalha) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -661,23 +851,19 @@ export function MesaCliente() {
         ativa={ativa}
         infoPersonagens={infoPersonagens}
         meuCombatenteIds={meuCombatenteIds}
+        onTocar={setPopupCombatenteId}
       />
 
-      <div className="flex-1 overflow-y-auto">
-        <IndicadorVez
-          ativa={ativa}
-          rodadaAtual={rodadaAtual}
-          combatenteDoTurno={combatenteDoTurno}
-          ehMeuTurno={ehMeuTurno}
-        />
+      <StatusRodada
+        ativa={ativa}
+        statusBatalha={statusBatalha}
+        rodadaAtual={rodadaAtual}
+        combatenteDoTurno={combatenteDoTurno}
+        ehMeuTurno={ehMeuTurno}
+      />
 
-        {statusBatalha === 'pausada' && (
-          <div className="px-3 py-1.5 text-center">
-            <span className="text-[var(--gold)] text-xs font-cinzel animate-pulse">⏸ BATALHA PAUSADA</span>
-          </div>
-        )}
-
-        {combatenteSelecionado && (
+      <div className="flex-1 min-h-0 overflow-hidden px-3 pb-2">
+        {combatenteSelecionado ? (
           <CartaoPersonagem
             combatente={combatenteSelecionado}
             info={combatenteSelecionado.personagem_id ? infoPersonagens[combatenteSelecionado.personagem_id] : undefined}
@@ -685,24 +871,34 @@ export function MesaCliente() {
             selecionadoId={personagemSelecionadoId}
             onSelecionar={setPersonagemSelecionadoId}
           />
+        ) : (
+          <div className="h-full flex items-center justify-center text-center px-4">
+            <p className="text-[var(--text3)] text-xs font-crimson">
+              Você não está controlando nenhum personagem nesta batalha. Toque em um participante acima para ver detalhes.
+            </p>
+          </div>
         )}
-
-        <ListaCombatentes
-          combatentes={combatentes}
-          revelacaoPv={revelacaoPv}
-          ehDM={ehDM}
-          infoPersonagens={infoPersonagens}
-          ocultarIds={combatenteSelecionado ? new Set([combatenteSelecionado.id]) : new Set()}
-        />
-
-        <LogResumido log={log} />
       </div>
 
       {combatenteSelecionado && (
         <>
           <FaixaVantagem combatente={combatenteSelecionado} />
-          <BarraAcoes ehMeuTurno={ehMeuTurno} />
+          <BarraAcoes
+            combatente={combatenteSelecionado}
+            ehMeuTurno={ehMeuTurno}
+            onDefinirArma={(lado, arma) => definirArmaEmpunhada(combatenteSelecionado.id, lado, arma)}
+          />
         </>
+      )}
+
+      {combatentePopup && (
+        <PopupCombatente
+          combatente={combatentePopup}
+          info={combatentePopup.personagem_id ? infoPersonagens[combatentePopup.personagem_id] : undefined}
+          revelacaoPv={revelacaoPv}
+          ehDM={ehDM}
+          onFechar={() => setPopupCombatenteId(null)}
+        />
       )}
     </div>
   )

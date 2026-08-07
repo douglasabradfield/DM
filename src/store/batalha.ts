@@ -3,7 +3,7 @@ import { immer } from 'zustand/middleware/immer'
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import type {
   Combatente, EntradaLog, TipoCondicao, TipoCombatente,
-  CombatenteDB, LogDB, BatalhaDB,
+  CombatenteDB, LogDB, BatalhaDB, ArmaEmpunhada,
 } from '@/types/batalha'
 import type { TipoDano } from '@/types/dnd'
 import { aplicarResistencias } from '@/lib/dados-dnd/tipos-dano'
@@ -56,6 +56,8 @@ function combatenteParaLinha(c: Combatente, batalhaId: string) {
     morto: c.morto,
     ausente: c.ausente,
     pv_revelado: c.pv_revelado,
+    arma_esquerda: c.arma_esquerda ?? null,
+    arma_direita: c.arma_direita ?? null,
     vantagem: c.vantagem ?? null,
     inspiracao: c.inspiracao ?? 0,
     dano_total: c.dano_total,
@@ -88,6 +90,8 @@ function combatenteFromDB(row: CombatenteDB): Combatente {
     espacos_magia: row.espacos_magia,
     notas: row.notas ?? '',
     pv_revelado: row.pv_revelado,
+    arma_esquerda: row.arma_esquerda,
+    arma_direita: row.arma_direita,
     dados_monstro: row.dados_monstro,
     dados_personagem: row.dados_personagem ?? null,
     ordem: row.ordem,
@@ -290,6 +294,7 @@ interface EstadoBatalhaStore {
   revelacaoPv: ModoRevelacao
   definirRevelacaoPv: (modo: ModoRevelacao) => void
   togglePvRevelado: (combatenteId: string) => void
+  definirArmaEmpunhada: (combatenteId: string, lado: 'esquerda' | 'direita', arma: ArmaEmpunhada | null) => void
 
   // Sessão / persistência
   sessaoId: string | null
@@ -1404,6 +1409,11 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       },
 
       togglePvRevelado: (id) => mutarCombatente(id, c => { c.pv_revelado = !c.pv_revelado }),
+
+      definirArmaEmpunhada: (id, lado, arma) => mutarCombatente(id, c => {
+        if (lado === 'esquerda') c.arma_esquerda = arma
+        else c.arma_direita = arma
+      }),
     }
   })
 )

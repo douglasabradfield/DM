@@ -13,6 +13,12 @@ export interface EspacosMagiaBatalha {
   [nivel: number]: { total: number; utilizados: number }
 }
 
+export interface ArmaEmpunhada {
+  nome: string
+  bonus: string
+  dano: string
+}
+
 export interface Combatente {
   id: string
   batalha_id: string
@@ -43,6 +49,8 @@ export interface Combatente {
   vantagem?: 'vantagem' | 'desvantagem' | null
   inspiracao?: number
   nivel?: number
+  arma_esquerda?: ArmaEmpunhada | null
+  arma_direita?: ArmaEmpunhada | null
   // slots restantes por nível (local, para monstros/NPCs sem personagem_id)
   slots_monstro?: Record<string, number>
   // ataques estruturados do bestiário (quando monstro tem monster_actions)
@@ -174,6 +182,8 @@ export interface CombatenteDB {
   nivel: number | null
   notas: string | null
   pv_revelado: boolean
+  arma_esquerda: ArmaEmpunhada | null
+  arma_direita: ArmaEmpunhada | null
   resistencias: TipoDano[]
   imunidades: TipoDano[]
   vulnerabilidades: TipoDano[]
