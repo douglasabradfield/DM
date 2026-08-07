@@ -1,4 +1,4 @@
-export type ModoRevelacao = 'oculto' | 'vago' | 'exato'
+export type ModoRevelacao = 'padrao' | 'exato'
 
 export type EstadoVago = 'ileso' | 'ferido' | 'muito_ferido' | 'quase_morrendo' | 'morto'
 
@@ -27,13 +27,17 @@ export function pvVisivelParaJogador(
     return { modo: 'exato' }
   }
 
+  if (modoGlobal === 'exato') {
+    return { modo: 'exato' }
+  }
+
+  // modo 'padrao': a revelação individual (👁️ na linha) é um nível acima do
+  // modo global, nunca ignorada — liga o estado vago para este combatente
+  // específico mesmo com o padrão da mesa oculto.
   if (combatente.pv_revelado) {
-    if (modoGlobal === 'exato') return { modo: 'exato' }
     return { modo: 'vago', estado: estadoVago(combatente.pv_atual, combatente.pv_maximo) }
   }
 
-  if (modoGlobal === 'exato') return { modo: 'exato' }
-  if (modoGlobal === 'vago') return { modo: 'vago', estado: estadoVago(combatente.pv_atual, combatente.pv_maximo) }
   return { modo: 'oculto' }
 }
 

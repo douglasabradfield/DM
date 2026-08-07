@@ -568,7 +568,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       nomeBatalha: '',
       statusBatalha: 'inativa',
       iniciadaEm: null,
-      revelacaoPv: 'oculto',
+      revelacaoPv: 'padrao',
 
       assinarRealtime,
       encerrarRealtime,
@@ -827,7 +827,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           state.nomeBatalha = ''
           state.statusBatalha = 'inativa'
           state.iniciadaEm = null
-          state.revelacaoPv = 'oculto'
+          state.revelacaoPv = 'padrao'
         })
       },
 

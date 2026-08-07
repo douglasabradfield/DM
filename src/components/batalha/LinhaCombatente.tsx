@@ -35,6 +35,7 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
     togglePvRevelado,
   } = useBatalha()
   const pausada = useBatalha(s => s.statusBatalha === 'pausada')
+  const revelacaoPv = useBatalha(s => s.revelacaoPv)
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: c.id })
 
@@ -279,9 +280,10 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
           {c.tipo !== 'jogador' && (
             <button
               onClick={() => togglePvRevelado(c.id)}
-              title="Revelar estado deste combatente aos jogadores"
+              disabled={revelacaoPv === 'exato'}
+              title={revelacaoPv === 'exato' ? 'Todos os PVs já estão visíveis' : 'Revelar estado deste combatente aos jogadores'}
               className={cn(
-                'transition-colors',
+                'transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
                 c.pv_revelado ? 'text-[var(--gold)]' : 'text-[var(--border)] hover:text-[var(--text3)]'
               )}
             >

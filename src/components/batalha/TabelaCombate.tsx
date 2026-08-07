@@ -177,11 +177,10 @@ export function TabelaCombate() {
 
           <div
             className="flex items-center gap-0.5 bg-[var(--bg3)] border border-[var(--border)] rounded px-1 py-1"
-            title="O que os jogadores veem do PV de monstros e NPCs. Personagens dos jogadores são sempre visíveis entre si."
+            title="Padrão: jogadores só veem o nome dos monstros. Use o 👁️ na linha para revelar o estado de um monstro específico. Exato: jogadores veem todos os números."
           >
             {([
-              { valor: 'oculto', label: '👁️ Oculto' },
-              { valor: 'vago', label: '🌓 Vago' },
+              { valor: 'padrao', label: '🙈 Padrão' },
               { valor: 'exato', label: '🔢 Exato' },
             ] as const).map(opt => (
               <button
