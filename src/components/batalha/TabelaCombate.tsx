@@ -63,9 +63,23 @@ export function TabelaCombate() {
   const [modalIniciar, setModalIniciar] = useState(false)
   const [modalCarregar, setModalCarregar] = useState(false)
   const [modalRegistrarAcao, setModalRegistrarAcao] = useState(false)
+  const [preenchimentoAcao, setPreenchimentoAcao] = useState<{ tipo: string; origemNome: string } | null>(null)
   const [encerrando, setEncerrando] = useState(false)
   const [avisoXP, setAvisoXP] = useState(false)
+  const [avisoEfeitosVisivel, setAvisoEfeitosVisivel] = useState(false)
   const campanhaAnteriorRef = useRef<string | null>(null)
+
+  // Lembrete, não automação — sem grid posicional o app não sabe quem
+  // entrou no raio de um efeito persistente. Reaparece a cada troca de
+  // turno/rodada enquanto houver algo ativo na batalha; o DM decide se cabe.
+  const efeitosAtivosNaBatalha = combatentes.flatMap(c =>
+    c.efeitos_ativos.map(ef => ({ conjuradorId: c.id, conjuradorNome: c.nome, ...ef }))
+  )
+
+  useEffect(() => {
+    if (efeitosAtivosNaBatalha.length > 0) setAvisoEfeitosVisivel(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnoAtual, rodadaAtual])
 
   useEffect(() => {
     const idAnterior = campanhaAnteriorRef.current
@@ -302,6 +316,33 @@ export function TabelaCombate() {
           </BotaoRunico>
         </div>
 
+        {avisoEfeitosVisivel && efeitosAtivosNaBatalha.length > 0 && (
+          <div className="bg-[var(--gold)]/10 border-b border-[var(--gold)]/30 px-3 py-1.5 flex flex-col gap-1">
+            {efeitosAtivosNaBatalha.map(ef => (
+              <div key={`${ef.conjuradorId}-${ef.nome}`} className="flex items-center gap-2 text-xs font-crimson text-[var(--text2)]">
+                <span className="flex-1">
+                  ✨ <b className="text-[var(--gold)]">{ef.conjuradorNome}</b> tem <b>{ef.nome}</b> ativo — atinge alguém neste turno?
+                </span>
+                <button
+                  onClick={() => {
+                    setPreenchimentoAcao({ tipo: 'magia', origemNome: ef.conjuradorNome })
+                    setModalRegistrarAcao(true)
+                  }}
+                  className="flex-shrink-0 px-2 py-0.5 rounded border border-[var(--gold)]/60 text-[var(--gold)] font-cinzel text-[10px] hover:bg-[var(--gold)]/10 transition-colors"
+                >
+                  Registrar ação
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={() => setAvisoEfeitosVisivel(false)}
+              className="self-end text-[var(--text3)] text-[10px] font-cinzel hover:text-[var(--text2)] transition-colors"
+            >
+              Dispensar
+            </button>
+          </div>
+        )}
+
         {/* Abas */}
         <div className="bg-[var(--bg2)] border-b border-[var(--border)] flex">
           {[
@@ -472,7 +513,8 @@ export function TabelaCombate() {
     {modalRegistrarAcao && (
       <ModalRegistrarAcao
         combatentes={combatentes}
-        onFechar={() => setModalRegistrarAcao(false)}
+        preenchido={preenchimentoAcao}
+        onFechar={() => { setModalRegistrarAcao(false); setPreenchimentoAcao(null) }}
       />
     )}
     {modalXP && <ModalDistribuirXP xpSugerido={xpGanhoNaBatalha} onFechar={() => setModalXP(false)} />}
@@ -1038,14 +1080,16 @@ const TIPOS_MAGIA_SLOTS = new Set(['magia', 'contra_magia', 'acao_bonus_magia', 
 
 function ModalRegistrarAcao({
   combatentes,
+  preenchido,
   onFechar,
 }: {
   combatentes: Combatente[]
+  preenchido?: { tipo: string; origemNome: string } | null
   onFechar: () => void
 }) {
   const { aplicarDano, aplicarCura, adicionarEntradaLog, atualizarCombatente, atualizarCombatentePorPersonagem } = useBatalha()
-  const [tipo, setTipo] = useState('')
-  const [origemNome, setOrigemNome] = useState('')
+  const [tipo, setTipo] = useState(preenchido?.tipo ?? '')
+  const [origemNome, setOrigemNome] = useState(preenchido?.origemNome ?? '')
   const [nivelMagia, setNivelMagia] = useState(0) // 0 = Truque
   const [erroSlot, setErroSlot] = useState('')
   const [salvando, setSalvando] = useState(false)

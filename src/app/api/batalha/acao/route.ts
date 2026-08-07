@@ -29,8 +29,12 @@ interface AcaoPayload {
   descricao?: string
   // Nome do efeito persistente do conjurador (ex: magia de concentração) —
   // apenas anotado em efeitos_ativos para o DM lembrar; o app não aplica
-  // sozinho (detalhado na Fase 3.C).
+  // sozinho.
   marcarEfeitoAtivo?: string
+  // Encerra um efeito ativo do próprio ator (nome exato em efeitos_ativos).
+  // O conjurador pode fazer isso a qualquer momento — não é uma ação de
+  // turno, por isso bypassa a checagem de vez como uma reação.
+  encerrarEfeitoAtivo?: string
 }
 
 type SlotsMagiaDb = Record<string, { total: number; usados: number }>
@@ -84,9 +88,12 @@ export async function POST(req: NextRequest) {
   }
 
   const ehReacao = TIPOS_REACAO.has(tipo)
+  // Encerrar efeito ativo não é uma ação de turno — o conjurador pode fazer
+  // isso a qualquer momento, dentro ou fora da própria vez.
+  const bypassaTurno = ehReacao || !!payload.encerrarEfeitoAtivo
 
-  // 4. Fora do turno só é permitido para reação
-  if (!ehDM && !ehReacao && batalha.turno_combatente_id !== combatenteId) {
+  // 4. Fora do turno só é permitido para reação (ou encerrar efeito ativo)
+  if (!ehDM && !bypassaTurno && batalha.turno_combatente_id !== combatenteId) {
     return Response.json({ erro: 'Não é a vez deste combatente' }, { status: 403 })
   }
 
@@ -233,6 +240,10 @@ export async function POST(req: NextRequest) {
   if (payload.marcarEfeitoAtivo) {
     const efeitosAtuais = (ator.efeitos_ativos ?? []) as { nome: string; rodada_inicio: number }[]
     patchAtor.efeitos_ativos = [...efeitosAtuais, { nome: payload.marcarEfeitoAtivo, rodada_inicio: batalha.rodada_atual }]
+  }
+  if (payload.encerrarEfeitoAtivo) {
+    const efeitosAtuais = (ator.efeitos_ativos ?? []) as { nome: string; rodada_inicio: number }[]
+    patchAtor.efeitos_ativos = efeitosAtuais.filter(e => e.nome !== payload.encerrarEfeitoAtivo)
   }
   if (Object.keys(patchAtor).length > 0) {
     await admin.from('batalha_combatentes').update(patchAtor).eq('id', ator.id)

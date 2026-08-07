@@ -53,6 +53,7 @@ async function chamarAcaoApi(payload: {
   vantagem?: 'vantagem' | 'desvantagem' | null
   descricao?: string
   marcarEfeitoAtivo?: string
+  encerrarEfeitoAtivo?: string
 }): Promise<ResultadoAcao> {
   try {
     const resp = await fetch('/api/batalha/acao', {
@@ -124,6 +125,26 @@ function classificarMagia(m: MagiaExibida): { efeito: 'dano' | 'cura' | 'nenhum'
 
 function ordenarPorNome(combatentes: Combatente[]): Combatente[] {
   return [...combatentes].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+}
+
+// Jogadores têm ataques em dados_personagem.ataques; monstros/NPCs do
+// bestiário trazem ataques_estruturados (MonsterAction[]) — formatos
+// diferentes, mesmo uso nos slots de arma / lista de ataque. Só entram os
+// que têm dado de dano (o resto — traços, lendárias sem dano — não cabe
+// no modelo "nome/bônus/dano" desses controles.
+function ataquesDoCombatente(c: Combatente): AtaqueDisponivel[] {
+  if (c.dados_personagem?.ataques) return c.dados_personagem.ataques
+  if (c.ataques_estruturados) {
+    return c.ataques_estruturados
+      .filter(a => a.damage_dice)
+      .map(a => ({
+        nome: a.name_pt,
+        bonus: a.attack_bonus != null ? (a.attack_bonus >= 0 ? `+${a.attack_bonus}` : `${a.attack_bonus}`) : '',
+        dano: a.damage_dice ?? '',
+        tipo_dano: a.damage_type_pt ?? undefined,
+      }))
+  }
+  return []
 }
 
 function mensagemToast(entrada: EntradaLog): string | null {
@@ -543,13 +564,16 @@ function StatusRodada({
 // Cartão central — único elemento que pode encolher. Sem scroll: quando o
 // conteúdo aperta, a densidade (fonte/espaçamento) cede, nunca overflow.
 function CartaoPersonagem({
-  combatente: c, info, meusCombatentes, selecionadoId, onSelecionar,
+  combatente: c, info, opcoesSelecao, mostrarSeletorSempre, rotuloSeletor, selecionadoId, onSelecionar, onEncerrarEfeito,
 }: {
   combatente: Combatente
   info: InfoPersonagem | undefined
-  meusCombatentes: Combatente[]
+  opcoesSelecao: Combatente[]
+  mostrarSeletorSempre?: boolean
+  rotuloSeletor?: string
   selecionadoId: string | null
   onSelecionar: (id: string) => void
+  onEncerrarEfeito?: (nome: string) => void
 }) {
   const [condicaoAberta, setCondicaoAberta] = useState<TipoCondicao | null>(null)
   const estaMorto = c.morto || c.pv_atual <= 0
@@ -558,14 +582,17 @@ function CartaoPersonagem({
 
   return (
     <div className="h-full flex flex-col gap-1.5 overflow-hidden rounded-xl bg-[var(--bg2)] border border-[var(--gold)]/40 shadow-lg p-3">
-      {meusCombatentes.length > 1 && (
-        <select
-          value={selecionadoId ?? ''}
-          onChange={e => onSelecionar(e.target.value)}
-          className="input-dd w-full text-xs py-1 flex-shrink-0"
-        >
-          {meusCombatentes.map(mc => <option key={mc.id} value={mc.id}>{mc.nome}</option>)}
-        </select>
+      {(mostrarSeletorSempre ? opcoesSelecao.length > 0 : opcoesSelecao.length > 1) && (
+        <div className="flex-shrink-0">
+          {rotuloSeletor && <p className="text-[var(--text3)] text-[9px] font-cinzel uppercase mb-0.5">{rotuloSeletor}</p>}
+          <select
+            value={selecionadoId ?? ''}
+            onChange={e => onSelecionar(e.target.value)}
+            className="input-dd w-full text-xs py-1"
+          >
+            {opcoesSelecao.map(mc => <option key={mc.id} value={mc.id}>{mc.nome}</option>)}
+          </select>
+        </div>
       )}
 
       <div className="flex items-center gap-2 flex-shrink-0">
@@ -614,6 +641,25 @@ function CartaoPersonagem({
       {Object.keys(c.espacos_magia).length > 0 && (
         <div className="flex-shrink-0">
           <EspacosMagiaLeitura espacos={c.espacos_magia} />
+        </div>
+      )}
+
+      {/* Lembrete, não automação — o app não tem grid posicional para saber
+          quem entrou no raio. O conjurador (ou o DM operando por ele)
+          encerra manualmente quando o efeito acabar. */}
+      {c.efeitos_ativos.length > 0 && (
+        <div className="flex flex-wrap gap-1 flex-shrink-0">
+          {c.efeitos_ativos.map(ef => (
+            <button
+              key={ef.nome}
+              onClick={() => onEncerrarEfeito?.(ef.nome)}
+              disabled={!onEncerrarEfeito}
+              title={onEncerrarEfeito ? 'Toque para encerrar o efeito' : undefined}
+              className="px-2 py-1 rounded-full bg-[var(--gold)]/15 border border-[var(--gold)]/50 text-[var(--gold)] text-[10px] font-crimson flex items-center gap-1"
+            >
+              ✨ {ef.nome} · R{ef.rodada_inicio}
+            </button>
+          ))}
         </div>
       )}
 
@@ -1227,8 +1273,11 @@ function BarraAcoes({
   onAbrirItem: () => void
   onAbrirReacao: () => void
 }) {
-  const ataquesDisponiveis: AtaqueDisponivel[] = combatente.dados_personagem?.ataques ?? []
+  const ataquesDisponiveis = ataquesDoCombatente(combatente)
   const reacaoDisponivel = !combatente.reacao_usada
+  // Magia e Item são conceitos de ficha (magias_personagem / inventário) —
+  // não existem para monstros/NPCs sem personagem_id vinculado.
+  const temFicha = !!combatente.personagem_id
 
   return (
     <div className="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg2)] px-2 py-1.5 space-y-1">
@@ -1259,13 +1308,13 @@ function BarraAcoes({
           </button>
           <button
             onClick={onAbrirMagia}
-            disabled={!ehMeuTurno}
+            disabled={!ehMeuTurno || !temFicha}
             aria-label="Conjurar magia"
-            title={ehMeuTurno ? 'Conjurar magia' : 'Aguarde sua vez'}
+            title={!temFicha ? 'Sem ficha vinculada' : ehMeuTurno ? 'Conjurar magia' : 'Aguarde sua vez'}
             className={cn(
               'flex flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface)]',
               'text-[var(--text2)] font-cinzel text-[10px] min-h-[56px] transition-opacity',
-              !ehMeuTurno && 'opacity-40 cursor-not-allowed'
+              (!ehMeuTurno || !temFicha) && 'opacity-40 cursor-not-allowed'
             )}
           >
             <span className="text-base leading-none">✨</span>
@@ -1273,13 +1322,13 @@ function BarraAcoes({
           </button>
           <button
             onClick={onAbrirItem}
-            disabled={!ehMeuTurno}
+            disabled={!ehMeuTurno || !temFicha}
             aria-label="Usar item"
-            title={ehMeuTurno ? 'Usar item' : 'Aguarde sua vez'}
+            title={!temFicha ? 'Sem ficha vinculada' : ehMeuTurno ? 'Usar item' : 'Aguarde sua vez'}
             className={cn(
               'flex flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface)]',
               'text-[var(--text2)] font-cinzel text-[10px] min-h-[56px] transition-opacity',
-              !ehMeuTurno && 'opacity-40 cursor-not-allowed'
+              (!ehMeuTurno || !temFicha) && 'opacity-40 cursor-not-allowed'
             )}
           >
             <span className="text-base leading-none">🎒</span>
@@ -1327,6 +1376,11 @@ export function MesaCliente() {
   const [carregandoBatalha, setCarregandoBatalha] = useState(true)
   const [personagemSelecionadoId, setPersonagemSelecionadoId] = useState<string | null>(null)
   const [popupCombatenteId, setPopupCombatenteId] = useState<string | null>(null)
+
+  // O notebook (TabelaCombate) continua o cockpit; a /mesa vira controle
+  // remoto do DM andando pela mesa — opera monstros, NPCs e PJs ausentes
+  // pelo mesmo fluxo/API do jogador, sem a checagem de "é a sua vez".
+  const [dmControlandoId, setDmControlandoId] = useState<string | null>(null)
 
   // Modais "o quê" — abrem antes de entrar no fluxo de alvo/valor
   const [modalListaAtaqueAberto, setModalListaAtaqueAberto] = useState(false)
@@ -1419,10 +1473,34 @@ export function MesaCliente() {
 
   const combatenteSelecionado = meuCombatentes.find(c => c.id === personagemSelecionadoId) ?? null
 
+  // Combatentes que o DM pode operar pela /mesa: monstros, NPCs e PJs de
+  // jogadores ausentes. PJs presentes continuam controlados pelo próprio
+  // jogador — o DM não precisa (nem deve) assumi-los por padrão.
+  const combatentesControlaveisDM = useMemo(
+    () => ordenarPorNome(combatentes.filter(c => c.tipo !== 'jogador' || c.ausente)),
+    [combatentes]
+  )
+
+  useEffect(() => {
+    if (!ehDM) return
+    if (combatentesControlaveisDM.length === 0) { setDmControlandoId(null); return }
+    if (!dmControlandoId || !combatentesControlaveisDM.some(c => c.id === dmControlandoId)) {
+      setDmControlandoId(combatentesControlaveisDM[0].id)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ehDM, combatentesControlaveisDM])
+
+  // Combatente "operado" nesta tela — o próprio PJ do jogador, ou quem o DM
+  // escolheu no seletor. Todo o resto do fluxo de ação usa só esta variável,
+  // sem distinguir DM de jogador a partir daqui.
+  const combatenteOperado = ehDM
+    ? combatentesControlaveisDM.find(c => c.id === dmControlandoId) ?? null
+    : combatenteSelecionado
+
   // Reflete o campo já persistido (seja pelo próprio toggle, seja pelo mestre).
   useEffect(() => {
-    setVantagemEscolhida(combatenteSelecionado?.vantagem ?? null)
-  }, [combatenteSelecionado?.id, combatenteSelecionado?.vantagem])
+    setVantagemEscolhida(combatenteOperado?.vantagem ?? null)
+  }, [combatenteOperado?.id, combatenteOperado?.vantagem])
 
   function cancelarAcao() {
     setAcaoPendente(null)
@@ -1441,14 +1519,14 @@ export function MesaCliente() {
     tipoDano: TipoDano | null,
     descricaoExtra?: string,
   ) {
-    if (!combatenteSelecionado || !batalhaId || enviando) return
+    if (!combatenteOperado || !batalhaId || enviando) return
     setEnviando(true)
     const descricaoAlvos = alvos.length > 0 && valor === null ? `Alvo: ${alvos.map(a => a.nome).join(', ')}` : undefined
     const descricaoFinal = [descricaoExtra, descricaoAlvos].filter(Boolean).join(' — ') || undefined
 
     const resultado = await chamarAcaoApi({
       batalhaId,
-      combatenteId: combatenteSelecionado.id,
+      combatenteId: combatenteOperado.id,
       tipo: pending.tipo,
       alvos: alvos.map(a => ({ combatenteId: a.id, valor: valor ?? 0, ...(tipoDano ? { tipoDano } : {}) })),
       nivelMagia: pending.nivelMagia,
@@ -1536,7 +1614,7 @@ export function MesaCliente() {
 
   function usarItem(item: { nome: string; cura: number }) {
     setModalItemAberto(false)
-    if (!combatenteSelecionado) return
+    if (!combatenteOperado) return
     const pending: AcaoPendente = {
       // Mesma regra de conjurarMagia: a API só cura quando o tipo está em
       // TIPOS_CURA — 'usar_item' cairia no ramo de dano.
@@ -1544,7 +1622,7 @@ export function MesaCliente() {
       precisaAlvo: false, precisaValor: false, tipoDanoPadrao: null,
     }
     if (item.cura > 0) {
-      enviarAcao(pending, [{ id: combatenteSelecionado.id, nome: combatenteSelecionado.nome }], item.cura, null)
+      enviarAcao(pending, [{ id: combatenteOperado.id, nome: combatenteOperado.nome }], item.cura, null)
     } else {
       enviarAcao(pending, [], null, null)
     }
@@ -1571,14 +1649,14 @@ export function MesaCliente() {
   }
 
   async function escolherVantagem(v: 'vantagem' | 'desvantagem' | null) {
-    if (!combatenteSelecionado || !batalhaId || enviandoVantagem) return
-    const anterior = combatenteSelecionado.vantagem ?? null
+    if (!combatenteOperado || !batalhaId || enviandoVantagem) return
+    const anterior = combatenteOperado.vantagem ?? null
     setVantagemEscolhida(v)
     setEnviandoVantagem(true)
     const nomeAcao = v === 'vantagem' ? 'Vantagem ativada' : v === 'desvantagem' ? 'Desvantagem ativada' : 'Vantagem removida'
     const resultado = await chamarAcaoApi({
       batalhaId,
-      combatenteId: combatenteSelecionado.id,
+      combatenteId: combatenteOperado.id,
       tipo: 'sistema',
       alvos: [],
       nomeAcao,
@@ -1589,6 +1667,22 @@ export function MesaCliente() {
       toast.error(resultado.erro ?? 'Erro ao salvar vantagem')
       setVantagemEscolhida(anterior)
     }
+  }
+
+  // "A qualquer momento" — sem checagem de turno (a API trata como reação
+  // para efeito de validação). O DM operando o combatente também pode.
+  async function encerrarEfeito(nome: string) {
+    if (!combatenteOperado || !batalhaId) return
+    if (!window.confirm(`Encerrar "${nome}"?`)) return
+    const resultado = await chamarAcaoApi({
+      batalhaId,
+      combatenteId: combatenteOperado.id,
+      tipo: 'sistema',
+      alvos: [],
+      nomeAcao: `Efeito encerrado: ${nome}`,
+      encerrarEfeitoAtivo: nome,
+    })
+    if (!resultado.ok) toast.error(resultado.erro ?? 'Erro ao encerrar efeito')
   }
 
   // Barra de participantes: NUNCA por iniciativa. Jogador só vê os PJs;
@@ -1607,6 +1701,9 @@ export function MesaCliente() {
   )
   const combatenteDoTurno = ativa ? ativosOrdenados[turnoAtual] ?? null : null
   const ehMeuTurno = !!combatenteDoTurno && meuCombatenteIds.has(combatenteDoTurno.id)
+  // O DM não tem "vez" — pode agir por qualquer combatente que esteja
+  // operando a qualquer momento (a API já trata isso na validação).
+  const podeAgirOperado = ehDM || ehMeuTurno
 
   const combatentePopup = popupCombatenteId ? combatentes.find(c => c.id === popupCombatenteId) ?? null : null
 
@@ -1660,35 +1757,40 @@ export function MesaCliente() {
       />
 
       <div className="flex-1 min-h-0 overflow-hidden px-3 pb-2">
-        {combatenteSelecionado ? (
+        {combatenteOperado ? (
           <CartaoPersonagem
-            combatente={combatenteSelecionado}
-            info={combatenteSelecionado.personagem_id ? infoPersonagens[combatenteSelecionado.personagem_id] : undefined}
-            meusCombatentes={meuCombatentes}
-            selecionadoId={personagemSelecionadoId}
-            onSelecionar={setPersonagemSelecionadoId}
+            combatente={combatenteOperado}
+            info={combatenteOperado.personagem_id ? infoPersonagens[combatenteOperado.personagem_id] : undefined}
+            opcoesSelecao={ehDM ? combatentesControlaveisDM : meuCombatentes}
+            mostrarSeletorSempre={ehDM}
+            rotuloSeletor={ehDM ? '🎭 Operando' : undefined}
+            selecionadoId={ehDM ? dmControlandoId : personagemSelecionadoId}
+            onSelecionar={ehDM ? setDmControlandoId : setPersonagemSelecionadoId}
+            onEncerrarEfeito={encerrarEfeito}
           />
         ) : (
           <div className="h-full flex items-center justify-center text-center px-4">
             <p className="text-[var(--text3)] text-xs font-crimson">
-              Você não está controlando nenhum personagem nesta batalha. Toque em um participante acima para ver detalhes.
+              {ehDM
+                ? 'Nenhum monstro, NPC ou PJ ausente para operar ainda.'
+                : 'Você não está controlando nenhum personagem nesta batalha. Toque em um participante acima para ver detalhes.'}
             </p>
           </div>
         )}
       </div>
 
-      {combatenteSelecionado && (
+      {combatenteOperado && (
         <>
           <FaixaVantagem
             valor={vantagemEscolhida}
-            podeAgir={ehMeuTurno}
+            podeAgir={podeAgirOperado}
             enviando={enviandoVantagem}
             onEscolher={escolherVantagem}
           />
           <BarraAcoes
-            combatente={combatenteSelecionado}
-            ehMeuTurno={ehMeuTurno}
-            onDefinirArma={(lado, arma) => definirArmaEmpunhada(combatenteSelecionado.id, lado, arma)}
+            combatente={combatenteOperado}
+            ehMeuTurno={podeAgirOperado}
+            onDefinirArma={(lado, arma) => definirArmaEmpunhada(combatenteOperado.id, lado, arma)}
             onAtacarComArma={iniciarAtaqueArma}
             onAbrirAtaque={() => setModalListaAtaqueAberto(true)}
             onAbrirMagia={() => setModalMagiaAberto(true)}
@@ -1711,27 +1813,27 @@ export function MesaCliente() {
         />
       )}
 
-      {modalListaAtaqueAberto && combatenteSelecionado && (
+      {modalListaAtaqueAberto && combatenteOperado && (
         <ModalListaAtaques
-          ataques={combatenteSelecionado.dados_personagem?.ataques ?? []}
+          ataques={ataquesDoCombatente(combatenteOperado)}
           onEscolher={escolherAtaqueLista}
           onFechar={() => setModalListaAtaqueAberto(false)}
         />
       )}
 
-      {modalMagiaAberto && combatenteSelecionado?.personagem_id && (
+      {modalMagiaAberto && combatenteOperado?.personagem_id && (
         <ModalMagias
-          personagemId={combatenteSelecionado.personagem_id}
-          personagemNome={combatenteSelecionado.nome}
-          espacosMagia={combatenteSelecionado.espacos_magia}
+          personagemId={combatenteOperado.personagem_id}
+          personagemNome={combatenteOperado.nome}
+          espacosMagia={combatenteOperado.espacos_magia}
           onConjurar={conjurarMagia}
           onFechar={() => setModalMagiaAberto(false)}
         />
       )}
 
-      {modalItemAberto && combatenteSelecionado?.personagem_id && (
+      {modalItemAberto && combatenteOperado?.personagem_id && (
         <ModalItem
-          personagemId={combatenteSelecionado.personagem_id}
+          personagemId={combatenteOperado.personagem_id}
           onUsar={usarItem}
           onFechar={() => setModalItemAberto(false)}
         />
