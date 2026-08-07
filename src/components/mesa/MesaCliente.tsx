@@ -477,49 +477,77 @@ function PopupCombatente({
   )
 }
 
-// Barra de participantes — NUNCA em ordem de iniciativa (a mesa sorteia por
-// cartas a cada rodada; vazar a ordem deixaria os jogadores planejarem
-// sabendo quem vem depois). Jogador vê só os PJs; DM vê todos, PJs primeiro.
-// O único indício de sequência permitido é o anel de quem age AGORA.
-// Tocar um avatar abre o popup de detalhes (substitui as listas removidas).
+// Barra de participantes — NUNCA em ordem de iniciativa/ordem de turno (a
+// mesa sorteia por cartas a cada rodada; vazar a ordem deixaria os
+// jogadores planejarem sabendo quem vem depois). O segredo é a ORDEM, não a
+// EXISTÊNCIA dos inimigos — eles estão fisicamente na mesa, todo mundo os
+// vê. Por isso: fora do modo de seleção de alvo, o jogador só vê os PJs
+// (não precisa saber quem mais o DM colocou na cena ainda); ao entrar em
+// modo de alvo, os inimigos aparecem, sempre em ordem ALFABÉTICA dentro de
+// cada grupo — nunca pela ordem de turno. O único indício de sequência
+// permitido é o anel de quem age AGORA (isso já é público via StatusRodada).
+// Tocar um avatar abre o popup de detalhes; alvos já escolhidos ganham um
+// destaque próprio para não precisar reabrir o popup para conferir.
 function BarraParticipantes({
-  participantes, turnoCombatenteId, ativa, infoPersonagens, meuCombatenteIds, onTocar,
+  aliados, inimigos, turnoCombatenteId, ativa, infoPersonagens, meuCombatenteIds, alvosSelecionadosIds, onTocar,
 }: {
-  participantes: Combatente[]
+  aliados: Combatente[]
+  inimigos: Combatente[]
   turnoCombatenteId: string | null
   ativa: boolean
   infoPersonagens: Record<string, InfoPersonagem>
   meuCombatenteIds: Set<string>
+  alvosSelecionadosIds: Set<string>
   onTocar: (id: string) => void
 }) {
+  function avatarDe(c: Combatente, ehInimigo: boolean) {
+    const info = c.personagem_id ? infoPersonagens[c.personagem_id] : undefined
+    const estaAtivo = ativa && c.id === turnoCombatenteId
+    const estaMorto = c.morto || c.pv_atual <= 0
+    const ehMeu = meuCombatenteIds.has(c.id)
+    const selecionado = alvosSelecionadosIds.has(c.id)
+    const anel = selecionado
+      ? '0 0 0 3px var(--gold)'
+      : estaAtivo
+        ? '0 0 0 2px var(--gold)'
+        : ehMeu
+          ? '0 0 0 2px var(--accent2)'
+          : ehInimigo
+            ? '0 0 0 1px var(--red2)'
+            : '0 0 0 1px var(--border)'
+    return (
+      <button
+        key={c.id}
+        onClick={() => onTocar(c.id)}
+        className={cn('flex-shrink-0 flex flex-col items-center gap-0.5 w-14', (estaMorto || c.ausente) && 'opacity-40')}
+      >
+        <div className="rounded-full p-0.5" style={{ boxShadow: anel }}>
+          <div className="relative">
+            <Avatar nome={c.nome} imagemUrl={info?.imagem_url} tamanho={44} />
+            {c.condicoes.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[var(--red2)] border border-[var(--bg2)]" />
+            )}
+            {selecionado && (
+              <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-[var(--gold)] border border-[var(--bg2)] flex items-center justify-center text-[9px] leading-none">
+                🎯
+              </span>
+            )}
+          </div>
+        </div>
+        <span className="text-[9px] text-[var(--text3)] truncate w-full text-center font-crimson">{c.nome}</span>
+      </button>
+    )
+  }
+
   return (
-    <div className="flex-shrink-0 flex gap-2 overflow-x-auto px-3 py-2 bg-[var(--bg2)] border-b border-[var(--border)]">
-      {participantes.map(c => {
-        const info = c.personagem_id ? infoPersonagens[c.personagem_id] : undefined
-        const estaAtivo = ativa && c.id === turnoCombatenteId
-        const estaMorto = c.morto || c.pv_atual <= 0
-        const ehMeu = meuCombatenteIds.has(c.id)
-        return (
-          <button
-            key={c.id}
-            onClick={() => onTocar(c.id)}
-            className={cn('flex-shrink-0 flex flex-col items-center gap-0.5 w-14', (estaMorto || c.ausente) && 'opacity-40')}
-          >
-            <div
-              className="rounded-full p-0.5"
-              style={{ boxShadow: estaAtivo ? '0 0 0 2px var(--gold)' : ehMeu ? '0 0 0 2px var(--accent2)' : '0 0 0 1px var(--border)' }}
-            >
-              <div className="relative">
-                <Avatar nome={c.nome} imagemUrl={info?.imagem_url} tamanho={44} />
-                {c.condicoes.length > 0 && (
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[var(--red2)] border border-[var(--bg2)]" />
-                )}
-              </div>
-            </div>
-            <span className="text-[9px] text-[var(--text3)] truncate w-full text-center font-crimson">{c.nome}</span>
-          </button>
-        )
-      })}
+    <div className="flex-shrink-0 flex items-stretch gap-2 overflow-x-auto px-3 py-2 bg-[var(--bg2)] border-b border-[var(--border)]">
+      {aliados.map(c => avatarDe(c, false))}
+      {inimigos.length > 0 && (
+        <>
+          <div className="w-px bg-[var(--border)] flex-shrink-0 my-1" />
+          {inimigos.map(c => avatarDe(c, true))}
+        </>
+      )}
     </div>
   )
 }
@@ -897,6 +925,20 @@ interface ConjuracaoEscolhida {
   efeitoAtivo: boolean
 }
 
+// Só níveis com espaço realmente disponível — o mínimo é o da magia (regra
+// 5e: não dá para conjurar abaixo do nível base), o teto é 9.
+function niveisDisponiveisParaMagia(
+  nivelBase: number,
+  espacosMagia: EspacosMagiaBatalha
+): { nivel: number; disponivel: number; total: number }[] {
+  return Array.from({ length: 9 - nivelBase + 1 }, (_, i) => nivelBase + i)
+    .map(nivel => {
+      const espaco = espacosMagia[nivel]
+      return espaco ? { nivel, disponivel: espaco.total - espaco.utilizados, total: espaco.total } : null
+    })
+    .filter((x): x is { nivel: number; disponivel: number; total: number } => !!x && x.disponivel > 0)
+}
+
 // ✨ Magia — lista com degradação graciosa (Fase 2). Ao escolher uma magia
 // de nível > 0, abre o passo de nível de conjuração (permite conjurar em
 // nível superior); o espaço em si só é consumido pela API, nunca aqui.
@@ -952,12 +994,17 @@ function ModalMagias({
 
   function escolherMagia(m: MagiaExibida) {
     setMagiaEscolhida(m)
-    setNivelEscolhido(m.nivel)
+    setNivelEscolhido(niveisDisponiveisParaMagia(m.nivel, espacosMagia)[0]?.nivel ?? m.nivel)
     setEfeitoAtivo(false)
   }
 
+  const niveisDisponiveis = magiaEscolhida && magiaEscolhida.nivel > 0
+    ? niveisDisponiveisParaMagia(magiaEscolhida.nivel, espacosMagia)
+    : []
+  const semNivelDisponivel = !!magiaEscolhida && magiaEscolhida.nivel > 0 && niveisDisponiveis.length === 0
+
   function confirmar() {
-    if (!magiaEscolhida) return
+    if (!magiaEscolhida || semNivelDisponivel) return
     onConjurar({
       magia: magiaEscolhida,
       nivelConjurado: magiaEscolhida.nivel > 0 ? nivelEscolhido : null,
@@ -1031,10 +1078,13 @@ function ModalMagias({
             {magiaEscolhida.nivel > 0 && (
               <div className="mb-3">
                 <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase mb-1.5">Nível de conjuração</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {Array.from({ length: 9 - magiaEscolhida.nivel + 1 }, (_, i) => magiaEscolhida.nivel + i).map(n => {
-                    const espaco = espacosMagia[n]
-                    return (
+                {niveisDisponiveis.length === 0 ? (
+                  <p className="text-[var(--red2)] text-xs font-crimson">
+                    Sem espaços de magia disponíveis para conjurar esta magia
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {niveisDisponiveis.map(({ nivel: n, disponivel, total }) => (
                       <button
                         key={n}
                         onClick={() => setNivelEscolhido(n)}
@@ -1045,11 +1095,11 @@ function ModalMagias({
                             : 'border-[var(--border)] text-[var(--text2)]'
                         )}
                       >
-                        N{n}{espaco ? ` (${Math.max(0, espaco.total - espaco.utilizados)}/${espaco.total})` : ''}
+                        N{n} ({disponivel}/{total})
                       </button>
-                    )
-                  })}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1067,7 +1117,8 @@ function ModalMagias({
 
             <button
               onClick={confirmar}
-              className="w-full py-3 rounded-lg bg-[var(--gold)] text-[var(--bg)] font-cinzel text-sm font-bold min-h-[48px]"
+              disabled={semNivelDisponivel}
+              className="w-full py-3 rounded-lg bg-[var(--gold)] text-[var(--bg)] font-cinzel text-sm font-bold min-h-[48px] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {efeito === 'nenhum' ? 'Registrar' : 'Continuar'}
             </button>
@@ -1685,15 +1736,25 @@ export function MesaCliente() {
     if (!resultado.ok) toast.error(resultado.erro ?? 'Erro ao encerrar efeito')
   }
 
-  // Barra de participantes: NUNCA por iniciativa. Jogador só vê os PJs;
-  // DM vê todos, PJs primeiro e depois monstros/NPCs — sempre em ordem
-  // alfabética, para não revelar a sequência sorteada por cartas.
-  const participantesBarra = useMemo(() => {
-    const jogadores = ordenarPorNome(combatentes.filter(c => c.tipo === 'jogador'))
-    if (!ehDM) return jogadores
-    const outros = ordenarPorNome(combatentes.filter(c => c.tipo !== 'jogador'))
-    return [...jogadores, ...outros]
-  }, [combatentes, ehDM])
+  // Barra de participantes: NUNCA por iniciativa/ordem de turno, sempre
+  // alfabética dentro de cada grupo. O DM sempre vê todos (é o cockpit); o
+  // jogador só vê os PJs fora do modo de seleção de alvo — ao selecionar um
+  // alvo, os inimigos entram na barra (o segredo é a ordem, não a
+  // existência: eles já estão na mesa física, todo mundo os vê).
+  const emSelecaoDeAlvo = !!acaoPendente?.precisaAlvo
+  const { aliadosBarra, inimigosBarra } = useMemo(() => {
+    const vivos = (lista: Combatente[]) => lista.filter(c => !c.morto && !c.ausente)
+    if (ehDM || emSelecaoDeAlvo) {
+      const base = ehDM ? combatentes : vivos(combatentes)
+      return {
+        aliadosBarra: ordenarPorNome(base.filter(c => c.tipo !== 'monstro')),
+        inimigosBarra: ordenarPorNome(base.filter(c => c.tipo === 'monstro')),
+      }
+    }
+    return { aliadosBarra: ordenarPorNome(combatentes.filter(c => c.tipo === 'jogador')), inimigosBarra: [] as Combatente[] }
+  }, [combatentes, ehDM, emSelecaoDeAlvo])
+
+  const alvosSelecionadosIds = useMemo(() => new Set(alvosSelecionados.map(a => a.id)), [alvosSelecionados])
 
   const ativosOrdenados = useMemo(
     () => [...combatentes].sort((a, b) => a.ordem - b.ordem).filter(c => !c.ausente && !c.morto),
@@ -1740,11 +1801,13 @@ export function MesaCliente() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <BarraParticipantes
-        participantes={participantesBarra}
+        aliados={aliadosBarra}
+        inimigos={inimigosBarra}
         turnoCombatenteId={turnoCombatenteId}
         ativa={ativa}
         infoPersonagens={infoPersonagens}
         meuCombatenteIds={meuCombatenteIds}
+        alvosSelecionadosIds={alvosSelecionadosIds}
         onTocar={setPopupCombatenteId}
       />
 

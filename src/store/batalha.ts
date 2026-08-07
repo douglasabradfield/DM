@@ -620,7 +620,12 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             campanha_id: campanhaId,
             sessao_id: sessao.id,
             nome,
-            status: 'preparacao',
+            // 'ativa' direto — 'preparacao' só virava 'ativa' em
+            // confirmarIniciativa(), que a mesa por cartas nunca chama.
+            // Batalha ficava presa em 'preparacao' e a API árbitro recusava
+            // toda ação de jogador ("não está ativa"), sem o DM perceber
+            // (ele escreve direto no banco, ignorando esse status).
+            status: 'ativa',
             criado_por: userData.user?.id ?? null,
           })
           .select()
@@ -1270,7 +1275,9 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           state.rodadaAtual = novaRodadaAtual
         })
 
-        persistirBatalha({ turno_combatente_id: novoId, rodada_atual: novaRodadaAtual }).then(ok => {
+        // Rede de segurança para batalhas criadas antes da correção que
+        // ficaram presas em 'preparacao' — passar o turno já promove a 'ativa'.
+        persistirBatalha({ turno_combatente_id: novoId, rodada_atual: novaRodadaAtual, status: 'ativa' }).then(ok => {
           if (!ok) set(state => {
             state.turnoAtual = anterior.turnoAtual
             state.turnoCombatenteId = anterior.turnoCombatenteId
@@ -1297,7 +1304,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           state.rodadaAtual = novaRodadaAtual
         })
 
-        persistirBatalha({ turno_combatente_id: novoId, rodada_atual: novaRodadaAtual }).then(ok => {
+        persistirBatalha({ turno_combatente_id: novoId, rodada_atual: novaRodadaAtual, status: 'ativa' }).then(ok => {
           if (!ok) set(state => {
             state.turnoAtual = anterior.turnoAtual
             state.turnoCombatenteId = anterior.turnoCombatenteId
@@ -1322,7 +1329,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           state.combatentes.forEach(c => { c.reacao_usada = false })
         })
 
-        persistirBatalha({ turno_combatente_id: novoId, rodada_atual: novaRodadaAtual }).then(ok => {
+        persistirBatalha({ turno_combatente_id: novoId, rodada_atual: novaRodadaAtual, status: 'ativa' }).then(ok => {
           if (!ok) set(state => {
             state.turnoAtual = anterior.turnoAtual
             state.turnoCombatenteId = anterior.turnoCombatenteId

@@ -54,10 +54,23 @@ export async function POST(req: NextRequest) {
 
   const admin = createAdminClient()
 
-  // 2. A batalha existe e está ativa
+  // 2. A batalha existe e está ativa — mensagens distintas por caso, sempre
+  // orientando a próxima ação (o jogador não tem como saber o que fazer com
+  // "não está ativa" genérico).
   const { data: batalha } = await admin.from('batalhas').select('*').eq('id', batalhaId).maybeSingle()
-  if (!batalha || batalha.status !== 'ativa') {
-    return Response.json({ erro: 'Batalha não encontrada ou não está ativa' }, { status: 403 })
+  if (!batalha) {
+    return Response.json({ erro: 'Batalha não encontrada' }, { status: 403 })
+  }
+  if (batalha.status !== 'ativa') {
+    const mensagensPorStatus: Record<string, string> = {
+      preparacao: 'A batalha ainda não foi iniciada pelo mestre.',
+      pausada: 'A batalha está pausada — peça ao mestre para retomar.',
+      encerrada: 'Esta batalha já foi encerrada.',
+    }
+    return Response.json(
+      { erro: mensagensPorStatus[batalha.status] ?? 'A batalha não está ativa no momento.' },
+      { status: 403 }
+    )
   }
 
   const { data: campanha } = await admin.from('campanhas').select('dm_id').eq('id', batalha.campanha_id).maybeSingle()
@@ -83,7 +96,10 @@ export async function POST(req: NextRequest) {
       controla = personagem?.user_id === user.id
     }
     if (!controla) {
-      return Response.json({ erro: 'Você não controla este combatente' }, { status: 403 })
+      return Response.json(
+        { erro: 'Você não controla este combatente — verifique se selecionou o personagem certo.' },
+        { status: 403 }
+      )
     }
   }
 
@@ -94,12 +110,18 @@ export async function POST(req: NextRequest) {
 
   // 4. Fora do turno só é permitido para reação (ou encerrar efeito ativo)
   if (!ehDM && !bypassaTurno && batalha.turno_combatente_id !== combatenteId) {
-    return Response.json({ erro: 'Não é a vez deste combatente' }, { status: 403 })
+    return Response.json(
+      { erro: 'Não é a sua vez — aguarde seu turno para agir (reações continuam disponíveis a qualquer momento).' },
+      { status: 403 }
+    )
   }
 
   // 5. Reação: uma por rodada
   if (ehReacao && ator.reacao_usada) {
-    return Response.json({ erro: 'Este combatente já usou a reação nesta rodada' }, { status: 403 })
+    return Response.json(
+      { erro: 'Este combatente já usou a reação nesta rodada — disponível de novo na próxima rodada.' },
+      { status: 403 }
+    )
   }
 
   // 6. Alvos pertencem à mesma batalha
@@ -126,13 +148,19 @@ export async function POST(req: NextRequest) {
       const slotsDb = (personagemAtor?.slots_magia ?? {}) as SlotsMagiaDb
       const slotNivel = slotsDb[nivelStr] ?? { total: 0, usados: 0 }
       if (slotNivel.usados >= slotNivel.total) {
-        return Response.json({ erro: `Sem espaços de ${nivelMagia}º nível disponíveis` }, { status: 403 })
+        return Response.json(
+          { erro: `Sem espaços de magia de ${nivelMagia}º nível disponíveis — escolha outro nível ou espere um descanso.` },
+          { status: 403 }
+        )
       }
     } else {
       const slotsLocal = (ator.slots_monstro ?? {}) as Record<string, number>
       const qtd = slotsLocal[nivelStr] ?? 0
       if (qtd <= 0) {
-        return Response.json({ erro: `Sem espaços de ${nivelMagia}º nível disponíveis` }, { status: 403 })
+        return Response.json(
+          { erro: `Sem espaços de magia de ${nivelMagia}º nível disponíveis — escolha outro nível ou espere um descanso.` },
+          { status: 403 }
+        )
       }
     }
   }
