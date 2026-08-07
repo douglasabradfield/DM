@@ -3,11 +3,17 @@
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { useCampanha } from '@/store/campanha'
 import { Swords, X } from 'lucide-react'
 
 const CHAVE_DISPENSADO = 'dd-banner-batalha-dispensada'
+
+interface LinhaBatalha {
+  id: string
+  status: string
+}
 
 export function BannerBatalhaAtiva() {
   const pathname = usePathname()
@@ -19,33 +25,27 @@ export function BannerBatalhaAtiva() {
     setDispensadoId(localStorage.getItem(CHAVE_DISPENSADO))
   }, [])
 
+  // Canal separado do canal por batalha_id usado pelo store: aqui o filtro é
+  // campanha_id, porque o cliente ainda não sabe o batalha_id até detectar
+  // que existe uma batalha ativa. Assinatura e limpeza são locais a este
+  // efeito — não interfere no canal `batalha:${batalhaId}` do useBatalha.
   useEffect(() => {
     if (!campanhaAtiva?.id) { setBatalhaAtivaId(null); return }
 
+    const campanhaId = campanhaAtiva.id
+    const supabase = createClient()
     let cancelado = false
+    let ultimoStatusConhecido: string | null = null
 
-    async function verificar() {
-      const supabase = createClient()
+    async function usuarioControlaBatalha(batalhaId: string): Promise<boolean> {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user || cancelado) return
-
-      const { data: batalha } = await supabase
-        .from('batalhas')
-        .select('id')
-        .eq('campanha_id', campanhaAtiva!.id)
-        .eq('status', 'ativa')
-        .maybeSingle()
-
-      if (cancelado) return
-      if (!batalha) { setBatalhaAtivaId(null); return }
+      if (!user) return false
 
       const { data: meusPersonagens } = await supabase
         .from('personagens')
         .select('id')
-        .eq('campanha_id', campanhaAtiva!.id)
+        .eq('campanha_id', campanhaId)
         .eq('user_id', user.id)
-
-      if (cancelado) return
 
       const ids = (meusPersonagens ?? []).map(p => p.id)
       const filtro = ids.length > 0
@@ -55,18 +55,66 @@ export function BannerBatalhaAtiva() {
       const { data: combatente } = await supabase
         .from('batalha_combatentes')
         .select('id')
-        .eq('batalha_id', batalha.id)
+        .eq('batalha_id', batalhaId)
         .or(filtro)
         .limit(1)
         .maybeSingle()
 
-      if (cancelado) return
-      setBatalhaAtivaId(combatente ? batalha.id : null)
+      return !!combatente
     }
 
-    verificar()
-    const intervalo = setInterval(verificar, 20000)
-    return () => { cancelado = true; clearInterval(intervalo) }
+    // Só reconsulta batalha_combatentes quando o status realmente TRANSITA
+    // para 'ativa' — updates de turno/rodada/revelação chegam como UPDATE
+    // na mesma linha com status inalterado e são ignorados aqui.
+    async function tratarLinha(linha: LinhaBatalha | null | undefined) {
+      if (!linha?.id) return
+      const statusAnterior = ultimoStatusConhecido
+      ultimoStatusConhecido = linha.status
+
+      if (linha.status !== 'ativa') {
+        if (!cancelado) setBatalhaAtivaId(atual => (atual === linha.id ? null : atual))
+        return
+      }
+
+      if (statusAnterior === 'ativa') return
+
+      const controla = await usuarioControlaBatalha(linha.id)
+      if (cancelado) return
+      if (controla) setBatalhaAtivaId(linha.id)
+    }
+
+    async function verificarInicial() {
+      const { data: batalha } = await supabase
+        .from('batalhas')
+        .select('id, status')
+        .eq('campanha_id', campanhaId)
+        .neq('status', 'encerrada')
+        .maybeSingle()
+
+      if (cancelado) return
+      await tratarLinha(batalha)
+    }
+
+    verificarInicial()
+
+    const canal = supabase
+      .channel(`banner-batalha:${campanhaId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'batalhas', filter: `campanha_id=eq.${campanhaId}` },
+        (payload: RealtimePostgresChangesPayload<LinhaBatalha>) => tratarLinha(payload.new as LinhaBatalha)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'batalhas', filter: `campanha_id=eq.${campanhaId}` },
+        (payload: RealtimePostgresChangesPayload<LinhaBatalha>) => tratarLinha(payload.new as LinhaBatalha)
+      )
+      .subscribe()
+
+    return () => {
+      cancelado = true
+      supabase.removeChannel(canal)
+    }
   }, [campanhaAtiva?.id])
 
   if (!batalhaAtivaId) return null
