@@ -7,6 +7,7 @@ import { useCampanha } from '@/store/campanha'
 import { usePermissao } from '@/hooks/usePermissao'
 import { createClient } from '@/lib/supabase/client'
 import { pvVisivelParaJogador, ESTADO_VAGO_INFO, type ModoRevelacao } from '@/lib/batalha/visibilidade-pv'
+import { vantagemDerivada } from '@/lib/batalha/vantagem-por-condicao'
 import { getCondicao } from '@/lib/dados-dnd/condicoes'
 import { BarraVida } from '@/components/batalha/BarraVida'
 import type { Combatente, EntradaLog, TipoCondicao, EspacosMagiaBatalha } from '@/types/batalha'
@@ -20,6 +21,10 @@ interface InfoPersonagem {
   nivel: number | null
   deslocamento: number | null
   user_id: string | null
+}
+
+function ordenarPorNome(combatentes: Combatente[]): Combatente[] {
+  return [...combatentes].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }
 
 function mensagemToast(entrada: EntradaLog): string | null {
@@ -140,20 +145,22 @@ function ModalCondicao({ condicao, onFechar }: { condicao: TipoCondicao; onFecha
   )
 }
 
+// Participantes — NUNCA em ordem de iniciativa (a mesa sorteia por cartas a
+// cada rodada; vazar a ordem deixaria os jogadores planejarem sabendo quem
+// vem depois). Jogador vê só os PJs; DM vê todos, PJs primeiro. O único
+// indício de sequência permitido é o anel de quem age AGORA.
 function BarraParticipantes({
-  combatentes, turnoCombatenteId, ativa, infoPersonagens, meuCombatenteIds,
+  participantes, turnoCombatenteId, ativa, infoPersonagens, meuCombatenteIds,
 }: {
-  combatentes: Combatente[]
+  participantes: Combatente[]
   turnoCombatenteId: string | null
   ativa: boolean
   infoPersonagens: Record<string, InfoPersonagem>
   meuCombatenteIds: Set<string>
 }) {
-  const ordenados = useMemo(() => [...combatentes].sort((a, b) => a.ordem - b.ordem), [combatentes])
-
   return (
     <div className="sticky top-0 z-10 flex gap-2 overflow-x-auto px-3 py-2 bg-[var(--bg2)] border-b border-[var(--border)]">
-      {ordenados.map(c => {
+      {participantes.map(c => {
         const info = c.personagem_id ? infoPersonagens[c.personagem_id] : undefined
         const estaAtivo = ativa && c.id === turnoCombatenteId
         const estaMorto = c.morto || c.pv_atual <= 0
@@ -354,8 +361,10 @@ function ListaCombatentes({
   ocultarIds: Set<string>
 }) {
   const visiveis = combatentes.filter(c => !ocultarIds.has(c.id))
-  const aliados = visiveis.filter(c => c.tipo !== 'monstro')
-  const inimigos = visiveis.filter(c => c.tipo === 'monstro')
+  // Ordem alfabética de propósito — a ordem de array vem do fetch por
+  // `ordem` (posição de iniciativa) e não pode vazar aqui.
+  const aliados = ordenarPorNome(visiveis.filter(c => c.tipo !== 'monstro'))
+  const inimigos = ordenarPorNome(visiveis.filter(c => c.tipo === 'monstro'))
 
   if (visiveis.length === 0) return null
 
@@ -413,6 +422,97 @@ function LogResumido({ log }: { log: EntradaLog[] }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// Faixa de vantagem/desvantagem — Fase 2: somente leitura. O toggle
+// reflete o campo `vantagem` já persistido no store (o mesmo que o DM
+// ajusta em TabelaCombate); o aviso acima é derivado das condições e é
+// puramente informativo — a mesa decide, o toggle é que vale.
+function FaixaVantagem({ combatente }: { combatente: Combatente }) {
+  const derivada = useMemo(() => vantagemDerivada(combatente.condicoes), [combatente.condicoes])
+
+  const opcoes = [
+    { valor: 'desvantagem' as const, label: '▼ Desvantagem', corAtiva: 'var(--red2)' },
+    { valor: null, label: 'Normal', corAtiva: 'var(--surface2)' },
+    { valor: 'vantagem' as const, label: '▲ Vantagem', corAtiva: 'var(--green2)' },
+  ]
+
+  return (
+    <div className="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg2)] px-3 py-2">
+      {derivada.motivos.length > 0 && (
+        <div className="mb-2 space-y-0.5">
+          {derivada.motivos.map((m, i) => (
+            <p key={i} className="text-[var(--gold)] text-[11px] font-crimson">⚠️ {m}</p>
+          ))}
+          <p className="text-[var(--text3)] text-[10px] font-crimson italic">
+            Informativo — a mesa decide, o toggle abaixo é que vale.
+          </p>
+        </div>
+      )}
+      <div className="flex items-center rounded-lg overflow-hidden border border-[var(--border)]">
+        {opcoes.map(opt => {
+          const ativa = combatente.vantagem === opt.valor
+          return (
+            <button
+              key={opt.label}
+              disabled
+              title="Ajustável em breve — hoje reflete o que o mestre define"
+              className={cn(
+                'flex-1 text-center py-2.5 text-xs font-cinzel cursor-not-allowed transition-colors min-h-[44px]',
+                ativa ? 'text-[var(--text)]' : 'text-[var(--text3)] opacity-60'
+              )}
+              style={ativa ? { backgroundColor: opt.corAtiva } : undefined}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// Barra de ações — rodapé fixo, alcance do polegar. Fase 2 reserva o
+// espaço e valida a ergonomia: todos os botões ficam desabilitados até a
+// Fase 3 dar poder de escrita a esta tela.
+function BarraAcoes({ ehMeuTurno }: { ehMeuTurno: boolean }) {
+  const acoesPrincipais = [
+    { label: 'Ataque', icone: '⚔️' },
+    { label: 'Magia', icone: '✨' },
+    { label: 'Item', icone: '🎒' },
+  ]
+
+  return (
+    <div className="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg2)] px-2 py-2 flex items-stretch gap-2">
+      <div className="flex-1 grid grid-cols-3 gap-2">
+        {acoesPrincipais.map(a => (
+          <button
+            key={a.label}
+            disabled
+            aria-label="Disponível em breve"
+            title="Disponível em breve"
+            className={cn(
+              'flex flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface)]',
+              'text-[var(--text2)] font-cinzel text-xs min-h-[56px] cursor-not-allowed transition-opacity',
+              !ehMeuTurno && 'opacity-40'
+            )}
+          >
+            <span className="text-lg leading-none">{a.icone}</span>
+            {a.label}
+          </button>
+        ))}
+      </div>
+      <button
+        disabled
+        aria-label="Disponível em breve"
+        title="Disponível em breve"
+        className="flex-shrink-0 w-16 flex flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--accent2)]/50 bg-[var(--surface)] text-[var(--accent2)] font-cinzel text-xs min-h-[56px] cursor-not-allowed"
+      >
+        <span className="text-lg leading-none">⚡</span>
+        Reação
+      </button>
     </div>
   )
 }
@@ -506,6 +606,16 @@ export function MesaCliente() {
 
   const combatenteSelecionado = meuCombatentes.find(c => c.id === personagemSelecionadoId) ?? null
 
+  // Barra de participantes: NUNCA por iniciativa. Jogador só vê os PJs;
+  // DM vê todos, PJs primeiro e depois monstros/NPCs — sempre em ordem
+  // alfabética, para não revelar a sequência sorteada por cartas.
+  const participantesBarra = useMemo(() => {
+    const jogadores = ordenarPorNome(combatentes.filter(c => c.tipo === 'jogador'))
+    if (!ehDM) return jogadores
+    const outros = ordenarPorNome(combatentes.filter(c => c.tipo !== 'jogador'))
+    return [...jogadores, ...outros]
+  }, [combatentes, ehDM])
+
   const ativosOrdenados = useMemo(
     () => [...combatentes].sort((a, b) => a.ordem - b.ordem).filter(c => !c.ausente && !c.morto),
     [combatentes]
@@ -546,7 +656,7 @@ export function MesaCliente() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <BarraParticipantes
-        combatentes={combatentes}
+        participantes={participantesBarra}
         turnoCombatenteId={turnoCombatenteId}
         ativa={ativa}
         infoPersonagens={infoPersonagens}
@@ -584,9 +694,16 @@ export function MesaCliente() {
           infoPersonagens={infoPersonagens}
           ocultarIds={combatenteSelecionado ? new Set([combatenteSelecionado.id]) : new Set()}
         />
+
+        <LogResumido log={log} />
       </div>
 
-      <LogResumido log={log} />
+      {combatenteSelecionado && (
+        <>
+          <FaixaVantagem combatente={combatenteSelecionado} />
+          <BarraAcoes ehMeuTurno={ehMeuTurno} />
+        </>
+      )}
     </div>
   )
 }
