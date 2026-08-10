@@ -568,10 +568,19 @@ function StatusRodada({
       </div>
     )
   }
-  if (!ativa || !combatenteDoTurno) {
+  if (!ativa) {
     return (
       <div className="flex-shrink-0 py-1.5 text-center text-[var(--text3)] text-xs font-crimson">
         Rodada {rodadaAtual}
+      </div>
+    )
+  }
+  // Motivo do bloqueio sempre visível na tela, não só no tooltip dos
+  // botões desabilitados — bloqueio silencioso vira "o app não funciona".
+  if (!combatenteDoTurno) {
+    return (
+      <div className="flex-shrink-0 py-1.5 text-center text-[var(--text3)] text-xs font-crimson">
+        ⏳ O mestre ainda não definiu de quem é a vez · Rodada {rodadaAtual}
       </div>
     )
   }
@@ -584,7 +593,7 @@ function StatusRodada({
   }
   return (
     <div className="flex-shrink-0 py-1.5 text-center text-[var(--text3)] text-xs font-crimson">
-      Vez de {combatenteDoTurno.nome} · Rodada {rodadaAtual}
+      Aguarde sua vez — quem age agora é {combatenteDoTurno.nome} · Rodada {rodadaAtual}
     </div>
   )
 }
@@ -1760,7 +1769,10 @@ export function MesaCliente() {
     () => [...combatentes].sort((a, b) => a.ordem - b.ordem).filter(c => !c.ausente && !c.morto),
     [combatentes]
   )
-  const combatenteDoTurno = ativa ? ativosOrdenados[turnoAtual] ?? null : null
+  // Sem turno_combatente_id, turnoAtual cai num índice de fallback (0) que
+  // não representa ninguém de verdade — tratar como "ninguém na vez", não
+  // assumir esse índice silenciosamente.
+  const combatenteDoTurno = ativa && turnoCombatenteId ? ativosOrdenados[turnoAtual] ?? null : null
   const ehMeuTurno = !!combatenteDoTurno && meuCombatenteIds.has(combatenteDoTurno.id)
   // O DM não tem "vez" — pode agir por qualquer combatente que esteja
   // operando a qualquer momento (a API já trata isso na validação).

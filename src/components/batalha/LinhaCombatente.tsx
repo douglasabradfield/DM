@@ -32,7 +32,7 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
     setarDanoInput, setarTipoDano,
     adicionarCondicao, removerCondicao,
     definirIniciativa, setVantagem, usarInspiracao,
-    togglePvRevelado,
+    togglePvRevelado, definirTurnoPara,
   } = useBatalha()
   const pausada = useBatalha(s => s.statusBatalha === 'pausada')
   const revelacaoPv = useBatalha(s => s.revelacaoPv)
@@ -64,7 +64,6 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
 
   const pct = c.pv_maximo > 0 ? (c.pv_atual / c.pv_maximo) * 100 : 0
   const estaMorto = c.morto || c.pv_atual <= 0
-  const status = estaMorto ? '💀' : ativo ? '⚔️' : ''
   const corBordaTipo = c.tipo === 'jogador' ? 'var(--gold)' : c.tipo === 'npc' ? 'var(--green2)' : 'var(--red2)'
 
   function handleNomeClick() {
@@ -104,8 +103,25 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
         </button>
       </td>
 
-      {/* Status */}
-      <td className="px-1 py-1 w-6 text-center text-base">{status}</td>
+      {/* Status — também o controle de "passar a vez para este" (mesa por
+          cartas: o DM tira a carta e aponta de quem é a vez, um clique). */}
+      <td className="px-1 py-1 w-6 text-center text-base">
+        {estaMorto ? (
+          <span title="Morto">💀</span>
+        ) : (
+          <button
+            onClick={() => definirTurnoPara(c.id)}
+            disabled={pausada}
+            title={ativo ? 'Turno atual' : `Passar a vez para ${c.nome}`}
+            className={cn(
+              'transition-transform hover:scale-125 disabled:opacity-40 disabled:cursor-not-allowed',
+              ativo ? 'opacity-100' : 'opacity-30 hover:opacity-100'
+            )}
+          >
+            ⚔️
+          </button>
+        )}
+      </td>
 
       {/* Nome */}
       <td className="px-2 py-1 min-w-32 group/nome">

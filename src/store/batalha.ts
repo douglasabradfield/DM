@@ -356,6 +356,9 @@ interface EstadoBatalhaStore {
   proximoTurno: () => void
   turnoAnterior: () => void
   proximaRodada: () => void
+  // Mesa por cartas: o DM aponta explicitamente de quem é a vez, sem
+  // depender de uma ordem fixa nem de confirmarIniciativa.
+  definirTurnoPara: (combatenteId: string) => void
 
   // Presença
   toggleAusencia: (id: string) => void
@@ -614,6 +617,17 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
         const { data: userData } = await supabase.auth.getUser()
 
+        // O turno também precisa nascer explícito — sem isso,
+        // turno_combatente_id fica null e qualquer tela que dependa de
+        // "de quem é a vez" (inclusive o gate de ação do jogador) cai num
+        // fallback de índice 0 que não reflete ninguém de verdade. Calculado
+        // aqui porque os combatentes (com seus ids já client-side) precisam
+        // existir antes do insert de 'batalhas' para ir na mesma escrita.
+        const combatentesAtuais = get().combatentes
+        const primeiroAtivoId = [...combatentesAtuais]
+          .sort((a, b) => a.ordem - b.ordem)
+          .find(c => !c.ausente && !c.morto)?.id ?? null
+
         const { data: batalha, error: erroBatalha } = await supabase
           .from('batalhas')
           .insert({
@@ -626,6 +640,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             // toda ação de jogador ("não está ativa"), sem o DM perceber
             // (ele escreve direto no banco, ignorando esse status).
             status: 'ativa',
+            turno_combatente_id: primeiroAtivoId,
             criado_por: userData.user?.id ?? null,
           })
           .select()
@@ -633,7 +648,6 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
         if (erroBatalha) throw erroBatalha
 
-        const combatentesAtuais = get().combatentes
         if (combatentesAtuais.length > 0) {
           const linhasCombatentes = combatentesAtuais.map(c => combatenteParaLinha(c, batalha.id))
           const { error: erroCombatentes } = await supabase.from('batalha_combatentes').insert(linhasCombatentes)
@@ -670,8 +684,8 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           state.ativa = true
           state.batalhaId = batalha.id
           state.rodadaAtual = 1
-          state.turnoAtual = 0
-          state.turnoCombatenteId = null
+          state.turnoCombatenteId = primeiroAtivoId
+          state.turnoAtual = calcularIndiceTurno(state.combatentes, primeiroAtivoId)
           state.iniciadaEm = new Date()
           state.revelacaoPv = batalha.revelacao_pv
           state.combatentes.forEach(c => { c.batalha_id = batalha.id })
@@ -892,9 +906,15 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           while (nomes.has(`${c.nome} ${n}`)) n++
           nome = `${c.nome} ${n}`
         }
+        // Sempre maior que a ordem atual — nunca confia no valor que o
+        // chamador mandou (as telas que adicionam combatente ainda passam um
+        // placeholder fixo). Isso é só desempate estável da lista antes de
+        // qualquer sorteio/confirmação; não é a iniciativa da mesa.
+        const maiorOrdem = state0.combatentes.reduce((max, x) => Math.max(max, x.ordem), -1)
         const novo: Combatente = {
           ...c,
           nome,
+          ordem: maiorOrdem + 1,
           id: crypto.randomUUID(),
           batalha_id: state0.batalhaId ?? '',
           dano_input: 0,
@@ -1344,6 +1364,28 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             .in('id', idsComReacaoUsada)
             .then(({ error }) => { if (error) console.error('Erro ao resetar reação da rodada:', error) })
         }
+      },
+
+      // Mesa por cartas: o DM tira a carta e aponta de quem é a vez — não
+      // avança relativo a ninguém, define direto. Não mexe em rodada nem em
+      // reacao_usada (isso é proximaRodada); é só "a vez agora é este".
+      definirTurnoPara: (combatenteId) => {
+        const state0 = get()
+        const anterior = { turnoAtual: state0.turnoAtual, turnoCombatenteId: state0.turnoCombatenteId }
+        if (!state0.combatentes.some(c => c.id === combatenteId)) return
+        const novoTurnoAtual = calcularIndiceTurno(state0.combatentes, combatenteId)
+
+        set(state => {
+          state.turnoCombatenteId = combatenteId
+          state.turnoAtual = novoTurnoAtual
+        })
+
+        persistirBatalha({ turno_combatente_id: combatenteId, status: 'ativa' }).then(ok => {
+          if (!ok) set(state => {
+            state.turnoAtual = anterior.turnoAtual
+            state.turnoCombatenteId = anterior.turnoCombatenteId
+          })
+        })
       },
 
       toggleAusencia: (id) => mutarCombatente(id, c => { c.ausente = !c.ausente }),

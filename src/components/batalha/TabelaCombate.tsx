@@ -30,7 +30,7 @@ import toast from 'react-hot-toast'
 
 export function TabelaCombate() {
   const {
-    combatentes, rodadaAtual, turnoAtual, ativa,
+    combatentes, rodadaAtual, turnoAtual, turnoCombatenteId, ativa,
     statusBatalha, nomeBatalha, batalhaId,
     iniciarBatalha, encerrarBatalha, pausarBatalha, retomarBatalha, carregarBatalhaAtiva,
     resetarBatalha,
@@ -107,7 +107,12 @@ export function TabelaCombate() {
 
   const combatentesOrdenados = [...combatentes].sort((a, b) => a.ordem - b.ordem)
   const ativosCount = combatentes.filter(c => !c.ausente && !c.morto).length
-  const combatenteAtivo = combatentesOrdenados.filter(c => !c.ausente && !c.morto)[turnoAtual]
+  // Sem turno_combatente_id não existe "de quem é a vez" — turnoAtual cai
+  // num índice de fallback (0) que não representa ninguém de verdade; não
+  // dá pra assumir esse índice silenciosamente.
+  const combatenteAtivo = turnoCombatenteId
+    ? combatentesOrdenados.filter(c => !c.ausente && !c.morto)[turnoAtual]
+    : undefined
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -187,6 +192,11 @@ export function TabelaCombate() {
 
           {combatenteAtivo && ativa && (
             <span className="text-[var(--gold2)] text-sm font-cinzel">⚔️ {combatenteAtivo.nome}</span>
+          )}
+          {!combatenteAtivo && ativa && (
+            <span className="text-[var(--red2)] text-sm font-cinzel" title="Toque no ⚔️ da linha de um combatente para apontar de quem é a vez">
+              ⚠️ Defina de quem é a vez
+            </span>
           )}
 
           <div
