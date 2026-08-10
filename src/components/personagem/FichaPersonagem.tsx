@@ -95,7 +95,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     pontos_experiencia: p.pontos_experiencia ?? 0,
     inspiracao: typeof p.inspiracao === 'number' ? p.inspiracao : 0,
     bonus_proficiencia: p.bonus_proficiencia ?? 2,
-    moedas: p.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, platina: 0, custom: 0 },
+    moedas: p.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, pl: 0, custom: 0 },
   })
   const [salvando, setSalvando] = useState(false)
   const [alterado, setAlterado] = useState(false)
@@ -306,12 +306,12 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         pv_temporarios: parseInt(String(dados.pv_temporarios)) || 0,
         imagem_url: dados.imagem_url ?? null,
         moedas: dados.moedas ? {
-          pc:      Number(dados.moedas.pc)      || 0,
-          pp:      Number(dados.moedas.pp)      || 0,
-          pe:      Number(dados.moedas.pe)      || 0,
-          po:      Number(dados.moedas.po)      || 0,
-          platina: Number(dados.moedas.platina ?? dados.moedas.pl ?? 0) || 0,
-          custom:  Number(dados.moedas.custom)  || 0,
+          pc:     Number(dados.moedas.pc)     || 0,
+          pp:     Number(dados.moedas.pp)     || 0,
+          pe:     Number(dados.moedas.pe)     || 0,
+          po:     Number(dados.moedas.po)     || 0,
+          pl:     Number(dados.moedas.pl)     || 0,
+          custom: Number(dados.moedas.custom) || 0,
         } : null,
         atualizado_em: new Date().toISOString(),
       }).eq('id', p.id)
@@ -1006,20 +1006,20 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                     { key: 'pp',      label: 'PP', cor: 'text-[#c0c0c0]' },
                     { key: 'po',      label: 'PO', cor: 'text-[var(--gold)]' },
                     { key: 'pe',      label: 'PE', cor: 'text-[var(--green2)]' },
-                    { key: 'platina', label: 'PL', cor: 'text-[var(--accent2)]' },
+                    { key: 'pl',      label: 'PL', cor: 'text-[var(--accent2)]' },
                   ] as const).map(({ key, label, cor }) => (
                     <div key={key}>
                       <label className={`${cor} text-[9px] font-cinzel uppercase`}>{label}</label>
                       <InputNumerico
                         value={(dados.moedas as unknown as Record<string, number>)?.[key] ?? 0}
-                        onChange={val => atualizar('moedas', { ...(dados.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, platina: 0, custom: 0 }), [key]: val })}
+                        onChange={val => atualizar('moedas', { ...(dados.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, pl: 0, custom: 0 }), [key]: val })}
                         className="w-full input-dd text-center text-xs mt-0.5"
                       />
                     </div>
                   ))}
                   <div>
                     <label className="text-[var(--accent)] text-[9px] font-cinzel uppercase">{moedaCustomNome}</label>
-                    <InputNumerico value={dados.moedas?.custom ?? 0} onChange={val => atualizar('moedas', { ...(dados.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, platina: 0, custom: 0 }), custom: val })} className="w-full input-dd text-center text-xs mt-0.5" />
+                    <InputNumerico value={dados.moedas?.custom ?? 0} onChange={val => atualizar('moedas', { ...(dados.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, pl: 0, custom: 0 }), custom: val })} className="w-full input-dd text-center text-xs mt-0.5" />
                   </div>
                 </div>
               </PainelGrimorio>

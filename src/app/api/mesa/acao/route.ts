@@ -54,18 +54,85 @@ interface AcaoSessaoPayload {
   descricao?: string
 }
 
+// Ações de inventário — funcionam tanto em sessão (sessaoId+personagemId)
+// quanto em batalha (batalhaId+combatenteId, resolvido para o personagem
+// vinculado ao combatente) porque usar uma poção no meio do combate é comum.
+// Diferem do branch de batalha "clássico" (tratarAcaoBatalha) por não terem
+// `alvos` — o efeito é sempre sobre o próprio personagem de origem (ou,
+// no caso de transferência/distribuição, sobre outro personagem indicado
+// explicitamente por id).
+type TipoAcaoInventario =
+  | 'usar_item' | 'equipar_item' | 'descartar_item'
+  | 'transferir_item' | 'transferir_moeda' | 'ajuste_ouro' | 'distribuir'
+
+interface ItemDistribuido {
+  nome: string
+  tipo?: string | null
+  raridade?: string | null
+  descricao?: string | null
+  quantidade: number
+}
+
+interface AcaoInventarioPayload {
+  batalhaId?: string
+  combatenteId?: string
+  sessaoId?: string
+  personagemId?: string
+  tipo: TipoAcaoInventario
+  itemId?: string
+  quantidade?: number
+  equipado?: boolean
+  valorCura?: number
+  paraPersonagemId?: string
+  moeda?: 'pc' | 'pp' | 'pe' | 'po' | 'pl'
+  valor?: number
+  moedas?: MoedasDb
+  paraPersonagemIds?: string[]
+  itens?: ItemDistribuido[]
+}
+
+const TIPOS_INVENTARIO = new Set<string>([
+  'usar_item', 'equipar_item', 'descartar_item', 'transferir_item', 'transferir_moeda', 'distribuir',
+])
+
 type SlotsMagiaDb = Record<string, { total: number; usados: number }>
 type MoedasDb = Partial<Record<'pc' | 'pp' | 'pe' | 'po' | 'pl', number>>
 
+// `tipo` tem um vocabulário de literais diferente (e incompatível) em cada
+// um dos três payloads — interseccionar os três tipos direto faz esse campo
+// colapsar para `never` no TS (e o objeto inteiro junto). Por isso ele é
+// excluído aqui e tratado como string solta; cada handler faz o `as` para
+// seu payload específico antes de usar `tipo` com o literal union certo.
+type PayloadBruto =
+  Omit<Partial<AcaoBatalhaPayload>, 'tipo'> &
+  Omit<Partial<AcaoSessaoPayload>, 'tipo'> &
+  Omit<Partial<AcaoInventarioPayload>, 'tipo'> &
+  { tipo?: string }
+
 export async function POST(req: NextRequest) {
-  const payload = (await req.json()) as Partial<AcaoBatalhaPayload & AcaoSessaoPayload>
+  const payload = (await req.json()) as PayloadBruto
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return Response.json({ erro: 'Não autenticado' }, { status: 401 })
 
   const admin = createAdminClient()
+  const tipoRecebido = payload.tipo
 
+  // 'distribuir' e as ações de item/moeda por id têm o próprio discriminador
+  // (o `tipo`, não a presença de alvos) — checadas antes do branch clássico
+  // de batalha para não colidir com o 'usar_item' antigo (TipoEntradaLog,
+  // baseado em `alvos`, sem itemId — ver TabelaCombate/usarItem em
+  // MesaCliente.tsx, que continua intacto).
+  if (tipoRecebido && TIPOS_INVENTARIO.has(tipoRecebido)) {
+    return tratarAcaoInventario(payload as AcaoInventarioPayload, user.id, admin)
+  }
+  // ajuste_ouro em batalha usa o mesmo resolvedor de contexto das ações de
+  // inventário (precisa ir de combatenteId → personagem_id); em sessão
+  // continua pelo branch clássico abaixo, inalterado.
+  if (tipoRecebido === 'ajuste_ouro' && payload.batalhaId) {
+    return tratarAcaoInventario(payload as AcaoInventarioPayload, user.id, admin)
+  }
   if (payload.batalhaId) {
     return tratarAcaoBatalha(payload as AcaoBatalhaPayload, user.id, admin)
   }
@@ -573,4 +640,539 @@ async function tratarAcaoSessao(
   const { data: personagemAtualizado } = await admin.from('personagens').select('*').eq('id', personagemId).maybeSingle()
 
   return Response.json({ ok: true, personagem: personagemAtualizado, descricao, nomeAcao })
+}
+
+// =============================================================================
+// Inventário — usar/equipar/descartar/transferir item, transferir moeda,
+// ajustar ouro e distribuir (DM). Funciona a partir de sessão ou de batalha:
+// o resolvedor abaixo reduz os dois modos a um único "personagem de origem"
+// + uma função de log que grava no destino certo (sessao_log/batalha_log).
+// =============================================================================
+
+interface ContextoInventario {
+  personagem: Record<string, unknown>
+  campanhaId: string
+  sessaoId: string | null
+  ehDM: boolean
+  registrarLog: (args: { valor?: number | null; descricao: string }) => Promise<void>
+}
+
+type ResultadoContexto = { ok: true; contexto: ContextoInventario } | { ok: false; erro: string; status: number }
+
+async function resolverContextoInventario(
+  payload: Partial<AcaoInventarioPayload>,
+  userId: string,
+  admin: ReturnType<typeof createAdminClient>
+): Promise<ResultadoContexto> {
+  if (payload.batalhaId) {
+    if (!payload.combatenteId) return { ok: false, erro: 'Payload inválido', status: 400 }
+
+    const { data: batalha } = await admin.from('batalhas').select('*').eq('id', payload.batalhaId).maybeSingle()
+    if (!batalha) return { ok: false, erro: 'Batalha não encontrada', status: 403 }
+    if (batalha.status !== 'ativa') {
+      const mensagensPorStatus: Record<string, string> = {
+        preparacao: 'A batalha ainda não foi iniciada pelo mestre.',
+        pausada: 'A batalha está pausada — peça ao mestre para retomar.',
+        encerrada: 'Esta batalha já foi encerrada.',
+      }
+      return { ok: false, erro: mensagensPorStatus[batalha.status] ?? 'A batalha não está ativa no momento.', status: 403 }
+    }
+
+    const { data: campanha } = await admin.from('campanhas').select('dm_id').eq('id', batalha.campanha_id).maybeSingle()
+    const ehDM = !!campanha && campanha.dm_id === userId
+
+    const { data: ator } = await admin
+      .from('batalha_combatentes')
+      .select('*')
+      .eq('id', payload.combatenteId)
+      .eq('batalha_id', payload.batalhaId)
+      .maybeSingle()
+    if (!ator) return { ok: false, erro: 'Combatente não encontrado nesta batalha', status: 403 }
+    if (!ator.personagem_id) {
+      return { ok: false, erro: 'Este combatente não tem ficha vinculada — sem inventário', status: 400 }
+    }
+
+    if (!ehDM) {
+      let controla = ator.controlado_por === userId
+      if (!controla) {
+        const { data: personagemCheck } = await admin
+          .from('personagens').select('user_id').eq('id', ator.personagem_id).maybeSingle()
+        controla = personagemCheck?.user_id === userId
+      }
+      if (!controla) {
+        return {
+          ok: false,
+          erro: 'Você não controla este combatente — verifique se selecionou o personagem certo.',
+          status: 403,
+        }
+      }
+    }
+
+    const { data: personagem } = await admin.from('personagens').select('*').eq('id', ator.personagem_id).maybeSingle()
+    if (!personagem) return { ok: false, erro: 'Personagem não encontrado', status: 403 }
+
+    return {
+      ok: true,
+      contexto: {
+        personagem,
+        campanhaId: batalha.campanha_id,
+        sessaoId: batalha.sessao_id ?? null,
+        ehDM,
+        registrarLog: async ({ valor = null, descricao }) => {
+          const { error } = await admin.from('batalha_log').insert({
+            batalha_id: payload.batalhaId,
+            rodada: batalha.rodada_atual,
+            turno: null,
+            tipo: 'nota',
+            autor_id: ator.id,
+            autor_nome: ator.nome,
+            alvo_id: null,
+            alvo_nome: null,
+            valor,
+            tipo_dano: null,
+            descricao,
+            resumo: false,
+          })
+          if (error) console.error('Erro ao gravar log de inventário (batalha):', error)
+        },
+      },
+    }
+  }
+
+  if (payload.sessaoId) {
+    if (!payload.personagemId) return { ok: false, erro: 'Payload inválido', status: 400 }
+
+    const { data: sessao } = await admin.from('sessoes').select('*').eq('id', payload.sessaoId).maybeSingle()
+    if (!sessao) return { ok: false, erro: 'Sessão não encontrada', status: 403 }
+    if (sessao.status === 'encerrada') return { ok: false, erro: 'Esta sessão já foi encerrada.', status: 403 }
+
+    const { data: personagem } = await admin.from('personagens').select('*').eq('id', payload.personagemId).maybeSingle()
+    if (!personagem || personagem.campanha_id !== sessao.campanha_id) {
+      return { ok: false, erro: 'Personagem não encontrado nesta campanha', status: 403 }
+    }
+
+    const { data: campanha } = await admin.from('campanhas').select('dm_id').eq('id', sessao.campanha_id).maybeSingle()
+    const ehDM = !!campanha && campanha.dm_id === userId
+    if (!ehDM && personagem.user_id !== userId) {
+      return {
+        ok: false,
+        erro: 'Você não controla este personagem — verifique se selecionou o personagem certo.',
+        status: 403,
+      }
+    }
+
+    return {
+      ok: true,
+      contexto: {
+        personagem,
+        campanhaId: sessao.campanha_id,
+        sessaoId: sessao.id,
+        ehDM,
+        registrarLog: async ({ valor = null, descricao }) => {
+          const { data: autorProfile } = await admin.from('profiles').select('nome').eq('id', userId).maybeSingle()
+          const { error } = await admin.from('sessao_log').insert({
+            sessao_id: payload.sessaoId,
+            tipo: 'nota',
+            autor_id: userId,
+            autor_nome: autorProfile?.nome ?? (ehDM ? 'DM' : (personagem.nome as string)),
+            personagem_id: personagem.id,
+            valor,
+            tipo_dano: null,
+            descricao,
+          })
+          if (error) console.error('Erro ao gravar log de inventário (sessão):', error)
+        },
+      },
+    }
+  }
+
+  return { ok: false, erro: 'Payload inválido — informe batalhaId ou sessaoId', status: 400 }
+}
+
+async function tratarAcaoInventario(
+  payload: Partial<AcaoInventarioPayload>,
+  userId: string,
+  admin: ReturnType<typeof createAdminClient>
+) {
+  if (!payload.tipo) return Response.json({ erro: 'Payload inválido' }, { status: 400 })
+
+  // 'distribuir' não parte do inventário de um "ator" — o DM cria itens/
+  // moedas do zero para um ou mais personagens — então tem validação própria.
+  if (payload.tipo === 'distribuir') {
+    return tratarDistribuir(payload, userId, admin)
+  }
+
+  const resultado = await resolverContextoInventario(payload, userId, admin)
+  if (!resultado.ok) return Response.json({ erro: resultado.erro }, { status: resultado.status })
+  const { personagem, campanhaId, sessaoId, registrarLog } = resultado.contexto
+  const personagemId = personagem.id as string
+  const personagemNome = personagem.nome as string
+
+  switch (payload.tipo) {
+    case 'usar_item': {
+      if (!payload.itemId) return Response.json({ erro: 'Item não informado' }, { status: 400 })
+      const { data: item } = await admin
+        .from('inventario_itens').select('*').eq('id', payload.itemId).eq('personagem_id', personagemId).maybeSingle()
+      if (!item) return Response.json({ erro: 'Item não encontrado no inventário' }, { status: 404 })
+
+      const novaQtd = (item.quantidade as number) - 1
+      if (novaQtd <= 0) {
+        await admin.from('inventario_itens').delete().eq('id', item.id)
+      } else {
+        await admin.from('inventario_itens').update({ quantidade: novaQtd }).eq('id', item.id)
+      }
+
+      const valorCura = payload.valorCura ?? 0
+      let descricao = `${personagemNome} usou ${item.nome}`
+      if (valorCura > 0) {
+        const novoPv = Math.min(personagem.pv_maximo as number, (personagem.pv_atual as number) + valorCura)
+        await admin.from('personagens').update({ pv_atual: novoPv }).eq('id', personagemId)
+        descricao += ` — recuperou ${valorCura} PV`
+      }
+
+      await registrarLog({ valor: valorCura > 0 ? valorCura : null, descricao })
+      return Response.json({ ok: true, descricao })
+    }
+
+    case 'equipar_item': {
+      if (!payload.itemId) return Response.json({ erro: 'Item não informado' }, { status: 400 })
+      const { data: item } = await admin
+        .from('inventario_itens').select('*').eq('id', payload.itemId).eq('personagem_id', personagemId).maybeSingle()
+      if (!item) return Response.json({ erro: 'Item não encontrado no inventário' }, { status: 404 })
+
+      const equipado = !!payload.equipado
+      await admin.from('inventario_itens').update({ equipado }).eq('id', item.id)
+      const descricao = `${personagemNome} ${equipado ? 'equipou' : 'desequipou'} ${item.nome}`
+      await registrarLog({ descricao })
+      return Response.json({ ok: true, descricao })
+    }
+
+    case 'descartar_item': {
+      if (!payload.itemId) return Response.json({ erro: 'Item não informado' }, { status: 400 })
+      const qtd = payload.quantidade ?? 1
+      if (qtd <= 0) return Response.json({ erro: 'Quantidade inválida' }, { status: 400 })
+
+      const { data: item } = await admin
+        .from('inventario_itens').select('*').eq('id', payload.itemId).eq('personagem_id', personagemId).maybeSingle()
+      if (!item) return Response.json({ erro: 'Item não encontrado no inventário' }, { status: 404 })
+
+      const novaQtd = (item.quantidade as number) - qtd
+      if (novaQtd <= 0) {
+        await admin.from('inventario_itens').delete().eq('id', item.id)
+      } else {
+        await admin.from('inventario_itens').update({ quantidade: novaQtd }).eq('id', item.id)
+      }
+
+      const descricao = `${personagemNome} descartou ${qtd}x ${item.nome}`
+      await registrarLog({ descricao })
+      return Response.json({ ok: true, descricao })
+    }
+
+    case 'transferir_item':
+      return tratarTransferirItem(payload, userId, admin, personagem, campanhaId, sessaoId, registrarLog)
+
+    case 'transferir_moeda':
+      return tratarTransferirMoeda(payload, userId, admin, personagem, campanhaId, sessaoId, registrarLog)
+
+    case 'ajuste_ouro': {
+      if (!payload.moeda) return Response.json({ erro: 'Moeda não informada' }, { status: 400 })
+      const valor = payload.valor ?? 0
+      const moedasDb = (personagem.moedas ?? {}) as MoedasDb
+      const novoValor = Math.max(0, (moedasDb[payload.moeda] ?? 0) + valor)
+      const novasMoedas = { ...moedasDb, [payload.moeda]: novoValor }
+      await admin.from('personagens').update({ moedas: novasMoedas }).eq('id', personagemId)
+      const descricao = `${personagemNome}: ${valor >= 0 ? '+' : ''}${valor} ${payload.moeda}`
+      await registrarLog({ valor, descricao })
+      return Response.json({ ok: true, descricao })
+    }
+
+    default:
+      return Response.json({ erro: 'Tipo de ação inválido' }, { status: 400 })
+  }
+}
+
+// Transferência de item — ordem de validação: sessão/batalha ativa (já
+// resolvido acima), quem envia controla a origem (idem), mesma campanha,
+// quantidade disponível. O crédito no destino é escrito ANTES do débito na
+// origem: se o crédito falhar, ninguém perdeu o item; se o débito falhar
+// depois do crédito ter sido confirmado, o pior caso é uma duplicata
+// (recuperável), nunca uma perda.
+async function tratarTransferirItem(
+  payload: Partial<AcaoInventarioPayload>,
+  userId: string,
+  admin: ReturnType<typeof createAdminClient>,
+  origem: Record<string, unknown>,
+  campanhaId: string,
+  sessaoId: string | null,
+  registrarLog: (args: { valor?: number | null; descricao: string }) => Promise<void>
+) {
+  const { itemId, paraPersonagemId } = payload
+  const quantidade = payload.quantidade ?? 1
+  const origemId = origem.id as string
+  const origemNome = origem.nome as string
+
+  if (!itemId || !paraPersonagemId) return Response.json({ erro: 'Payload inválido' }, { status: 400 })
+  if (quantidade <= 0) return Response.json({ erro: 'Quantidade inválida' }, { status: 400 })
+  if (paraPersonagemId === origemId) {
+    return Response.json({ erro: 'Não é possível transferir para o mesmo personagem' }, { status: 400 })
+  }
+
+  const { data: destino } = await admin
+    .from('personagens').select('id, nome, campanha_id').eq('id', paraPersonagemId).maybeSingle()
+  if (!destino) return Response.json({ erro: 'Personagem de destino não encontrado' }, { status: 404 })
+  if (destino.campanha_id !== campanhaId) {
+    return Response.json({ erro: 'Origem e destino precisam estar na mesma campanha' }, { status: 403 })
+  }
+
+  const { data: itemOrigem } = await admin
+    .from('inventario_itens').select('*').eq('id', itemId).eq('personagem_id', origemId).maybeSingle()
+  if (!itemOrigem) return Response.json({ erro: 'Item não encontrado no inventário de origem' }, { status: 404 })
+  if ((itemOrigem.quantidade as number) < quantidade) {
+    return Response.json(
+      { erro: `Só há ${itemOrigem.quantidade}x ${itemOrigem.nome} disponível para transferir` },
+      { status: 403 }
+    )
+  }
+
+  const { data: itemDestinoExistente } = await admin
+    .from('inventario_itens').select('*')
+    .eq('personagem_id', destino.id).eq('item_ref', itemOrigem.item_ref)
+    .maybeSingle()
+
+  if (itemDestinoExistente) {
+    const { error } = await admin.from('inventario_itens')
+      .update({ quantidade: (itemDestinoExistente.quantidade as number) + quantidade })
+      .eq('id', itemDestinoExistente.id)
+    if (error) {
+      console.error('Erro ao creditar item no destino:', error)
+      return Response.json({ erro: 'Erro ao transferir item' }, { status: 500 })
+    }
+  } else {
+    const { error } = await admin.from('inventario_itens').insert({
+      personagem_id: destino.id,
+      item_ref: itemOrigem.item_ref,
+      nome: itemOrigem.nome,
+      tipo: itemOrigem.tipo,
+      raridade: itemOrigem.raridade,
+      descricao: itemOrigem.descricao,
+      quantidade,
+      equipado: false,
+    })
+    if (error) {
+      console.error('Erro ao creditar item no destino:', error)
+      return Response.json({ erro: 'Erro ao transferir item' }, { status: 500 })
+    }
+  }
+
+  const novaQtdOrigem = (itemOrigem.quantidade as number) - quantidade
+  if (novaQtdOrigem <= 0) {
+    await admin.from('inventario_itens').delete().eq('id', itemOrigem.id)
+  } else {
+    await admin.from('inventario_itens').update({ quantidade: novaQtdOrigem }).eq('id', itemOrigem.id)
+  }
+
+  await admin.from('transferencias').insert({
+    sessao_id: sessaoId,
+    de_personagem_id: origemId,
+    para_personagem_id: destino.id,
+    de_nome: origemNome,
+    para_nome: destino.nome,
+    tipo: 'item',
+    item_nome: itemOrigem.nome,
+    quantidade,
+    criado_por: userId,
+  })
+
+  const descricao = `${origemNome} transferiu ${quantidade}x ${itemOrigem.nome} para ${destino.nome}`
+  await registrarLog({ descricao })
+  return Response.json({ ok: true, descricao })
+}
+
+// Transferência de moeda — mesma ordem de validação de item, mais o check
+// específico de moeda (remetente precisa ter o valor de cada moeda enviada).
+async function tratarTransferirMoeda(
+  payload: Partial<AcaoInventarioPayload>,
+  userId: string,
+  admin: ReturnType<typeof createAdminClient>,
+  origem: Record<string, unknown>,
+  campanhaId: string,
+  sessaoId: string | null,
+  registrarLog: (args: { valor?: number | null; descricao: string }) => Promise<void>
+) {
+  const { paraPersonagemId, moedas } = payload
+  const origemId = origem.id as string
+  const origemNome = origem.nome as string
+
+  if (!paraPersonagemId || !moedas) return Response.json({ erro: 'Payload inválido' }, { status: 400 })
+  if (paraPersonagemId === origemId) {
+    return Response.json({ erro: 'Não é possível transferir para o mesmo personagem' }, { status: 400 })
+  }
+
+  const entradas = Object.entries(moedas).filter(([, v]) => (v ?? 0) > 0) as ['pc' | 'pp' | 'pe' | 'po' | 'pl', number][]
+  if (entradas.length === 0) return Response.json({ erro: 'Informe ao menos uma moeda para transferir' }, { status: 400 })
+
+  const { data: destino } = await admin
+    .from('personagens').select('id, nome, campanha_id, moedas').eq('id', paraPersonagemId).maybeSingle()
+  if (!destino) return Response.json({ erro: 'Personagem de destino não encontrado' }, { status: 404 })
+  if (destino.campanha_id !== campanhaId) {
+    return Response.json({ erro: 'Origem e destino precisam estar na mesma campanha' }, { status: 403 })
+  }
+
+  const moedasOrigem = (origem.moedas ?? {}) as MoedasDb
+  for (const [moeda, valor] of entradas) {
+    if ((moedasOrigem[moeda] ?? 0) < valor) {
+      return Response.json({ erro: `${origemNome} não tem ${valor} ${moeda.toUpperCase()} suficiente` }, { status: 403 })
+    }
+  }
+
+  // Crédito no destino primeiro (mesmo raciocínio de tratarTransferirItem).
+  const moedasDestino = (destino.moedas ?? {}) as MoedasDb
+  const novasMoedasDestino = { ...moedasDestino }
+  for (const [moeda, valor] of entradas) novasMoedasDestino[moeda] = (novasMoedasDestino[moeda] ?? 0) + valor
+  const { error: erroCredito } = await admin.from('personagens').update({ moedas: novasMoedasDestino }).eq('id', destino.id)
+  if (erroCredito) {
+    console.error('Erro ao creditar moeda no destino:', erroCredito)
+    return Response.json({ erro: 'Erro ao transferir moeda' }, { status: 500 })
+  }
+
+  const novasMoedasOrigem = { ...moedasOrigem }
+  for (const [moeda, valor] of entradas) novasMoedasOrigem[moeda] = (novasMoedasOrigem[moeda] ?? 0) - valor
+  await admin.from('personagens').update({ moedas: novasMoedasOrigem }).eq('id', origemId)
+
+  await admin.from('transferencias').insert({
+    sessao_id: sessaoId,
+    de_personagem_id: origemId,
+    para_personagem_id: destino.id,
+    de_nome: origemNome,
+    para_nome: destino.nome,
+    tipo: 'moeda',
+    moedas: Object.fromEntries(entradas),
+    criado_por: userId,
+  })
+
+  const descricaoMoedas = entradas.map(([m, v]) => `${v} ${m.toUpperCase()}`).join(', ')
+  const descricao = `${origemNome} transferiu ${descricaoMoedas} para ${destino.nome}`
+  await registrarLog({ descricao })
+  return Response.json({ ok: true, descricao })
+}
+
+// Distribuição — só DM. Não parte do inventário de ninguém: cria itens/
+// credita moedas diretamente em um ou mais personagens de destino.
+async function tratarDistribuir(
+  payload: Partial<AcaoInventarioPayload>,
+  userId: string,
+  admin: ReturnType<typeof createAdminClient>
+) {
+  let campanhaId: string
+  let sessaoId: string | null
+  let registrarLog: (args: { descricao: string }) => Promise<void>
+
+  if (payload.batalhaId) {
+    const { data: batalha } = await admin.from('batalhas').select('*').eq('id', payload.batalhaId).maybeSingle()
+    if (!batalha) return Response.json({ erro: 'Batalha não encontrada' }, { status: 403 })
+    if (batalha.status !== 'ativa') return Response.json({ erro: 'A batalha não está ativa no momento.' }, { status: 403 })
+    campanhaId = batalha.campanha_id
+    sessaoId = batalha.sessao_id ?? null
+    registrarLog = async ({ descricao }) => {
+      await admin.from('batalha_log').insert({
+        batalha_id: payload.batalhaId, rodada: batalha.rodada_atual, turno: null,
+        tipo: 'nota', autor_id: userId, autor_nome: 'DM',
+        alvo_id: null, alvo_nome: null, valor: null, tipo_dano: null, descricao, resumo: false,
+      })
+    }
+  } else if (payload.sessaoId) {
+    const { data: sessao } = await admin.from('sessoes').select('*').eq('id', payload.sessaoId).maybeSingle()
+    if (!sessao) return Response.json({ erro: 'Sessão não encontrada' }, { status: 403 })
+    if (sessao.status === 'encerrada') return Response.json({ erro: 'Esta sessão já foi encerrada.' }, { status: 403 })
+    campanhaId = sessao.campanha_id
+    sessaoId = sessao.id
+    registrarLog = async ({ descricao }) => {
+      await admin.from('sessao_log').insert({
+        sessao_id: sessao.id, tipo: 'nota', autor_id: userId, autor_nome: 'DM', descricao,
+      })
+    }
+  } else {
+    return Response.json({ erro: 'Payload inválido — informe batalhaId ou sessaoId' }, { status: 400 })
+  }
+
+  const { data: campanha } = await admin.from('campanhas').select('dm_id').eq('id', campanhaId).maybeSingle()
+  if (!campanha || campanha.dm_id !== userId) {
+    return Response.json({ erro: 'Só o mestre pode distribuir itens ou moedas' }, { status: 403 })
+  }
+
+  const paraIds = payload.paraPersonagemIds ?? []
+  if (paraIds.length === 0) return Response.json({ erro: 'Selecione ao menos um personagem para receber' }, { status: 400 })
+
+  const { data: destinos } = await admin.from('personagens').select('id, nome, campanha_id, moedas').in('id', paraIds)
+  if (!destinos || destinos.length !== paraIds.length || destinos.some(d => d.campanha_id !== campanhaId)) {
+    return Response.json({ erro: 'Um ou mais personagens de destino não pertencem a esta campanha' }, { status: 403 })
+  }
+
+  const itens = (payload.itens ?? []).filter(i => i.nome && i.quantidade > 0)
+  const moedas = payload.moedas ?? {}
+  const entradasMoedas = Object.entries(moedas).filter(([, v]) => (v ?? 0) > 0) as ['pc' | 'pp' | 'pe' | 'po' | 'pl', number][]
+
+  for (const destino of destinos) {
+    for (const item of itens) {
+      const { data: existente } = await admin
+        .from('inventario_itens').select('*').eq('personagem_id', destino.id).eq('nome', item.nome).maybeSingle()
+      if (existente) {
+        await admin.from('inventario_itens')
+          .update({ quantidade: (existente.quantidade as number) + item.quantidade }).eq('id', existente.id)
+      } else {
+        await admin.from('inventario_itens').insert({
+          personagem_id: destino.id,
+          item_ref: null,
+          nome: item.nome,
+          tipo: item.tipo ?? null,
+          raridade: item.raridade ?? null,
+          descricao: item.descricao ?? null,
+          quantidade: item.quantidade,
+          equipado: false,
+        })
+      }
+    }
+
+    if (entradasMoedas.length > 0) {
+      const moedasDestino = (destino.moedas ?? {}) as MoedasDb
+      const novasMoedas = { ...moedasDestino }
+      for (const [m, v] of entradasMoedas) novasMoedas[m] = (novasMoedas[m] ?? 0) + v
+      await admin.from('personagens').update({ moedas: novasMoedas }).eq('id', destino.id)
+    }
+
+    if (itens.length > 0) {
+      await admin.from('transferencias').insert({
+        sessao_id: sessaoId,
+        de_personagem_id: null,
+        de_nome: 'DM',
+        para_personagem_id: destino.id,
+        para_nome: destino.nome,
+        tipo: 'item',
+        item_nome: itens.map(i => i.nome).join(', '),
+        quantidade: itens.reduce((soma, i) => soma + i.quantidade, 0),
+        criado_por: userId,
+      })
+    }
+    if (entradasMoedas.length > 0) {
+      await admin.from('transferencias').insert({
+        sessao_id: sessaoId,
+        de_personagem_id: null,
+        de_nome: 'DM',
+        para_personagem_id: destino.id,
+        para_nome: destino.nome,
+        tipo: 'moeda',
+        moedas: Object.fromEntries(entradasMoedas),
+        criado_por: userId,
+      })
+    }
+  }
+
+  const partesDescricao = [
+    itens.length > 0 ? itens.map(i => `${i.quantidade}x ${i.nome}`).join(', ') : null,
+    entradasMoedas.length > 0 ? entradasMoedas.map(([m, v]) => `${v} ${m.toUpperCase()}`).join(', ') : null,
+  ].filter(Boolean)
+  const descricao = `DM distribuiu ${partesDescricao.join(' e ')} para ${destinos.map(d => d.nome).join(', ')}`
+  await registrarLog({ descricao })
+
+  return Response.json({ ok: true, descricao })
 }

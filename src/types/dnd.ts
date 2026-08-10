@@ -288,8 +288,7 @@ export interface Moedas {
   pp: number
   po: number
   pe: number
-  platina: number
-  pl?: number
+  pl: number
   custom?: number
 }
 
