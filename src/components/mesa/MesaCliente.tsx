@@ -9,11 +9,11 @@ import { usePermissao } from '@/hooks/usePermissao'
 import { createClient } from '@/lib/supabase/client'
 import { pvVisivelParaJogador, ESTADO_VAGO_INFO, type ModoRevelacao } from '@/lib/batalha/visibilidade-pv'
 import { vantagemDerivada } from '@/lib/batalha/vantagem-por-condicao'
-import { getCondicao } from '@/lib/dados-dnd/condicoes'
+import { getCondicao, TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
 import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
 import { BarraVida } from '@/components/batalha/BarraVida'
 import type { ArmaEmpunhada, Combatente, EntradaLog, TipoCondicao, EspacosMagiaBatalha, TipoEntradaLog } from '@/types/batalha'
-import type { ItemInventario, Spell, TipoDano } from '@/types/dnd'
+import type { ItemInventario, Personagem, Spell, TipoDano } from '@/types/dnd'
 import { cn } from '@/lib/utils'
 import { Swords, X, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -43,6 +43,10 @@ interface ResultadoAcao {
   erro?: string
 }
 
+interface ResultadoAcaoSessao extends ResultadoAcao {
+  personagem?: Personagem
+}
+
 async function chamarAcaoApi(payload: {
   batalhaId: string
   combatenteId: string
@@ -56,7 +60,7 @@ async function chamarAcaoApi(payload: {
   encerrarEfeitoAtivo?: string
 }): Promise<ResultadoAcao> {
   try {
-    const resp = await fetch('/api/batalha/acao', {
+    const resp = await fetch('/api/mesa/acao', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -66,6 +70,46 @@ async function chamarAcaoApi(payload: {
       return { ok: false, erro: dados?.erro ?? 'Erro ao registrar ação' }
     }
     return { ok: true }
+  } catch {
+    return { ok: false, erro: 'Sem conexão — tente novamente' }
+  }
+}
+
+// Ação fora de combate — sempre sobre o próprio personagem (ou o que o DM
+// está operando), nunca "alvos" de ataque. Mesma rota do modo combate,
+// discriminada pela ausência de batalhaId.
+type TipoAcaoSessao =
+  | 'dano' | 'cura' | 'pv_temporarios'
+  | 'condicao_aplicada' | 'condicao_removida'
+  | 'usar_espaco' | 'recuperar_espaco'
+  | 'usar_inspiracao' | 'ajuste_ouro'
+  | 'descanso_longo' | 'descanso_curto'
+
+async function chamarAcaoSessaoApi(payload: {
+  sessaoId: string
+  personagemId: string
+  tipo: TipoAcaoSessao
+  valor?: number
+  tipoDano?: TipoDano
+  condicao?: TipoCondicao
+  nivelMagia?: number
+  moeda?: 'pc' | 'pp' | 'pe' | 'po' | 'pl'
+  dadosGastos?: number
+  curaInformada?: number
+  nomeAcao?: string
+  descricao?: string
+}): Promise<ResultadoAcaoSessao> {
+  try {
+    const resp = await fetch('/api/mesa/acao', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const dados = await resp.json().catch(() => null)
+    if (!resp.ok) {
+      return { ok: false, erro: dados?.erro ?? 'Erro ao registrar ação' }
+    }
+    return { ok: true, personagem: dados.personagem }
   } catch {
     return { ok: false, erro: 'Sem conexão — tente novamente' }
   }
@@ -1423,12 +1467,471 @@ function BarraAcoes({
   )
 }
 
+// =============================================================================
+// Modo sessão — fora de combate. Cartão do PJ editável (PV, PV temp,
+// condições, inspiração, espaços de magia) e rodapé com ✨ Magia · 🎒 Item ·
+// 💰 Ouro · 🛏️ Descanso, tudo via /api/mesa/acao (sem alvo, sem turno).
+// =============================================================================
+
+function BarraParticipantesSessao({
+  personagens, meuPersonagemIds, personagemOperadoId,
+}: {
+  personagens: Personagem[]
+  meuPersonagemIds: Set<string>
+  personagemOperadoId: string | null
+}) {
+  return (
+    <div className="flex-shrink-0 flex items-stretch gap-2 overflow-x-auto px-3 py-2 bg-[var(--bg2)] border-b border-[var(--border)]">
+      {personagens.map(p => {
+        const ehOperado = p.id === personagemOperadoId
+        const ehMeu = meuPersonagemIds.has(p.id)
+        const anel = ehOperado
+          ? '0 0 0 2px var(--gold)'
+          : ehMeu
+            ? '0 0 0 2px var(--accent2)'
+            : '0 0 0 1px var(--border)'
+        return (
+          <div key={p.id} className="flex-shrink-0 flex flex-col items-center gap-0.5 w-14">
+            <div className="rounded-full p-0.5" style={{ boxShadow: anel }}>
+              <Avatar nome={p.nome} imagemUrl={p.imagem_url} tamanho={44} />
+            </div>
+            <span className="text-[9px] text-[var(--text3)] truncate w-full text-center font-crimson">{p.nome}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function EspacosMagiaSessao({
+  slotsMagia, podeEditar, onUsar, onRecuperar,
+}: {
+  slotsMagia: Record<string, { total: number; usados: number }> | null
+  podeEditar: boolean
+  onUsar: (nivel: number) => void
+  onRecuperar: (nivel: number) => void
+}) {
+  const niveis = Object.entries(slotsMagia ?? {})
+    .filter(([, e]) => e.total > 0)
+    .map(([n, e]) => ({ nivel: parseInt(n), ...e }))
+    .sort((a, b) => a.nivel - b.nivel)
+
+  if (niveis.length === 0) return null
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10px]">
+      {niveis.map(({ nivel, total, usados }) => (
+        <div key={nivel} className="flex items-center gap-1">
+          <span className="text-[var(--text3)] font-cinzel">N{nivel}</span>
+          <div className="flex gap-0.5">
+            {Array.from({ length: total }).map((_, i) => {
+              const usado = i < usados
+              return (
+                <button
+                  key={i}
+                  disabled={!podeEditar}
+                  onClick={() => usado ? onRecuperar(nivel) : onUsar(nivel)}
+                  className={cn(
+                    'w-3.5 h-3.5 rounded-full border transition-all',
+                    usado ? 'bg-transparent border-[var(--border)]' : 'bg-[var(--accent2)] border-[var(--accent2)]',
+                    podeEditar ? 'hover:scale-125' : 'opacity-60 cursor-not-allowed'
+                  )}
+                  title={`Nível ${nivel}: ${total - usados}/${total} disponíveis`}
+                />
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CartaoPersonagemSessao({
+  personagem, podeEditar, enviando,
+  opcoesSelecao, mostrarSeletorSempre, rotuloSeletor, selecionadoId, onSelecionar,
+  onAjustarPV, onDefinirPVTemp, onAdicionarCondicao, onRemoverCondicao, onUsarInspiracao,
+  onUsarEspaco, onRecuperarEspaco,
+}: {
+  personagem: Personagem
+  podeEditar: boolean
+  enviando: boolean
+  opcoesSelecao: Personagem[]
+  mostrarSeletorSempre?: boolean
+  rotuloSeletor?: string
+  selecionadoId: string | null
+  onSelecionar: (id: string) => void
+  onAjustarPV: (delta: number) => void
+  onDefinirPVTemp: (novoValor: number) => void
+  onAdicionarCondicao: (c: TipoCondicao) => void
+  onRemoverCondicao: (c: TipoCondicao) => void
+  onUsarInspiracao: () => void
+  onUsarEspaco: (nivel: number) => void
+  onRecuperarEspaco: (nivel: number) => void
+}) {
+  const [condicaoAberta, setCondicaoAberta] = useState<TipoCondicao | null>(null)
+  const [escolhendoCondicao, setEscolhendoCondicao] = useState(false)
+  const subtitulo = [personagem.classe, personagem.nivel ? `Nv${personagem.nivel}` : null].filter(Boolean).join(' · ')
+  const condicoesAtuais = (personagem.condicoes ?? []) as TipoCondicao[]
+
+  return (
+    <div className="h-full flex flex-col gap-1.5 overflow-hidden rounded-xl bg-[var(--bg2)] border border-[var(--gold)]/40 shadow-lg p-3">
+      {(mostrarSeletorSempre ? opcoesSelecao.length > 0 : opcoesSelecao.length > 1) && (
+        <div className="flex-shrink-0">
+          {rotuloSeletor && <p className="text-[var(--text3)] text-[9px] font-cinzel uppercase mb-0.5">{rotuloSeletor}</p>}
+          <select
+            value={selecionadoId ?? ''}
+            onChange={e => onSelecionar(e.target.value)}
+            className="input-dd w-full text-xs py-1"
+          >
+            {opcoesSelecao.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+          </select>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <Avatar nome={personagem.nome} imagemUrl={personagem.imagem_url} tamanho={44} />
+        <div className="min-w-0 flex-1">
+          <h2 className="font-cinzel text-[var(--gold)] text-sm font-bold truncate leading-tight">{personagem.nome}</h2>
+          {subtitulo && <p className="text-[var(--text3)] text-[10px] font-crimson leading-tight">{subtitulo}</p>}
+        </div>
+        <div className="text-right flex-shrink-0">
+          <p className="text-lg font-cinzel font-bold text-[var(--text)] leading-none">
+            {personagem.pv_atual}<span className="text-[var(--text3)] text-xs">/{personagem.pv_maximo}</span>
+          </p>
+          {personagem.pv_temporarios > 0 && <p className="text-[var(--accent2)] text-[10px] font-cinzel leading-tight">+{personagem.pv_temporarios} temp</p>}
+        </div>
+      </div>
+
+      <BarraVida atual={personagem.pv_atual} maximo={personagem.pv_maximo} temporarios={personagem.pv_temporarios} className="flex-shrink-0" />
+
+      {podeEditar && (
+        <div className="flex-shrink-0 flex items-center gap-1">
+          {[-5, -1, 1, 5].map(delta => (
+            <button
+              key={delta}
+              disabled={enviando}
+              onClick={() => onAjustarPV(delta)}
+              className={cn(
+                'flex-1 py-1.5 rounded border text-xs font-cinzel font-bold min-h-[30px] disabled:opacity-40',
+                delta < 0 ? 'border-[var(--red2)]/50 text-[var(--red2)]' : 'border-[var(--green2)]/50 text-[var(--green2)]'
+              )}
+            >
+              {delta > 0 ? `+${delta}` : delta}
+            </button>
+          ))}
+          <button
+            disabled={enviando}
+            onClick={() => onDefinirPVTemp(personagem.pv_temporarios + 1)}
+            title="+1 PV temporário"
+            className="flex-1 py-1.5 rounded border border-[var(--accent2)]/50 text-[var(--accent2)] text-xs font-cinzel font-bold min-h-[30px] disabled:opacity-40"
+          >
+            +1 temp
+          </button>
+          {personagem.pv_temporarios > 0 && (
+            <button
+              disabled={enviando}
+              onClick={() => onDefinirPVTemp(0)}
+              title="Zerar PV temporários"
+              className="flex-1 py-1.5 rounded border border-[var(--border)] text-[var(--text3)] text-xs font-cinzel min-h-[30px] disabled:opacity-40"
+            >
+              0 temp
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 flex-shrink-0 text-xs font-cinzel text-[var(--text2)]">
+        <span>CA <b className="text-[var(--text)]">{personagem.ca}</b></span>
+        <span>Desloc. <b className="text-[var(--text)]">{personagem.deslocamento ? `${personagem.deslocamento}m` : '—'}</b></span>
+        {typeof personagem.inspiracao === 'number' && personagem.inspiracao > 0 && (
+          <button
+            disabled={!podeEditar || enviando}
+            onClick={onUsarInspiracao}
+            className="ml-auto px-2 py-1 rounded border border-[var(--gold)]/50 text-[var(--gold)] text-[10px] font-cinzel disabled:opacity-40"
+          >
+            ⭐ Usar inspiração ({personagem.inspiracao})
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-1 flex-shrink-0 items-center">
+        {condicoesAtuais.map(cond => (
+          <button
+            key={cond}
+            onClick={() => setCondicaoAberta(cond)}
+            className="px-2 py-1 rounded-full bg-[var(--surface)] border border-[var(--accent2)]/50 text-[var(--accent2)] text-[10px] font-crimson flex items-center gap-1"
+          >
+            <span>{getCondicao(cond)?.icone}</span>{cond}
+            {podeEditar && (
+              <span
+                role="button"
+                onClick={e => { e.stopPropagation(); onRemoverCondicao(cond) }}
+                className="ml-0.5 text-[var(--text3)] hover:text-[var(--red2)]"
+              >
+                ×
+              </span>
+            )}
+          </button>
+        ))}
+        {podeEditar && (
+          escolhendoCondicao ? (
+            <select
+              autoFocus
+              value=""
+              onChange={e => { if (e.target.value) onAdicionarCondicao(e.target.value as TipoCondicao); setEscolhendoCondicao(false) }}
+              onBlur={() => setEscolhendoCondicao(false)}
+              className="input-dd text-[10px] py-1"
+            >
+              <option value="">— Condição —</option>
+              {TODAS_CONDICOES.filter(c => !condicoesAtuais.includes(c as TipoCondicao)).map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          ) : (
+            <button
+              onClick={() => setEscolhendoCondicao(true)}
+              className="px-2 py-1 rounded-full border border-dashed border-[var(--border)] text-[var(--text3)] text-[10px] font-crimson"
+            >
+              + Condição
+            </button>
+          )
+        )}
+      </div>
+
+      {Object.keys(personagem.slots_magia ?? {}).length > 0 && (
+        <div className="flex-shrink-0">
+          <EspacosMagiaSessao
+            slotsMagia={personagem.slots_magia}
+            podeEditar={podeEditar}
+            onUsar={onUsarEspaco}
+            onRecuperar={onRecuperarEspaco}
+          />
+        </div>
+      )}
+
+      {condicaoAberta && <ModalCondicao condicao={condicaoAberta} onFechar={() => setCondicaoAberta(null)} />}
+    </div>
+  )
+}
+
+function BarraAcoesSessao({
+  podeAgir, onAbrirMagia, onAbrirItem, onAbrirOuro, onAbrirDescanso,
+}: {
+  podeAgir: boolean
+  onAbrirMagia: () => void
+  onAbrirItem: () => void
+  onAbrirOuro: () => void
+  onAbrirDescanso: () => void
+}) {
+  const botoes = [
+    { label: '✨ Magia', onClick: onAbrirMagia },
+    { label: '🎒 Item', onClick: onAbrirItem },
+    { label: '💰 Ouro', onClick: onAbrirOuro },
+    { label: '🛏️ Descanso', onClick: onAbrirDescanso },
+  ]
+  return (
+    <div className="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg2)] px-2 py-1.5">
+      <div className="grid grid-cols-4 gap-1.5">
+        {botoes.map(b => (
+          <button
+            key={b.label}
+            onClick={b.onClick}
+            disabled={!podeAgir}
+            className={cn(
+              'flex items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)]',
+              'text-[var(--text2)] font-cinzel text-[11px] min-h-[44px] transition-opacity',
+              !podeAgir && 'opacity-40 cursor-not-allowed'
+            )}
+          >
+            {b.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const MOEDAS: { id: 'pc' | 'pp' | 'pe' | 'po' | 'pl'; label: string }[] = [
+  { id: 'pc', label: 'Cobre (pc)' },
+  { id: 'pp', label: 'Prata (pp)' },
+  { id: 'pe', label: 'Electro (pe)' },
+  { id: 'po', label: 'Ouro (po)' },
+  { id: 'pl', label: 'Platina (pl)' },
+]
+
+function ModalOuro({
+  personagem, onConfirmar, onFechar,
+}: {
+  personagem: Personagem
+  onConfirmar: (moeda: 'pc' | 'pp' | 'pe' | 'po' | 'pl', valor: number) => void
+  onFechar: () => void
+}) {
+  const [moeda, setMoeda] = useState<'pc' | 'pp' | 'pe' | 'po' | 'pl'>('po')
+  const [texto, setTexto] = useState('')
+  const valor = parseInt(texto) || 0
+  const atual = personagem.moedas?.[moeda] ?? 0
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/60 p-3" onClick={onFechar}>
+      <div className="bg-[var(--bg3)] border border-[var(--border2)] rounded-xl shadow-2xl w-full max-w-xs p-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-cinzel text-[var(--gold)] font-bold text-sm">💰 Ouro — {personagem.nome}</h3>
+          <button onClick={onFechar} className="text-[var(--border)] hover:text-[var(--red2)] p-1 -m-1">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <select value={moeda} onChange={e => setMoeda(e.target.value as typeof moeda)} className="input-dd w-full text-sm mb-2">
+          {MOEDAS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+        <p className="text-[var(--text3)] text-xs font-crimson mb-2">Atual: {atual}</p>
+
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          value={texto}
+          onChange={e => setTexto(e.target.value)}
+          placeholder="0"
+          className="input-dd w-full text-center text-lg py-2 mb-3"
+          autoFocus
+        />
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => valor > 0 && onConfirmar(moeda, -valor)}
+            disabled={valor <= 0}
+            className="flex-1 py-2.5 rounded-lg border border-[var(--red2)]/50 text-[var(--red2)] font-cinzel text-sm min-h-[44px] disabled:opacity-40"
+          >
+            − Remover
+          </button>
+          <button
+            onClick={() => valor > 0 && onConfirmar(moeda, valor)}
+            disabled={valor <= 0}
+            className="flex-1 py-2.5 rounded-lg bg-[var(--gold)] text-[var(--bg)] font-cinzel font-bold text-sm min-h-[44px] disabled:opacity-40"
+          >
+            + Adicionar
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+function ModalDescanso({
+  personagem, onLongo, onCurto, onFechar,
+}: {
+  personagem: Personagem
+  onLongo: () => void
+  onCurto: (dadosGastos: number, curaInformada: number) => void
+  onFechar: () => void
+}) {
+  const [modo, setModo] = useState<'escolha' | 'curto'>('escolha')
+  const [dadosGastos, setDadosGastos] = useState(1)
+  const [curaTexto, setCuraTexto] = useState('')
+  const total = personagem.dados_vida_total ?? personagem.nivel ?? 1
+  const disponivel = Math.max(0, total - (personagem.dados_vida_usados ?? 0))
+
+  if (modo === 'curto') {
+    return createPortal(
+      <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/60 p-3" onClick={onFechar}>
+        <div className="bg-[var(--bg3)] border border-[var(--border2)] rounded-xl shadow-2xl w-full max-w-xs p-4" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center gap-2 mb-3">
+            <button onClick={() => setModo('escolha')} className="text-[var(--text3)] hover:text-[var(--text)] p-1 -m-1 flex-shrink-0">←</button>
+            <h3 className="font-cinzel text-[var(--gold)] font-bold text-sm flex-1">🛏️ Descanso curto</h3>
+            <button onClick={onFechar} className="text-[var(--border)] hover:text-[var(--red2)] p-1 -m-1 flex-shrink-0">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <p className="text-[var(--text3)] text-xs font-crimson mb-3">
+            {disponivel} de {total} dado(s) de vida disponíveis. Role fisicamente e informe o total.
+          </p>
+
+          <label className="block mb-3">
+            <span className="text-[var(--text3)] text-[10px] font-cinzel uppercase block mb-1">Quantos dados gastar</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setDadosGastos(d => Math.max(1, d - 1))}
+                className="w-9 h-9 rounded border border-[var(--border)] text-[var(--text2)] font-cinzel"
+              >
+                −
+              </button>
+              <span className="flex-1 text-center font-cinzel text-lg text-[var(--text)]">{dadosGastos}</span>
+              <button
+                onClick={() => setDadosGastos(d => Math.min(disponivel, d + 1))}
+                disabled={dadosGastos >= disponivel}
+                className="w-9 h-9 rounded border border-[var(--border)] text-[var(--text2)] font-cinzel disabled:opacity-40"
+              >
+                +
+              </button>
+            </div>
+          </label>
+
+          <label className="block mb-3">
+            <span className="text-[var(--text3)] text-[10px] font-cinzel uppercase block mb-1">Total de cura rolado</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={curaTexto}
+              onChange={e => setCuraTexto(e.target.value)}
+              placeholder="0"
+              className="input-dd w-full text-center text-lg py-2"
+            />
+          </label>
+
+          <button
+            onClick={() => onCurto(dadosGastos, parseInt(curaTexto) || 0)}
+            disabled={disponivel === 0 || dadosGastos < 1}
+            className="w-full py-3 rounded-lg bg-[var(--gold)] text-[var(--bg)] font-cinzel text-sm font-bold min-h-[48px] disabled:opacity-40"
+          >
+            Confirmar descanso curto
+          </button>
+        </div>
+      </div>,
+      document.body
+    )
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/60 p-3" onClick={onFechar}>
+      <div className="bg-[var(--bg3)] border border-[var(--border2)] rounded-xl shadow-2xl w-full max-w-xs p-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-cinzel text-[var(--gold)] font-bold text-sm">🛏️ Descanso — {personagem.nome}</h3>
+          <button onClick={onFechar} className="text-[var(--border)] hover:text-[var(--red2)] p-1 -m-1">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="space-y-1.5">
+          <button
+            onClick={onLongo}
+            className="w-full text-left px-3 py-2.5 rounded-lg bg-[var(--surface)] hover:bg-[var(--bg2)] border border-[var(--border)] text-[var(--text)] text-sm font-crimson min-h-[44px] transition-colors"
+          >
+            🌙 Descanso longo — recupera todo PV, espaços de magia e metade dos dados de vida
+          </button>
+          <button
+            onClick={() => setModo('curto')}
+            disabled={disponivel === 0}
+            className="w-full text-left px-3 py-2.5 rounded-lg bg-[var(--surface)] hover:bg-[var(--bg2)] border border-[var(--border)] text-[var(--text)] text-sm font-crimson min-h-[44px] transition-colors disabled:opacity-40"
+          >
+            ☕ Descanso curto — gasta dados de vida ({disponivel} disponíveis)
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 export function MesaCliente() {
   const {
     combatentes, log, rodadaAtual, turnoAtual, turnoCombatenteId, ativa,
     statusBatalha, batalhaId, revelacaoPv, carregarBatalhaAtiva, definirArmaEmpunhada,
   } = useBatalha()
-  const { campanhaAtiva } = useCampanha()
+  const { campanhaAtiva, sessaoAtiva } = useCampanha()
   const { ehDM } = usePermissao()
 
   const [userId, setUserId] = useState<string | null>(null)
@@ -1436,6 +1939,16 @@ export function MesaCliente() {
   const [carregandoBatalha, setCarregandoBatalha] = useState(true)
   const [personagemSelecionadoId, setPersonagemSelecionadoId] = useState<string | null>(null)
   const [popupCombatenteId, setPopupCombatenteId] = useState<string | null>(null)
+
+  // Modo sessão (fora de combate) — lista de PJs da campanha, independente
+  // de batalha_combatentes (que só existe durante uma batalha).
+  const [personagensSessao, setPersonagensSessao] = useState<Personagem[]>([])
+  const [personagemOperadoIdSessao, setPersonagemOperadoIdSessao] = useState<string | null>(null)
+  const [enviandoSessao, setEnviandoSessao] = useState(false)
+  const [modalMagiaSessaoAberto, setModalMagiaSessaoAberto] = useState(false)
+  const [modalItemSessaoAberto, setModalItemSessaoAberto] = useState(false)
+  const [modalOuroAberto, setModalOuroAberto] = useState(false)
+  const [modalDescansoAberto, setModalDescansoAberto] = useState(false)
 
   // O notebook (TabelaCombate) continua o cockpit; a /mesa vira controle
   // remoto do DM andando pela mesa — opera monstros, NPCs e PJs ausentes
@@ -1561,6 +2074,151 @@ export function MesaCliente() {
   useEffect(() => {
     setVantagemEscolhida(combatenteOperado?.vantagem ?? null)
   }, [combatenteOperado?.id, combatenteOperado?.vantagem])
+
+  // =====================================================================
+  // Modo sessão — PJs da campanha direto de `personagens` (sem batalha).
+  // =====================================================================
+
+  const emModoSessao = !!sessaoAtiva && (!batalhaId || statusBatalha === 'inativa' || statusBatalha === 'concluida')
+
+  useEffect(() => {
+    if (!campanhaAtiva?.id) { setPersonagensSessao([]); return }
+    let cancelado = false
+    createClient()
+      .from('personagens')
+      .select('*')
+      .eq('campanha_id', campanhaAtiva.id)
+      .eq('tipo_personagem', 'jogador')
+      .eq('ativo', true)
+      .then(({ data }) => { if (!cancelado) setPersonagensSessao((data as Personagem[]) ?? []) })
+    return () => { cancelado = true }
+  }, [campanhaAtiva?.id])
+
+  // Realtime — reflete edições feitas por outros clientes (DM ou outro
+  // jogador) sem precisar recarregar a página.
+  useEffect(() => {
+    if (!campanhaAtiva?.id) return
+    const supabase = createClient()
+    const canal = supabase
+      .channel(`mesa-personagens:${campanhaAtiva.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'personagens', filter: `campanha_id=eq.${campanhaAtiva.id}` },
+        (payload: { new: Personagem }) => {
+          setPersonagensSessao(prev => prev.map(p => p.id === payload.new.id ? { ...p, ...payload.new } : p))
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(canal) }
+  }, [campanhaAtiva?.id])
+
+  const meusPersonagensSessao = useMemo(
+    () => userId ? personagensSessao.filter(p => p.user_id === userId) : [],
+    [personagensSessao, userId]
+  )
+
+  useEffect(() => {
+    if (!ehDM) {
+      if (meusPersonagensSessao.length === 0) { setPersonagemOperadoIdSessao(null); return }
+      if (!personagemOperadoIdSessao || !meusPersonagensSessao.some(p => p.id === personagemOperadoIdSessao)) {
+        setPersonagemOperadoIdSessao(meusPersonagensSessao[0].id)
+      }
+      return
+    }
+    if (personagensSessao.length === 0) { setPersonagemOperadoIdSessao(null); return }
+    if (!personagemOperadoIdSessao || !personagensSessao.some(p => p.id === personagemOperadoIdSessao)) {
+      setPersonagemOperadoIdSessao(personagensSessao[0].id)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ehDM, meusPersonagensSessao, personagensSessao])
+
+  const personagemOperadoSessao = ehDM
+    ? personagensSessao.find(p => p.id === personagemOperadoIdSessao) ?? null
+    : meusPersonagensSessao.find(p => p.id === personagemOperadoIdSessao) ?? null
+
+  const meusPersonagemIdsSessao = useMemo(() => new Set(meusPersonagensSessao.map(p => p.id)), [meusPersonagensSessao])
+
+  // Ponto único de escrita fora de combate — sempre /api/mesa/acao (sem
+  // alvos, sem turno). Atualiza o estado local a partir da resposta do
+  // servidor (fonte da verdade), sem esperar o Realtime.
+  async function enviarAcaoSessao(payload: Omit<Parameters<typeof chamarAcaoSessaoApi>[0], 'sessaoId' | 'personagemId'>) {
+    if (!sessaoAtiva || !personagemOperadoSessao || enviandoSessao) return
+    setEnviandoSessao(true)
+    const resultado = await chamarAcaoSessaoApi({
+      sessaoId: sessaoAtiva.id,
+      personagemId: personagemOperadoSessao.id,
+      ...payload,
+    })
+    setEnviandoSessao(false)
+    if (!resultado.ok) {
+      toast.error(resultado.erro ?? 'Erro ao registrar ação')
+      return
+    }
+    if (resultado.personagem) {
+      const atualizado = resultado.personagem
+      setPersonagensSessao(prev => prev.map(p => p.id === atualizado.id ? atualizado : p))
+    }
+  }
+
+  function ajustarPVSessao(delta: number) {
+    enviarAcaoSessao({ tipo: delta < 0 ? 'dano' : 'cura', valor: Math.abs(delta) })
+  }
+
+  function definirPVTempSessao(novoValor: number) {
+    enviarAcaoSessao({ tipo: 'pv_temporarios', valor: Math.max(0, novoValor) })
+  }
+
+  function adicionarCondicaoSessao(condicao: TipoCondicao) {
+    enviarAcaoSessao({ tipo: 'condicao_aplicada', condicao })
+  }
+
+  function removerCondicaoSessao(condicao: TipoCondicao) {
+    enviarAcaoSessao({ tipo: 'condicao_removida', condicao })
+  }
+
+  function usarInspiracaoSessao() {
+    enviarAcaoSessao({ tipo: 'usar_inspiracao' })
+  }
+
+  function usarEspacoSessao(nivel: number) {
+    enviarAcaoSessao({ tipo: 'usar_espaco', nivelMagia: nivel })
+  }
+
+  function recuperarEspacoSessao(nivel: number) {
+    enviarAcaoSessao({ tipo: 'recuperar_espaco', nivelMagia: nivel })
+  }
+
+  function conjurarMagiaSessao({ magia, nivelConjurado }: ConjuracaoEscolhida) {
+    setModalMagiaSessaoAberto(false)
+    const { efeito } = classificarMagia(magia)
+    if (efeito === 'cura') {
+      enviarAcaoSessao({
+        tipo: 'cura', valor: 1, nivelMagia: nivelConjurado ?? undefined, nomeAcao: magia.nome,
+      })
+    } else {
+      enviarAcaoSessao({ tipo: 'usar_espaco', nivelMagia: nivelConjurado ?? undefined, nomeAcao: magia.nome })
+    }
+  }
+
+  function usarItemSessao(item: { nome: string; cura: number }) {
+    setModalItemSessaoAberto(false)
+    enviarAcaoSessao({ tipo: 'cura', valor: item.cura, nomeAcao: item.nome })
+  }
+
+  function ajustarOuroSessao(moeda: 'pc' | 'pp' | 'pe' | 'po' | 'pl', valor: number) {
+    setModalOuroAberto(false)
+    enviarAcaoSessao({ tipo: 'ajuste_ouro', moeda, valor })
+  }
+
+  function descansoLongoSessao() {
+    setModalDescansoAberto(false)
+    enviarAcaoSessao({ tipo: 'descanso_longo' })
+  }
+
+  function descansoCurtoSessao(dadosGastos: number, curaInformada: number) {
+    setModalDescansoAberto(false)
+    enviarAcaoSessao({ tipo: 'descanso_curto', dadosGastos, curaInformada })
+  }
 
   function cancelarAcao() {
     setAcaoPendente(null)
@@ -1798,14 +2456,113 @@ export function MesaCliente() {
     )
   }
 
-  if (!batalhaId || statusBatalha === 'inativa' || statusBatalha === 'concluida') {
+  if (!sessaoAtiva) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-2 p-8 text-center">
         <Swords className="w-10 h-10 text-[var(--border)]" />
-        <p className="font-cinzel text-[var(--border)] text-lg">Nenhuma batalha em andamento</p>
+        <p className="font-cinzel text-[var(--border)] text-lg">Nenhuma sessão em andamento</p>
         <p className="text-[var(--border)] text-sm font-crimson max-w-xs">
-          Quando o mestre iniciar uma batalha, ela aparecerá aqui automaticamente.
+          Aguarde o mestre iniciar a sessão.
         </p>
+      </div>
+    )
+  }
+
+  // Modo sessão — sem batalha ativa: cartão editável do PJ, sem turno.
+  if (emModoSessao) {
+    const espacosMagiaSessaoConvertidos: EspacosMagiaBatalha = {}
+    if (personagemOperadoSessao?.slots_magia) {
+      for (const [nivel, slot] of Object.entries(personagemOperadoSessao.slots_magia)) {
+        espacosMagiaSessaoConvertidos[parseInt(nivel)] = { total: slot.total, utilizados: slot.usados }
+      }
+    }
+
+    return (
+      <div className="flex flex-col h-full overflow-hidden">
+        <BarraParticipantesSessao
+          personagens={personagensSessao}
+          meuPersonagemIds={meusPersonagemIdsSessao}
+          personagemOperadoId={personagemOperadoIdSessao}
+        />
+
+        <div className="flex-shrink-0 py-1.5 text-center text-[var(--text3)] text-xs font-crimson">
+          🟢 Sessão {sessaoAtiva.numero ?? ''} em andamento — fora de combate
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-hidden px-3 pb-2">
+          {personagemOperadoSessao ? (
+            <CartaoPersonagemSessao
+              personagem={personagemOperadoSessao}
+              podeEditar
+              enviando={enviandoSessao}
+              opcoesSelecao={ehDM ? personagensSessao : meusPersonagensSessao}
+              mostrarSeletorSempre={ehDM}
+              rotuloSeletor={ehDM ? '🎭 Operando' : undefined}
+              selecionadoId={personagemOperadoIdSessao}
+              onSelecionar={setPersonagemOperadoIdSessao}
+              onAjustarPV={ajustarPVSessao}
+              onDefinirPVTemp={definirPVTempSessao}
+              onAdicionarCondicao={adicionarCondicaoSessao}
+              onRemoverCondicao={removerCondicaoSessao}
+              onUsarInspiracao={usarInspiracaoSessao}
+              onUsarEspaco={usarEspacoSessao}
+              onRecuperarEspaco={recuperarEspacoSessao}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center text-center px-4">
+              <p className="text-[var(--text3)] text-xs font-crimson">
+                {ehDM
+                  ? 'Nenhum PJ na campanha ainda.'
+                  : 'Você não tem um personagem nesta campanha.'}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {personagemOperadoSessao && (
+          <BarraAcoesSessao
+            podeAgir={!enviandoSessao}
+            onAbrirMagia={() => setModalMagiaSessaoAberto(true)}
+            onAbrirItem={() => setModalItemSessaoAberto(true)}
+            onAbrirOuro={() => setModalOuroAberto(true)}
+            onAbrirDescanso={() => setModalDescansoAberto(true)}
+          />
+        )}
+
+        {modalMagiaSessaoAberto && personagemOperadoSessao && (
+          <ModalMagias
+            personagemId={personagemOperadoSessao.id}
+            personagemNome={personagemOperadoSessao.nome}
+            espacosMagia={espacosMagiaSessaoConvertidos}
+            onConjurar={conjurarMagiaSessao}
+            onFechar={() => setModalMagiaSessaoAberto(false)}
+          />
+        )}
+
+        {modalItemSessaoAberto && personagemOperadoSessao && (
+          <ModalItem
+            personagemId={personagemOperadoSessao.id}
+            onUsar={usarItemSessao}
+            onFechar={() => setModalItemSessaoAberto(false)}
+          />
+        )}
+
+        {modalOuroAberto && personagemOperadoSessao && (
+          <ModalOuro
+            personagem={personagemOperadoSessao}
+            onConfirmar={ajustarOuroSessao}
+            onFechar={() => setModalOuroAberto(false)}
+          />
+        )}
+
+        {modalDescansoAberto && personagemOperadoSessao && (
+          <ModalDescanso
+            personagem={personagemOperadoSessao}
+            onLongo={descansoLongoSessao}
+            onCurto={descansoCurtoSessao}
+            onFechar={() => setModalDescansoAberto(false)}
+          />
+        )}
       </div>
     )
   }

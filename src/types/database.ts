@@ -108,7 +108,11 @@ export interface Sessao {
   resumo_ia: string | null
   notas_dm: string | null
   duracao_minutos: number | null
-  encerrada: boolean
+  status: 'ativa' | 'pausada' | 'encerrada'
+  iniciada_em: string | null
+  pausada_em: string | null
+  concluida_em: string | null
+  total_rodadas: number | null
 }
 
 export interface CampaignMember {

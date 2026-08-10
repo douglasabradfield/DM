@@ -27,6 +27,10 @@ export function getTipoDano(id: TipoDano): InfoTipoDano {
   return TIPOS_DANO.find(t => t.id === id) ?? TIPOS_DANO[0]
 }
 
+export const MODIFICADOR_IMUNIDADE = 'Imunidade'
+export const MODIFICADOR_RESISTENCIA = 'Resistência'
+export const MODIFICADOR_VULNERABILIDADE = 'Vulnerabilidade'
+
 export function aplicarResistencias(
   dano: number,
   tipo: TipoDano,
@@ -35,13 +39,13 @@ export function aplicarResistencias(
   vulnerabilidades: TipoDano[]
 ): { danoFinal: number; modificador: string } {
   if (imunidades.includes(tipo)) {
-    return { danoFinal: 0, modificador: 'Imunidade' }
+    return { danoFinal: 0, modificador: MODIFICADOR_IMUNIDADE }
   }
   if (resistencias.includes(tipo)) {
-    return { danoFinal: Math.floor(dano / 2), modificador: 'Resistência' }
+    return { danoFinal: Math.floor(dano / 2), modificador: MODIFICADOR_RESISTENCIA }
   }
   if (vulnerabilidades.includes(tipo)) {
-    return { danoFinal: dano * 2, modificador: 'Vulnerabilidade' }
+    return { danoFinal: dano * 2, modificador: MODIFICADOR_VULNERABILIDADE }
   }
   return { danoFinal: dano, modificador: '' }
 }

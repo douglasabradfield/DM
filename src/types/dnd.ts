@@ -354,6 +354,9 @@ export interface Personagem {
   atributo_conjuracao: string | null
   cd_magia: number | null
   slots_magia: Record<string, { total: number; usados: number }> | null
+  condicoes: string[]
+  dados_vida_total: number | null
+  dados_vida_usados: number
   dndbeyond_url: string | null
   ativo: boolean
   criado_em: string

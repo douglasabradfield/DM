@@ -41,7 +41,9 @@ export function TabelaCombate() {
     xpGanhoNaBatalha, xpDistribuido,
     revelacaoPv, definirRevelacaoPv,
   } = useBatalha()
-  const { campanhaAtiva } = useCampanha()
+  const {
+    campanhaAtiva, sessaoAtiva, iniciarSessao, encerrarSessao, carregarSessaoAtiva,
+  } = useCampanha()
 
   // Canal Realtime da batalha — assina quando batalhaId aparece, encerra no
   // cleanup (troca de batalha ou saída da tela) para não vazar o canal.
@@ -68,6 +70,8 @@ export function TabelaCombate() {
   const [encerrando, setEncerrando] = useState(false)
   const [avisoXP, setAvisoXP] = useState(false)
   const [avisoEfeitosVisivel, setAvisoEfeitosVisivel] = useState(false)
+  const [modalIniciarSessao, setModalIniciarSessao] = useState(false)
+  const [encerrandoSessao, setEncerrandoSessao] = useState(false)
   const campanhaAnteriorRef = useRef<string | null>(null)
 
   // Lembrete, não automação — sem grid posicional o app não sabe quem
@@ -101,8 +105,33 @@ export function TabelaCombate() {
     if (idAtual && statusBatalha === 'inativa') {
       carregarBatalhaAtiva(idAtual)
     }
+    if (idAtual) {
+      carregarSessaoAtiva(idAtual)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campanhaAtiva?.id])
+
+  async function handleEncerrarSessao() {
+    const batalhaAtiva = statusBatalha === 'ativa' || statusBatalha === 'pausada'
+    const mensagem = batalhaAtiva
+      ? 'Esta sessão tem uma batalha em andamento. Encerrar a sessão também encerra a batalha (o log será salvo no diário). Continuar?'
+      : 'Encerrar a sessão?'
+    if (!window.confirm(mensagem)) return
+
+    setEncerrandoSessao(true)
+    try {
+      if (batalhaAtiva) {
+        await encerrarBatalha()
+      }
+      await encerrarSessao()
+      toast.success('Sessão encerrada')
+    } catch (e) {
+      console.error(e)
+      toast.error('Erro ao encerrar sessão')
+    } finally {
+      setEncerrandoSessao(false)
+    }
+  }
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -173,6 +202,28 @@ export function TabelaCombate() {
     <>
     <div className="flex h-full">
       <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Sessão — estado independente da batalha, controla se a mesa (fora
+            deste notebook) tem algo pra mostrar aos jogadores. */}
+        <div className="bg-[var(--bg3)] border-b border-[var(--border)] px-3 py-1.5 flex items-center gap-2 flex-wrap">
+          {sessaoAtiva ? (
+            <>
+              <span className="text-[var(--green2)] text-xs font-cinzel">
+                🟢 Sessão {sessaoAtiva.numero ?? '—'} · iniciada às{' '}
+                {sessaoAtiva.iniciada_em
+                  ? new Date(sessaoAtiva.iniciada_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                  : '—'}
+              </span>
+              <BotaoRunico variante="perigo" tamanho="sm" disabled={encerrandoSessao} onClick={handleEncerrarSessao}>
+                {encerrandoSessao ? '⏳ Encerrando...' : 'Encerrar sessão'}
+              </BotaoRunico>
+            </>
+          ) : (
+            <BotaoRunico variante="ouro" tamanho="sm" onClick={() => setModalIniciarSessao(true)}>
+              ▶️ Iniciar sessão
+            </BotaoRunico>
+          )}
+        </div>
+
         {/* Toolbar */}
         <div className="bg-[var(--bg2)] border-b border-[var(--border)] px-3 py-2 flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2 bg-[var(--bg3)] border border-[var(--border)] rounded px-3 py-1">
@@ -254,7 +305,13 @@ export function TabelaCombate() {
           </BotaoRunico>
 
           {statusBatalha === 'inativa' && (
-            <BotaoRunico variante="ouro" tamanho="sm" onClick={() => setModalIniciar(true)}>
+            <BotaoRunico
+              variante="ouro"
+              tamanho="sm"
+              disabled={!sessaoAtiva}
+              title={sessaoAtiva ? undefined : 'Inicie uma sessão antes de começar a batalha'}
+              onClick={() => setModalIniciar(true)}
+            >
               <Play className="w-3 h-3" /> Iniciar
             </BotaoRunico>
           )}
@@ -541,8 +598,12 @@ export function TabelaCombate() {
             toast.error('Selecione uma campanha primeiro')
             return
           }
+          if (!sessaoAtiva) {
+            toast.error('Inicie uma sessão antes de começar a batalha')
+            return
+          }
           try {
-            await iniciarBatalha(nome, campanhaAtiva.id)
+            await iniciarBatalha(nome, campanhaAtiva.id, sessaoAtiva.id)
             toast.success(`Batalha "${nome}" iniciada!`)
           } catch (e) {
             console.error(e)
@@ -550,6 +611,21 @@ export function TabelaCombate() {
           }
         }}
         onCancelar={() => setModalIniciar(false)}
+      />
+    )}
+    {modalIniciarSessao && (
+      <ModalIniciarSessao
+        onConfirmar={async (titulo) => {
+          setModalIniciarSessao(false)
+          try {
+            const sessao = await iniciarSessao(titulo)
+            toast.success(`Sessão ${sessao.numero ?? ''} iniciada!`)
+          } catch (e) {
+            console.error(e)
+            toast.error('Erro ao iniciar sessão')
+          }
+        }}
+        onCancelar={() => setModalIniciarSessao(false)}
       />
     )}
     </>
@@ -1488,6 +1564,57 @@ function ModalIniciarBatalha({
             className="flex-1 py-2 bg-[var(--accent)] hover:bg-[var(--accent2)] text-white rounded-lg font-cinzel font-bold text-sm"
           >
             ⚔️ Iniciar
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+function ModalIniciarSessao({
+  onConfirmar,
+  onCancelar,
+}: {
+  onConfirmar: (titulo?: string) => void
+  onCancelar: () => void
+}) {
+  const [titulo, setTitulo] = useState('')
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70"
+      onClick={onCancelar}
+    >
+      <div
+        className="bg-[var(--bg2)] border border-[var(--gold)] rounded-xl p-6 max-w-sm w-full mx-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="font-cinzel text-[var(--gold)] text-lg font-bold mb-1">▶️ Iniciar Sessão</h3>
+        <p className="text-[var(--text3)] text-sm mb-4 font-crimson">
+          Título opcional — se deixar em branco, usa &quot;Sessão N&quot;
+        </p>
+        <input
+          type="text"
+          value={titulo}
+          onChange={e => setTitulo(e.target.value)}
+          placeholder="Ex: A Torre do Necromante"
+          className="input-dd w-full mb-4"
+          autoFocus
+          onKeyDown={e => e.key === 'Enter' && onConfirmar(titulo.trim() || undefined)}
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={onCancelar}
+            className="flex-1 py-2 border border-[var(--border)] rounded-lg text-[var(--text2)] hover:bg-[var(--surface)] text-sm"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => onConfirmar(titulo.trim() || undefined)}
+            className="flex-1 py-2 bg-[var(--accent)] hover:bg-[var(--accent2)] text-white rounded-lg font-cinzel font-bold text-sm"
+          >
+            ▶️ Iniciar
           </button>
         </div>
       </div>

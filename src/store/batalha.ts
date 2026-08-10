@@ -7,6 +7,7 @@ import type {
 } from '@/types/batalha'
 import type { TipoDano } from '@/types/dnd'
 import { calcularDano, aplicarCura as calcularCura, consumirEspaco } from '@/lib/batalha/motor'
+import { MODIFICADOR_RESISTENCIA, MODIFICADOR_VULNERABILIDADE } from '@/lib/dados-dnd/tipos-dano'
 import type { ModoRevelacao } from '@/lib/batalha/visibilidade-pv'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
@@ -311,7 +312,7 @@ interface EstadoBatalhaStore {
   iniciadaEm: Date | null
 
   // Ações de gerenciamento
-  iniciarBatalha: (nome: string, campanhaId: string) => Promise<string>
+  iniciarBatalha: (nome: string, campanhaId: string, sessaoId: string) => Promise<string>
   encerrarBatalha: () => Promise<string | null>
   pausarBatalha: () => Promise<void>
   retomarBatalha: () => Promise<void>
@@ -590,31 +591,8 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       assinarRealtime,
       encerrarRealtime,
 
-      iniciarBatalha: async (nome, campanhaId) => {
+      iniciarBatalha: async (nome, campanhaId, sessaoId) => {
         const supabase = createClient()
-
-        const { data: sessao, error: erroSessao } = await supabase
-          .from('sessoes')
-          .insert({
-            campanha_id: campanhaId,
-            titulo: nome,
-            status: 'ativa',
-            iniciada_em: new Date().toISOString(),
-          })
-          .select()
-          .single()
-
-        if (erroSessao) throw erroSessao
-
-        await supabase.from('diario_entradas').insert({
-          campanha_id: campanhaId,
-          sessao_id: sessao.id,
-          tipo: 'batalha',
-          titulo: nome,
-          conteudo: `Batalha iniciada em ${new Date().toLocaleString('pt-BR')}`,
-          tags: ['batalha'],
-        })
-
         const { data: userData } = await supabase.auth.getUser()
 
         // O turno também precisa nascer explícito — sem isso,
@@ -632,7 +610,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           .from('batalhas')
           .insert({
             campanha_id: campanhaId,
-            sessao_id: sessao.id,
+            sessao_id: sessaoId,
             nome,
             // 'ativa' direto — 'preparacao' só virava 'ativa' em
             // confirmarIniciativa(), que a mesa por cartas nunca chama.
@@ -647,6 +625,19 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           .single()
 
         if (erroBatalha) throw erroBatalha
+
+        // Escopado por batalha_id (não sessao_id) — uma sessão pode conter
+        // várias batalhas, e encerrarBatalha() precisa achar exatamente
+        // esta entrada para atualizar, não a de outra batalha da mesma sessão.
+        await supabase.from('diario_entradas').insert({
+          campanha_id: campanhaId,
+          sessao_id: sessaoId,
+          batalha_id: batalha.id,
+          tipo: 'batalha',
+          titulo: nome,
+          conteudo: `Batalha iniciada em ${new Date().toLocaleString('pt-BR')}`,
+          tags: ['batalha'],
+        })
 
         if (combatentesAtuais.length > 0) {
           const linhasCombatentes = combatentesAtuais.map(c => combatenteParaLinha(c, batalha.id))
@@ -678,7 +669,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         }
 
         set(state => {
-          state.sessaoId = sessao.id
+          state.sessaoId = sessaoId
           state.nomeBatalha = nome
           state.statusBatalha = 'ativa'
           state.ativa = true
@@ -748,12 +739,9 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             })
         ).catch(err => console.error('Erro ao sincronizar fichas ao encerrar batalha:', err))
 
-        await supabase.from('sessoes').update({
-          status: 'concluida',
-          concluida_em: new Date().toISOString(),
-          total_rodadas: rodadaAtual,
-          batalha_estado: null,
-        }).eq('id', sessaoId)
+        // sessoes não é mais tocado aqui — a sessão é um estado independente
+        // da batalha (pode continuar ativa com outras batalhas depois), só
+        // encerrada explicitamente pelo DM via useCampanha.encerrarSessao().
 
         const { data: entradaDiario } = await supabase.from('diario_entradas')
           .update({
@@ -763,7 +751,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             criado_por: user?.id ?? null,
             tipo: 'batalha',
           })
-          .eq('sessao_id', sessaoId)
+          .eq('batalha_id', batalhaId)
           .eq('tipo', 'batalha')
           .select('id')
           .single()
@@ -1045,8 +1033,8 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           descricao = `${c.nome} é IMUNE a ${tipo}`
         } else {
           descricao = `${nomeAtacante} causou ${danoFinal} de dano${tipo ? ` (${tipo})` : ''} em ${c.nome}`
-          if (modificador === 'resistencia') descricao += ` (resistência: ${dano}→${danoFinal})`
-          else if (modificador === 'vulnerabilidade') descricao += ` (vulnerabilidade: ${dano}→${danoFinal})`
+          if (modificador === MODIFICADOR_RESISTENCIA) descricao += ` (resistência: ${dano}→${danoFinal})`
+          else if (modificador === MODIFICADOR_VULNERABILIDADE) descricao += ` (vulnerabilidade: ${dano}→${danoFinal})`
           if (novoPv <= 0 && pvAntes > 0) descricao += ` — ${c.nome} caiu! 💀`
         }
 
