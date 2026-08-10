@@ -78,11 +78,13 @@ async function chamarAcaoApi(payload: {
 // Ação fora de combate — sempre sobre o próprio personagem (ou o que o DM
 // está operando), nunca "alvos" de ataque. Mesma rota do modo combate,
 // discriminada pela ausência de batalhaId.
+// ajuste_ouro não está aqui — vive só em TipoAcaoInventario/chamarAcaoInventario
+// (ModalOuro sempre manda `moedas` em lote, ver route.ts).
 type TipoAcaoSessao =
   | 'dano' | 'cura' | 'pv_temporarios'
   | 'condicao_aplicada' | 'condicao_removida'
   | 'usar_espaco' | 'recuperar_espaco'
-  | 'usar_inspiracao' | 'ajuste_ouro'
+  | 'usar_inspiracao'
   | 'descanso_longo' | 'descanso_curto'
 
 async function chamarAcaoSessaoApi(payload: {
@@ -93,7 +95,6 @@ async function chamarAcaoSessaoApi(payload: {
   tipoDano?: TipoDano
   condicao?: TipoCondicao
   nivelMagia?: number
-  moeda?: 'pc' | 'pp' | 'pe' | 'po' | 'pl'
   dadosGastos?: number
   curaInformada?: number
   nomeAcao?: string
@@ -1977,6 +1978,11 @@ function BarraAcoesSessao({
 
 // Ordem de exibição pedida: platina primeiro (maior valor), cobre por
 // último — não é a ordem de gravação no banco (pc/pp/pe/po/pl), só a leitura.
+//
+// BACKLOG: personagens.moedas.custom e campanhas.moeda_custom_nome existem
+// e já são usados na ficha (FichaPersonagem.tsx), mas ModalOuro e
+// ModalDistribuirTesouro não expõem essa moeda — Ganhar/Perder/Dar/
+// Distribuir não sabem mexer em 'custom' hoje. Baixa prioridade.
 const MOEDAS: { id: 'pl' | 'po' | 'pe' | 'pp' | 'pc'; label: string }[] = [
   { id: 'pl', label: 'Platina (pl)' },
   { id: 'po', label: 'Ouro (po)' },

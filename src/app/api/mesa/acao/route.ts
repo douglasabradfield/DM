@@ -32,11 +32,17 @@ interface AcaoBatalhaPayload {
   encerrarEfeitoAtivo?: string
 }
 
+// ajuste_ouro NÃO está aqui — vive só em TipoAcaoInventario. Já esteve
+// duplicado nos dois vocabulários (aqui com payload.moeda singular,
+// ali com payload.moedas em lote); a versão daqui nunca foi atualizada
+// para o formato em lote, e como o dispatcher só desviava para o handler
+// novo quando havia batalhaId, todo ajuste_ouro de sessão (o caso do
+// ModalOuro) caía nesta versão velha e quebrava. Ver TipoAcaoInventario.
 type TipoAcaoSessao =
   | 'dano' | 'cura' | 'pv_temporarios'
   | 'condicao_aplicada' | 'condicao_removida'
   | 'usar_espaco' | 'recuperar_espaco'
-  | 'usar_inspiracao' | 'ajuste_ouro'
+  | 'usar_inspiracao'
   | 'descanso_longo' | 'descanso_curto'
 
 interface AcaoSessaoPayload {
@@ -47,7 +53,6 @@ interface AcaoSessaoPayload {
   tipoDano?: TipoDano
   condicao?: TipoCondicao
   nivelMagia?: number
-  moeda?: 'pc' | 'pp' | 'pe' | 'po' | 'pl'
   dadosGastos?: number
   curaInformada?: number
   nomeAcao?: string
@@ -102,7 +107,7 @@ interface AcaoInventarioPayload {
 
 const TIPOS_INVENTARIO = new Set<string>([
   'usar_item', 'equipar_item', 'descartar_item', 'adicionar_item', 'definir_item',
-  'transferir_item', 'transferir_moeda', 'distribuir', 'conceder_inspiracao',
+  'transferir_item', 'transferir_moeda', 'ajuste_ouro', 'distribuir', 'conceder_inspiracao',
 ])
 
 type SlotsMagiaDb = Record<string, { total: number; usados: number }>
@@ -129,18 +134,17 @@ export async function POST(req: NextRequest) {
   const admin = createAdminClient()
   const tipoRecebido = payload.tipo
 
-  // 'distribuir' e as ações de item/moeda por id têm o próprio discriminador
+  // Ações de inventário (incluindo ajuste_ouro) têm o próprio discriminador
   // (o `tipo`, não a presença de alvos) — checadas antes do branch clássico
   // de batalha para não colidir com o 'usar_item' antigo (TipoEntradaLog,
   // baseado em `alvos`, sem itemId — ver TabelaCombate/usarItem em
-  // MesaCliente.tsx, que continua intacto).
+  // MesaCliente.tsx, que continua intacto). Uma implementação só de
+  // ajuste_ouro, usada por sessão e batalha igualmente — antes havia um
+  // special-case aqui que só desviava para tratarAcaoInventario com
+  // batalhaId, deixando o ajuste_ouro de sessão cair no case legado (e
+  // divergente) de tratarAcaoSessao, que não entendia o payload em lote
+  // que o ModalOuro manda. Removido para não repetir esse bug.
   if (tipoRecebido && TIPOS_INVENTARIO.has(tipoRecebido)) {
-    return tratarAcaoInventario(payload as AcaoInventarioPayload, user.id, admin)
-  }
-  // ajuste_ouro em batalha usa o mesmo resolvedor de contexto das ações de
-  // inventário (precisa ir de combatenteId → personagem_id); em sessão
-  // continua pelo branch clássico abaixo, inalterado.
-  if (tipoRecebido === 'ajuste_ouro' && payload.batalhaId) {
     return tratarAcaoInventario(payload as AcaoInventarioPayload, user.id, admin)
   }
   if (payload.batalhaId) {
@@ -563,16 +567,6 @@ async function tratarAcaoSessao(
       if (atual <= 0) return Response.json({ erro: 'Sem inspiração disponível' }, { status: 403 })
       patch.inspiracao = atual - 1
       descricao = `${personagem.nome} usou 1 inspiração heroica`
-      break
-    }
-    case 'ajuste_ouro': {
-      if (!payload.moeda) return Response.json({ erro: 'Moeda não informada' }, { status: 400 })
-      const valor = payload.valor ?? 0
-      const moedasDb = (personagem.moedas ?? {}) as MoedasDb
-      const novoValor = Math.max(0, (moedasDb[payload.moeda] ?? 0) + valor)
-      patch.moedas = { ...moedasDb, [payload.moeda]: novoValor }
-      valorLog = valor
-      descricao = `${personagem.nome}: ${valor >= 0 ? '+' : ''}${valor} ${payload.moeda}`
       break
     }
     case 'descanso_longo': {
@@ -1009,11 +1003,13 @@ async function tratarAcaoInventario(
       return tratarTransferirMoeda(payload, userId, admin, personagem, campanhaId, sessaoId, registrarLog)
 
     case 'ajuste_ouro': {
+      // Única implementação de ajuste_ouro (sessão e batalha) — aceita as
+      // duas formas de payload para não quebrar quem manda uma moeda só:
+      // `moedas` (mapa, formato do ModalOuro — vários deltas numa chamada
+      // só) tem prioridade; `moeda`+`valor` (singular) é o formato de
+      // compatibilidade.
       const moedasDb = (personagem.moedas ?? {}) as MoedasDb
 
-      // Lote (ModalOuro manda um delta por moeda de uma vez) tem prioridade;
-      // moeda+valor isolado é o formato legado (ainda usado por chamadas
-      // antigas com uma moeda só).
       if (payload.moedas) {
         const entradas = Object.entries(payload.moedas).filter(([, v]) => (v ?? 0) !== 0) as ['pc' | 'pp' | 'pe' | 'po' | 'pl', number][]
         if (entradas.length === 0) return Response.json({ erro: 'Informe ao menos uma moeda para ajustar' }, { status: 400 })
