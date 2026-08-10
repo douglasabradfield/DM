@@ -1,6 +1,7 @@
 import { Sidebar, BottomNav } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { BannerBatalhaAtiva } from '@/components/batalha/BannerBatalhaAtiva'
+import { FaixaOffline } from '@/components/layout/FaixaOffline'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
@@ -32,6 +33,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <div className="flex h-dvh overflow-hidden bg-[var(--bg)]">
       <Sidebar isAdmin={profile?.is_admin === true} plano={profile?.plano} />
       <div className="flex-1 flex flex-col overflow-hidden">
+        <FaixaOffline />
         <Header
           titulo="Dungeon Desk"
           usuario={profile ? { nome: profile.nome, email: profile.email, username: profile.username } : { nome: null, email: user.email ?? '' }}

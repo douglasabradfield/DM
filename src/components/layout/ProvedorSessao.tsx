@@ -1,11 +1,13 @@
 'use client'
 
 import { Toaster } from 'react-hot-toast'
+import { ServiceWorkerApp } from '@/components/layout/ServiceWorkerApp'
 
 export function ProvedorSessao({ children }: { children: React.ReactNode }) {
   return (
     <>
       {children}
+      <ServiceWorkerApp />
       <Toaster
         position="bottom-right"
         toastOptions={{

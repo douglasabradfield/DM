@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useBatalha } from '@/store/batalha'
 import { useCampanha } from '@/store/campanha'
 import { usePermissao } from '@/hooks/usePermissao'
+import { useOnline } from '@/hooks/useOnline'
 import { createClient } from '@/lib/supabase/client'
 import { pvVisivelParaJogador, ESTADO_VAGO_INFO, type ModoRevelacao } from '@/lib/batalha/visibilidade-pv'
 import { vantagemDerivada } from '@/lib/batalha/vantagem-por-condicao'
@@ -2488,6 +2489,7 @@ export function MesaCliente() {
   } = useBatalha()
   const { campanhaAtiva, sessaoAtiva, sessaoCarregando } = useCampanha()
   const { ehDM } = usePermissao()
+  const online = useOnline()
 
   const [userId, setUserId] = useState<string | null>(null)
   const [infoPersonagens, setInfoPersonagens] = useState<Record<string, InfoPersonagem>>({})
@@ -3013,7 +3015,7 @@ export function MesaCliente() {
   const ehMeuTurno = !!combatenteDoTurno && meuCombatenteIds.has(combatenteDoTurno.id)
   // O DM não tem "vez" — pode agir por qualquer combatente que esteja
   // operando a qualquer momento (a API já trata isso na validação).
-  const podeAgirOperado = ehDM || ehMeuTurno
+  const podeAgirOperado = (ehDM || ehMeuTurno) && online
 
   const combatentePopup = popupCombatenteId ? combatentes.find(c => c.id === popupCombatenteId) ?? null : null
 
@@ -3108,7 +3110,7 @@ export function MesaCliente() {
 
         {personagemOperadoSessao && (
           <BarraAcoesSessao
-            podeAgir={!enviandoSessao}
+            podeAgir={!enviandoSessao && online}
             onAbrirMagia={() => setModalMagiaSessaoAberto(true)}
             onAbrirItem={() => setModalItemSessaoAberto(true)}
             onAbrirOuro={() => setModalOuroAberto(true)}

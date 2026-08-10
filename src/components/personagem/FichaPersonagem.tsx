@@ -12,6 +12,7 @@ import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { ModalLevelUp } from '@/components/personagem/ModalLevelUp'
 import { createClient } from '@/lib/supabase/client'
 import { useBatalha } from '@/store/batalha'
+import { useOnline } from '@/hooks/useOnline'
 import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
 import { getEspacosMagiaPorClasse, ehPactoArcano } from '@/lib/dados-dnd/espacos-magia'
 import { getNivelPorXP, getProgressoXP } from '@/lib/dados-dnd/xp-niveis'
@@ -83,6 +84,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const isDM = !!campanhaAtiva && !!userId && campanhaAtiva.dm_id === userId
   const ehJogador = campanhaAtiva ? papelPorCampanha[campanhaAtiva.id] === 'jogador' : false
   const podeEditar = !ehJogador || p.user_id === userId
+  const online = useOnline()
 
   useEffect(() => {
     const supabase = createClient()
@@ -786,7 +788,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
             >
               ← Voltar
             </button>
-            <BotaoRunico variante="ouro" tamanho="sm" onClick={salvar} carregando={salvando} disabled={!podeEditar}>
+            <BotaoRunico variante="ouro" tamanho="sm" onClick={salvar} carregando={salvando} disabled={!podeEditar || !online} title={!online ? 'Sem conexão' : undefined}>
               Salvar
             </BotaoRunico>
           </div>
@@ -1482,7 +1484,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
       {/* Mobile: Salvar sempre alcançável, sem depender do fim do scroll */}
       <div className="above-bottomnav fixed inset-x-0 md:hidden z-40 px-4 pt-2 pb-3 bg-[var(--bg2)] border-t border-[var(--border)]">
-        <BotaoRunico variante="ouro" tamanho="sm" onClick={salvar} carregando={salvando} disabled={!podeEditar} className="w-full">
+        <BotaoRunico variante="ouro" tamanho="sm" onClick={salvar} carregando={salvando} disabled={!podeEditar || !online} className="w-full" title={!online ? 'Sem conexão' : undefined}>
           Salvar
         </BotaoRunico>
       </div>
