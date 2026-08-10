@@ -532,6 +532,187 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
   )
 }
 
+// Versão mobile (< 768px) — cartão empilhado em vez de linha de tabela,
+// elimina o scroll horizontal. É consulta + o essencial, não paridade
+// total com a tabela: sem drag-reorder, vantagem/desvantagem, seletor de
+// tipo de dano, totais acumulados ou slots de magia — isso continua só
+// no desktop. Dano/cura aqui usam c.dano_tipo tal como está (mesmo
+// comportamento do botão de ajuste rápido da tabela); pra dano com tipo
+// específico o caminho é "⚔️ Registrar Ação", que continua visível.
+export function CartaoCombatenteMobile({ combatente: c, ativo, condicoesDisponiveis }: {
+  combatente: Combatente
+  ativo: boolean
+  condicoesDisponiveis: string[]
+}) {
+  const { aplicarDano, aplicarCura, adicionarCondicao, removerCondicao, togglePvRevelado } = useBatalha()
+  const pausada = useBatalha(s => s.statusBatalha === 'pausada')
+  const revelacaoPv = useBatalha(s => s.revelacaoPv)
+
+  const [popoverAberto, setPopoverAberto] = useState<'dano' | 'cura' | 'condicao' | null>(null)
+  const [posPopover, setPosPopover] = useState({ top: 0, left: 0 })
+
+  const pct = c.pv_maximo > 0 ? (c.pv_atual / c.pv_maximo) * 100 : 0
+  const estaMorto = c.morto || c.pv_atual <= 0
+  const corTipo = c.tipo === 'jogador' ? 'var(--gold)' : c.tipo === 'npc' ? 'var(--green2)' : 'var(--red2)'
+
+  function abrirPopover(tipo: 'dano' | 'cura' | 'condicao', e: React.MouseEvent<HTMLButtonElement>) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const largura = tipo === 'condicao' ? 176 : 208
+    setPosPopover({
+      top: rect.bottom + 4,
+      left: Math.min(rect.left, window.innerWidth - largura - 8),
+    })
+    setPopoverAberto(tipo)
+  }
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border-2 p-3 transition-colors',
+        ativo ? 'border-[var(--gold)] bg-[var(--gold)]/5' : 'border-[var(--border)] bg-[var(--bg2)]',
+        estaMorto && 'opacity-40',
+        c.ausente && 'opacity-60',
+        c.flash === 'dano' && 'bg-[#c0392b]/20',
+        c.flash === 'cura' && 'bg-[#27ae60]/20',
+      )}
+      style={!ativo ? { borderLeftColor: corTipo, borderLeftWidth: 3 } : undefined}
+    >
+      {/* Linha 1: nome + PV */}
+      <div className="flex items-start justify-between gap-2 mb-1.5">
+        <span className={cn(
+          'font-crimson text-base font-semibold truncate min-w-0 flex-1',
+          ativo ? 'text-[var(--gold2)]' : c.tipo === 'monstro' ? 'text-[var(--red2)]' : c.tipo === 'npc' ? 'text-[var(--accent2)]' : 'text-[var(--text)]'
+        )}>
+          {estaMorto && '💀 '}{c.nome}
+        </span>
+        <span className="flex-shrink-0 text-base">
+          <span className={cn('font-bold', pct > 50 ? 'text-[#27ae60]' : pct > 25 ? 'text-[#f39c12]' : 'text-[var(--red2)]')}>
+            {c.pv_atual}
+          </span>
+          <span className="text-[var(--border)]">/{c.pv_maximo}</span>
+        </span>
+      </div>
+      <BarraVida atual={c.pv_atual} maximo={c.pv_maximo} temporarios={c.pv_temporarios} className="mb-2" />
+
+      {/* Linha 2: CA · iniciativa · condições */}
+      <div className="flex items-center gap-2 flex-wrap mb-2 text-xs">
+        <span className="text-[var(--text3)]">CA <span className="text-[var(--text2)] font-bold">{c.ca}</span></span>
+        <span className="text-[var(--text3)]">Init <span className="text-[var(--text2)] font-bold">{c.iniciativa}</span></span>
+        {c.condicoes.map(cond => (
+          <PopupCondicao key={cond} condicao={cond} onRemover={() => removerCondicao(c.id, cond)} />
+        ))}
+      </div>
+
+      {/* Ações — alvos de toque de 44px */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={e => abrirPopover('dano', e)}
+          disabled={pausada}
+          title="Aplicar dano"
+          className="flex-1 h-11 rounded-lg bg-[var(--red2)]/15 text-[var(--red2)] border border-[var(--red2)]/30 flex items-center justify-center text-lg disabled:opacity-30"
+        >💥</button>
+        <button
+          onClick={e => abrirPopover('cura', e)}
+          disabled={pausada}
+          title="Aplicar cura"
+          className="flex-1 h-11 rounded-lg bg-[var(--green2)]/15 text-[var(--green2)] border border-[var(--green2)]/30 flex items-center justify-center text-lg disabled:opacity-30"
+        >💚</button>
+        <button
+          onClick={e => abrirPopover('condicao', e)}
+          title="Adicionar condição"
+          className="flex-1 h-11 rounded-lg bg-[var(--bg3)] text-[var(--text2)] border border-[var(--border)] flex items-center justify-center"
+        ><Plus className="w-5 h-5" /></button>
+        {c.tipo !== 'jogador' && (
+          <button
+            onClick={() => togglePvRevelado(c.id)}
+            disabled={revelacaoPv === 'exato'}
+            title={revelacaoPv === 'exato' ? 'Todos os PVs já visíveis' : 'Revelar aos jogadores'}
+            className={cn(
+              'flex-1 h-11 rounded-lg border flex items-center justify-center disabled:opacity-30',
+              c.pv_revelado ? 'bg-[var(--gold)]/15 text-[var(--gold)] border-[var(--gold)]/40' : 'bg-[var(--bg3)] text-[var(--text3)] border-[var(--border)]'
+            )}
+          ><Eye className="w-5 h-5" /></button>
+        )}
+      </div>
+
+      {(popoverAberto === 'dano' || popoverAberto === 'cura') && typeof document !== 'undefined' && createPortal(
+        <PopoverValor
+          titulo={popoverAberto === 'dano' ? '💥 Aplicar dano' : '💚 Aplicar cura'}
+          pos={posPopover}
+          onFechar={() => setPopoverAberto(null)}
+          onConfirmar={v => popoverAberto === 'dano' ? aplicarDano(c.id, v, c.dano_tipo) : aplicarCura(c.id, v)}
+        />,
+        document.body
+      )}
+
+      {popoverAberto === 'condicao' && typeof document !== 'undefined' && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9997]" onClick={() => setPopoverAberto(null)} />
+          <div
+            style={{ position: 'fixed', top: posPopover.top, left: posPopover.left, zIndex: 9998 }}
+            className="bg-[var(--surface)] border border-[var(--border)] rounded shadow-xl w-44 max-h-56 overflow-y-auto"
+          >
+            {condicoesDisponiveis.filter(cond => !c.condicoes.includes(cond as TipoCondicao)).map(cond => (
+              <button
+                key={cond}
+                onClick={() => { adicionarCondicao(c.id, cond as TipoCondicao); setPopoverAberto(null) }}
+                className="w-full text-left px-3 py-2 text-sm text-[var(--text2)] hover:bg-[var(--bg3)] hover:text-[var(--text)] transition-colors"
+              >
+                {cond}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+    </div>
+  )
+}
+
+function PopoverValor({ titulo, pos, onFechar, onConfirmar }: {
+  titulo: string
+  pos: { top: number; left: number }
+  onFechar: () => void
+  onConfirmar: (valor: number) => void
+}) {
+  const [valor, setValor] = useState('')
+
+  function confirmar() {
+    const v = parseInt(valor)
+    if (v > 0) { onConfirmar(v); onFechar() }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[9997]" onClick={onFechar} />
+      <div
+        style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9998 }}
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-xl p-3 w-52"
+      >
+        <p className="text-[var(--text3)] text-xs font-cinzel mb-2">{titulo}</p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            inputMode="numeric"
+            value={valor}
+            onChange={e => setValor(e.target.value.replace(/\D/g, ''))}
+            onKeyDown={e => e.key === 'Enter' && confirmar()}
+            autoFocus
+            placeholder="0"
+            className="flex-1 input-dd text-center"
+          />
+          <button
+            onClick={confirmar}
+            className="px-3 rounded bg-[var(--accent)] hover:bg-[var(--accent2)] text-white text-sm font-cinzel"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
 function mod(valor: number): string {
   const m = Math.floor((valor - 10) / 2)
   return m >= 0 ? `+${m}` : `${m}`

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import Link from 'next/link'
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
   type DragEndEvent,
@@ -10,7 +11,7 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useBatalha } from '@/store/batalha'
 import { useCampanha } from '@/store/campanha'
 import type { Combatente, EntradaLog } from '@/types/batalha'
-import { LinhaCombatente } from './LinhaCombatente'
+import { LinhaCombatente, CartaoCombatenteMobile } from './LinhaCombatente'
 import { LogBatalha } from './LogBatalha'
 import { DadosVirtuais } from './DadosVirtuais'
 import { SidebarMonstros } from './SidebarMonstros'
@@ -23,9 +24,10 @@ import { TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
 import { calcularDificuldade, xpParaCR, type NivelDificuldade } from '@/lib/dados-dnd/xp-encontro'
 import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
 import type { Personagem, TipoDano } from '@/types/dnd'
+import { cn } from '@/lib/utils'
 import {
   Play, SkipForward, ChevronLeft, ChevronRight,
-  RotateCcw, Zap, RefreshCw, Plus, Star, ChevronDown,
+  RotateCcw, Zap, RefreshCw, Plus, Star, ChevronDown, MoreHorizontal, X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -68,7 +70,27 @@ export function TabelaCombate() {
   const [encerrando, setEncerrando] = useState(false)
   const [avisoXP, setAvisoXP] = useState(false)
   const [avisoEfeitosVisivel, setAvisoEfeitosVisivel] = useState(false)
+  const [maisAberto, setMaisAberto] = useState(false)
   const campanhaAnteriorRef = useRef<string | null>(null)
+
+  // Mobile ("Mais ações") reusa a mesma regra de negócio do botão Encerrar
+  // do desktop — só consolida em uma função porque lá a lógica está
+  // inline em dois lugares (ativa/pausada) com textos ligeiramente
+  // diferentes; aqui usa sempre a versão "salva no diário".
+  async function handleEncerrarMobile() {
+    if (!xpDistribuido) { setAvisoXP(true); return }
+    if (!confirm('Encerrar a batalha? Isso salvará o log no diário.')) return
+    setEncerrando(true)
+    try {
+      await encerrarBatalha()
+      toast.success('Batalha encerrada e salva no diário!')
+    } catch (e) {
+      console.error(e)
+      toast.error('Erro ao encerrar batalha')
+    } finally {
+      setEncerrando(false)
+    }
+  }
 
   // Lembrete, não automação — sem grid posicional o app não sabe quem
   // entrou no raio de um efeito persistente. Reaparece a cada troca de
@@ -175,28 +197,21 @@ export function TabelaCombate() {
     <>
     <div className="flex h-full">
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Sessão — estado da campanha, não da batalha (controlada pela
-            Sidebar/Header). Aqui é só indicação — sem botões, pra não
-            duplicar o controle em dois lugares. */}
-        <div className="bg-[var(--bg3)] border-b border-[var(--border)] px-3 py-1.5 flex items-center gap-2">
-          {sessaoCarregando ? (
-            <span className="text-[var(--text3)] text-xs font-cinzel">Carregando sessão...</span>
-          ) : sessaoAtiva ? (
-            <span className="text-[var(--green2)] text-xs font-cinzel">
-              🟢 Sessão {sessaoAtiva.numero ?? '—'} · iniciada às{' '}
-              {sessaoAtiva.iniciada_em
-                ? new Date(sessaoAtiva.iniciada_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-                : '—'}
-            </span>
-          ) : (
-            <span className="text-[var(--text3)] text-xs font-cinzel">
-              ⚪ Nenhuma sessão ativa — inicie pela barra lateral (ou pelo topo, no celular)
-            </span>
-          )}
-        </div>
+        {/* Sessão é estado da campanha, não da batalha — o controle e a
+            indicação vivem na Sidebar/Header (sempre visíveis, em
+            qualquer tela), sem resquício aqui. */}
 
-        {/* Toolbar */}
-        <div className="bg-[var(--bg2)] border-b border-[var(--border)] px-3 py-2 flex items-center gap-2 flex-wrap">
+        {/* Atalho pro caminho desenhado pro DM no celular — /batalha é
+            consulta aqui, o cockpit completo é a /mesa. */}
+        <Link
+          href="/mesa"
+          className="flex md:hidden items-center justify-center gap-1.5 px-3 py-1.5 bg-[var(--accent)]/10 border-b border-[var(--accent)]/20 text-[var(--accent2)] text-xs font-cinzel hover:bg-[var(--accent)]/20 transition-colors"
+        >
+          📱 Operar pelo celular → Mesa
+        </Link>
+
+        {/* Toolbar — desktop, inalterada */}
+        <div className="hidden md:flex bg-[var(--bg2)] border-b border-[var(--border)] px-3 py-2 items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2 bg-[var(--bg3)] border border-[var(--border)] rounded px-3 py-1">
             <button onClick={turnoAnterior} disabled={!ativa} className="text-[var(--text3)] hover:text-[var(--text2)] disabled:opacity-30">
               <ChevronLeft className="w-4 h-4" />
@@ -355,6 +370,61 @@ export function TabelaCombate() {
           </BotaoRunico>
         </div>
 
+        {/* Toolbar — mobile compacta: só o que se usa toda hora. O resto
+            (Iniciativas, Ordenar, Danos, Cura, Zerar, XP, Inspiração,
+            Pausar/Retomar, Encerrar, Reset) vai pra "Mais". */}
+        <div className="flex md:hidden items-center gap-1.5 px-2 py-2 bg-[var(--bg2)] border-b border-[var(--border)] overflow-x-auto">
+          <div className="flex items-center gap-1 bg-[var(--bg3)] border border-[var(--border)] rounded px-1.5 py-1.5 flex-shrink-0">
+            <button onClick={turnoAnterior} disabled={!ativa} className="text-[var(--text3)] disabled:opacity-30 w-7 h-7 flex items-center justify-center flex-shrink-0">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="font-cinzel text-[var(--gold)] text-xs font-bold px-0.5 whitespace-nowrap">
+              R{rodadaAtual}·T{turnoAtual + 1}
+            </span>
+            <button onClick={proximoTurno} disabled={!ativa} className="text-[var(--text3)] disabled:opacity-30 w-7 h-7 flex items-center justify-center flex-shrink-0">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          <button
+            onClick={() => definirRevelacaoPv(revelacaoPv === 'padrao' ? 'exato' : 'padrao')}
+            title={revelacaoPv === 'padrao'
+              ? 'Padrão: jogadores só veem o que for revelado. Toque para trocar pra Exato (todos os números visíveis).'
+              : 'Exato: jogadores veem todos os números. Toque para voltar ao Padrão.'}
+            className="w-9 h-9 rounded bg-[var(--bg3)] border border-[var(--border)] flex items-center justify-center text-sm flex-shrink-0"
+          >
+            {revelacaoPv === 'padrao' ? '🙈' : '🔢'}
+          </button>
+
+          <BotaoRunico variante="ouro" tamanho="sm" onClick={() => setModalRegistrarAcao(true)} className="flex-shrink-0">
+            ⚔️ Ação
+          </BotaoRunico>
+
+          <button
+            onClick={() => setMaisAberto(true)}
+            title="Mais ações"
+            className="ml-auto flex-shrink-0 w-9 h-9 rounded bg-[var(--bg3)] border border-[var(--border)] flex items-center justify-center text-[var(--text2)]"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Linha de contexto mobile — de quem é a vez / estado da batalha */}
+        <div className="flex md:hidden items-center px-3 py-1 bg-[var(--bg2)] border-b border-[var(--border)] min-h-[24px]">
+          {combatenteAtivo && ativa && (
+            <span className="text-[var(--gold2)] text-xs font-cinzel truncate">⚔️ {combatenteAtivo.nome}</span>
+          )}
+          {!combatenteAtivo && ativa && (
+            <span className="text-[var(--red2)] text-xs font-cinzel">⚠️ Defina de quem é a vez</span>
+          )}
+          {statusBatalha === 'pausada' && (
+            <span className="text-[var(--gold)] text-xs font-cinzel animate-pulse">⏸ Batalha pausada</span>
+          )}
+          {statusBatalha === 'concluida' && (
+            <span className="text-[var(--text3)] text-xs font-cinzel">✅ {nomeBatalha}</span>
+          )}
+        </div>
+
         {avisoEfeitosVisivel && efeitosAtivosNaBatalha.length > 0 && (
           <div className="bg-[var(--gold)]/10 border-b border-[var(--gold)]/30 px-3 py-1.5 flex flex-col gap-1">
             {efeitosAtivosNaBatalha.map(ef => (
@@ -441,6 +511,9 @@ export function TabelaCombate() {
                   <p className="text-[var(--border)] text-sm font-crimson">Adicione personagens e monstros para começar</p>
                 </div>
               ) : (
+                <>
+                {/* Desktop: tabela completa, inalterada */}
+                <div className="hidden md:block">
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={combatentesOrdenados.map(c => c.id)} strategy={verticalListSortingStrategy}>
                   <div className="overflow-x-auto">
@@ -483,6 +556,26 @@ export function TabelaCombate() {
                   </div>
                 </SortableContext>
               </DndContext>
+              </div>
+
+              {/* Mobile: cartões empilhados — sem scroll horizontal, sem
+                  reordenar por arrasto (a ordem se ajusta pelo desktop). */}
+              <div className="flex md:hidden flex-col gap-2 p-2">
+                {combatentesOrdenados.map(c => {
+                  const ativosParaIndice = combatentesOrdenados.filter(x => !x.ausente && !x.morto)
+                  const indiceAtivo = ativosParaIndice.indexOf(c)
+                  const estaAtivo = indiceAtivo === turnoAtual && ativa
+                  return (
+                    <CartaoCombatenteMobile
+                      key={c.id}
+                      combatente={c}
+                      ativo={estaAtivo}
+                      condicoesDisponiveis={condicoesDisponiveis}
+                    />
+                  )
+                })}
+              </div>
+              </>
               )}
             </div>
           )}
@@ -584,7 +677,86 @@ export function TabelaCombate() {
         onCancelar={() => setModalIniciar(false)}
       />
     )}
+
+    {maisAberto && (
+      <>
+        <div className="fixed inset-0 z-[70] bg-black/60 md:hidden" onClick={() => setMaisAberto(false)} />
+        <div className="fixed inset-x-0 bottom-0 above-bottomnav z-[71] md:hidden bg-[var(--surface)] border-t border-[var(--border)] rounded-t-xl shadow-2xl max-h-[75vh] overflow-y-auto">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] sticky top-0 bg-[var(--surface)]">
+            <span className="font-cinzel text-xs text-[var(--text3)] uppercase tracking-wider">Mais ações</span>
+            <button onClick={() => setMaisAberto(false)} className="text-[var(--text3)] hover:text-[var(--text)]">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="p-2 space-y-0.5">
+            {statusBatalha === 'inativa' && (
+              <ItemAcaoMais
+                label="Iniciar batalha"
+                icone="▶️"
+                disabled={sessaoCarregando || !sessaoAtiva}
+                title={sessaoAtiva ? undefined : 'Inicie uma sessão pela barra lateral (ou pelo topo) antes de começar a batalha'}
+                onClick={() => { setMaisAberto(false); setModalIniciar(true) }}
+              />
+            )}
+            <ItemAcaoMais label="Rolar iniciativas dos monstros" icone="🎲" onClick={() => { rolarIniciativasMonstros(); setMaisAberto(false) }} />
+            <ItemAcaoMais label="Ordenar por iniciativa" icone="🎯" onClick={() => { confirmarIniciativa(); setMaisAberto(false) }} />
+            <ItemAcaoMais label="Aplicar todos os danos" icone="💥" onClick={() => { aplicarTodosDanos(); setMaisAberto(false) }} />
+            <ItemAcaoMais label="Aplicar todas as curas" icone="💚" onClick={() => { aplicarTodasCuras(); setMaisAberto(false) }} />
+            <ItemAcaoMais label="Zerar contadores" icone="🔄" onClick={() => { zerarContadores(); setMaisAberto(false) }} />
+            <ItemAcaoMais label="Distribuir XP" icone="⭐" onClick={() => { setMaisAberto(false); setModalXP(true) }} />
+            <ItemAcaoMais label="Dar inspiração" icone="⭐" onClick={() => { setMaisAberto(false); setModalInspiracao(true) }} />
+            {statusBatalha === 'ativa' && (
+              <ItemAcaoMais label="Pausar batalha" icone="⏸" onClick={() => { pausarBatalha(); setMaisAberto(false) }} />
+            )}
+            {statusBatalha === 'pausada' && (
+              <ItemAcaoMais label="Retomar batalha" icone="▶" onClick={() => { retomarBatalha(); setMaisAberto(false) }} />
+            )}
+          </div>
+          <div className="border-t border-[var(--border)] p-2 space-y-0.5">
+            {(statusBatalha === 'ativa' || statusBatalha === 'pausada') && (
+              <ItemAcaoMais
+                label={encerrando ? 'Encerrando...' : 'Encerrar batalha'}
+                icone="🏁"
+                destrutivo
+                disabled={encerrando}
+                onClick={() => { setMaisAberto(false); handleEncerrarMobile() }}
+              />
+            )}
+            <ItemAcaoMais
+              label="Resetar tela de batalha"
+              icone="🔁"
+              destrutivo
+              onClick={() => { setMaisAberto(false); resetarBatalha() }}
+            />
+          </div>
+        </div>
+      </>
+    )}
     </>
+  )
+}
+
+function ItemAcaoMais({ label, icone, onClick, disabled, destrutivo, title }: {
+  label: string
+  icone: string
+  onClick: () => void
+  disabled?: boolean
+  destrutivo?: boolean
+  title?: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={cn(
+        'w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-crimson transition-colors disabled:opacity-40',
+        destrutivo ? 'text-[var(--red2)] hover:bg-[var(--red2)]/10' : 'text-[var(--text2)] hover:bg-[var(--bg3)]'
+      )}
+    >
+      <span className="text-base w-5 text-center flex-shrink-0">{icone}</span>
+      <span>{label}</span>
+    </button>
   )
 }
 
