@@ -10,7 +10,7 @@ import type { Campanha } from '@/types/database'
 import {
   Swords, Users, Wand2, Package,
   Map, BookMarked, Bot, Shield, Dices,
-  ChevronRight, Skull, ChevronDown, Plus, X, ImageIcon, Compass, ShieldCheck, Scroll, Lock,
+  ChevronRight, Skull, ChevronDown, Plus, X, ImageIcon, Compass, ShieldCheck, Scroll, Lock, Menu,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { planoSuficiente, getPlano, type PlanoId } from '@/lib/planos'
@@ -366,57 +366,137 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
   )
 }
 
-export function BottomNav({ isAdmin, plano: _plano }: { isAdmin?: boolean; plano?: string }) {
+// Destinos mais usados na barra fixa; o resto vai para a folha "Mais".
+const HREFS_PRIMARIOS_DM = ['/mesa', '/batalha', '/personagens', '/bestiario', '/magias']
+const HREFS_PRIMARIOS_JOGADOR = ['/mesa', '/personagens', '/magias', '/itens', '/diario']
+
+export function BottomNav({ isAdmin }: { isAdmin?: boolean; plano?: string }) {
   const pathname = usePathname()
   const { campanhaAtiva, papelPorCampanha } = useCampanha()
+  const planoEfetivo = usePlanoEfetivo()
+  const [maisAberto, setMaisAberto] = useState(false)
 
   const ehJogador = campanhaAtiva
     ? papelPorCampanha[campanhaAtiva.id] === 'jogador'
     : false
 
-  const itensDm = [
-    { href: '/mesa',        icone: Dices,        label: 'Mesa'     },
-    { href: '/batalha',     icone: Swords,      label: 'Batalha'  },
-    { href: '/personagens', icone: Users,        label: 'Persona.' },
-    { href: '/bestiario',   icone: Skull,        label: 'Bestia.'  },
-    { href: '/magias',      icone: Wand2,        label: 'Magias'   },
-    { href: '/aventura',    icone: Map,          label: 'Aventura' },
-  ]
+  const itensVisiveis = itensNav.filter(item => !item.dmOnly || !ehJogador)
+  const hrefsPrimarios = ehJogador ? HREFS_PRIMARIOS_JOGADOR : HREFS_PRIMARIOS_DM
+  const itensPrimarios = hrefsPrimarios
+    .map(href => itensVisiveis.find(item => item.href === href))
+    .filter((item): item is ItemNav => !!item)
+  const itensSecundarios = itensVisiveis.filter(item => !hrefsPrimarios.includes(item.href))
 
-  const itensJogador = [
-    { href: '/mesa',        icone: Dices,        label: 'Mesa'     },
-    { href: '/personagens', icone: Users,        label: 'Persona.' },
-    { href: '/magias',      icone: Wand2,        label: 'Magias'   },
-    { href: '/itens',       icone: Package,      label: 'Itens'    },
-    { href: '/diario',      icone: BookMarked,   label: 'Diário'   },
-    { href: '/imagens',     icone: ImageIcon,    label: 'Imagens'  },
-  ]
+  function fechar() { setMaisAberto(false) }
 
-  const itensPrincipais = ehJogador ? itensJogador : itensDm
+  function renderItemCompacto(item: ItemNav) {
+    const ativo = pathname === item.href || pathname.startsWith(item.href + '/')
+    const bloqueado = !!item.planoMinimo && !planoSuficiente(planoEfetivo, item.planoMinimo)
+    const Icone = item.icone
+    if (bloqueado) {
+      return (
+        <div key={item.href} className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg min-w-0 opacity-40">
+          <Icone size={20} />
+          <span className="text-[10px] font-medium truncate">{item.label}</span>
+        </div>
+      )
+    }
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={cn(
+          'flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg transition-colors min-w-0',
+          ativo ? 'text-[var(--dd-gold)]' : 'text-[var(--dd-text3)] hover:text-[var(--dd-text2)]'
+        )}
+      >
+        <Icone size={20} />
+        <span className="text-[10px] font-medium truncate">{item.label}</span>
+      </Link>
+    )
+  }
+
+  function renderItemLista(item: ItemNav) {
+    const ativo = pathname === item.href || pathname.startsWith(item.href + '/')
+    const bloqueado = !!item.planoMinimo && !planoSuficiente(planoEfetivo, item.planoMinimo)
+    const Icone = item.icone
+    if (bloqueado) {
+      return (
+        <div key={item.href} className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-crimson opacity-40">
+          <Icone className="w-4 h-4 flex-shrink-0" />
+          <span>{item.label}</span>
+          <Lock className="w-3 h-3 ml-auto" />
+        </div>
+      )
+    }
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={fechar}
+        className={cn(
+          'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-crimson transition-colors',
+          ativo ? 'text-[var(--dd-gold)]' : 'text-[var(--dd-text3)] hover:text-[var(--dd-text2)]'
+        )}
+      >
+        <Icone className="w-4 h-4 flex-shrink-0" />
+        <span>{item.label}</span>
+      </Link>
+    )
+  }
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50
-                    bg-[var(--bg2)] border-t border-[var(--border)]
-                    flex items-center justify-around px-2 py-1 safe-area-pb">
-      {itensPrincipais.map(item => {
-        const ativo = pathname === item.href || pathname.startsWith(item.href + '/')
-        const Icone = item.icone
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              'flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg transition-colors min-w-0',
-              ativo
-                ? 'text-[var(--dd-gold)]'
-                : 'text-[var(--dd-text3)] hover:text-[var(--dd-text2)]'
-            )}
-          >
-            <Icone size={20} />
-            <span className="text-[10px] font-medium truncate">{item.label}</span>
-          </Link>
-        )
-      })}
-    </nav>
+    <>
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50
+                      bg-[var(--bg2)] border-t border-[var(--border)]
+                      flex items-center justify-around px-1 py-1 safe-area-pb">
+        {itensPrimarios.map(renderItemCompacto)}
+        <button
+          onClick={() => setMaisAberto(true)}
+          className={cn(
+            'flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg transition-colors min-w-0',
+            maisAberto ? 'text-[var(--dd-gold)]' : 'text-[var(--dd-text3)] hover:text-[var(--dd-text2)]'
+          )}
+        >
+          <Menu size={20} />
+          <span className="text-[10px] font-medium">Mais</span>
+        </button>
+      </nav>
+
+      {maisAberto && (
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/60 md:hidden" onClick={fechar} />
+          <div className="fixed inset-x-0 bottom-0 z-[61] md:hidden bg-[var(--surface)] border-t border-[var(--border)] rounded-t-xl shadow-2xl max-h-[75vh] overflow-y-auto safe-area-pb">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] sticky top-0 bg-[var(--surface)]">
+              <span className="font-cinzel text-xs text-[var(--text3)] uppercase tracking-wider">Mais opções</span>
+              <button onClick={fechar} className="text-[var(--text3)] hover:text-[var(--text)]">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-2 space-y-0.5">
+              {itensSecundarios.map(renderItemLista)}
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  onClick={fechar}
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-crimson text-[var(--dd-text3)] hover:text-[var(--dd-text2)] transition-colors"
+                >
+                  <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+                  <span>Admin</span>
+                </Link>
+              )}
+              <Link
+                href="/feedback"
+                onClick={fechar}
+                className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-crimson text-[var(--dd-text3)] hover:text-[var(--dd-text2)] transition-colors"
+              >
+                <span>💬</span>
+                <span>Feedback & Sugestões</span>
+              </Link>
+            </div>
+          </div>
+        </>
+      )}
+    </>
   )
 }

@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useCampanha } from '@/store/campanha'
 import { getTemaAtual, aplicarTema, type NomeTema, TEMAS } from '@/lib/tema'
-import { LogOut, User, ChevronDown, Settings, Bell } from 'lucide-react'
+import { LogOut, User, ChevronDown, Settings, Bell, Shield, X } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
+import { cn } from '@/lib/utils'
 
 interface HeaderProps {
   titulo: string
@@ -24,12 +25,13 @@ interface Notificacao {
 
 export function Header({ titulo, usuario }: HeaderProps) {
   const router = useRouter()
-  const { campanhaAtiva } = useCampanha()
+  const { campanhaAtiva, campanhas, setCampanhaAtiva } = useCampanha()
   const [menuAberto, setMenuAberto] = useState(false)
   const [temaMenuAberto, setTemaMenuAberto] = useState(false)
   const [tema, setTema] = useState<NomeTema>('grimorio')
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>([])
   const [notifAberto, setNotifAberto] = useState(false)
+  const [seletorCampanhaAberto, setSeletorCampanhaAberto] = useState(false)
   const userIdRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -88,10 +90,12 @@ export function Header({ titulo, usuario }: HeaderProps) {
 
   const naoLidas = notificacoes.filter(n => !n.lida)
   const lidas = notificacoes.filter(n => n.lida)
+  const campanhasAtivas = campanhas.filter(c => c.ativa !== false)
 
   return (
-    <header className="h-12 bg-[var(--bg2)] border-b border-[var(--border)] flex items-center justify-between px-4">
-      <div className="flex items-center gap-3">
+    <header className="h-12 bg-[var(--bg2)] border-b border-[var(--border)] flex items-center justify-between px-2 sm:px-4 gap-2">
+      {/* Desktop: título + campanha (inalterado) */}
+      <div className="hidden md:flex items-center gap-3">
         <h2 className="font-cinzel text-[var(--gold)] font-semibold text-sm truncate max-w-[120px] sm:max-w-none">{titulo}</h2>
         {campanhaAtiva && (
           <span className="hidden sm:inline text-[var(--border)] text-xs">
@@ -100,7 +104,21 @@ export function Header({ titulo, usuario }: HeaderProps) {
         )}
       </div>
 
-      <div className="flex items-center gap-3">
+      {/* Mobile: logo (ícone) + seletor de campanha compacto */}
+      <div className="flex md:hidden items-center gap-2 min-w-0 flex-1">
+        <Shield className="w-5 h-5 text-[var(--gold)] flex-shrink-0" />
+        <button
+          onClick={() => setSeletorCampanhaAberto(true)}
+          className="flex items-center gap-1 min-w-0 px-2 py-1 rounded text-xs font-cinzel
+                     text-[var(--gold)] bg-[var(--bg3)] border border-[var(--border)]
+                     hover:border-[var(--border2)] transition-colors"
+        >
+          <span className="truncate">{campanhaAtiva?.nome ?? 'Sem campanha'}</span>
+          <ChevronDown className="w-3 h-3 flex-shrink-0" />
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
         {/* Links de ajuda e legal */}
         <div className="hidden sm:flex items-center gap-1">
           <Link
@@ -265,8 +283,8 @@ export function Header({ titulo, usuario }: HeaderProps) {
               className="flex items-center gap-2 text-[var(--text2)] hover:text-[var(--text)] transition-colors text-sm"
             >
               <User className="w-4 h-4" />
-              <span className="font-crimson">{usuario.nome || usuario.email}</span>
-              <ChevronDown className="w-3 h-3" />
+              <span className="font-crimson hidden md:inline">{usuario.nome || usuario.email}</span>
+              <ChevronDown className="w-3 h-3 hidden sm:inline" />
             </button>
 
             {menuAberto && (
@@ -299,6 +317,50 @@ export function Header({ titulo, usuario }: HeaderProps) {
           </div>
         )}
       </div>
+
+      {/* Folha inferior: seletor de campanha (mobile) */}
+      {seletorCampanhaAberto && (
+        <>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 md:hidden"
+            onClick={() => setSeletorCampanhaAberto(false)}
+          />
+          <div className="fixed inset-x-0 bottom-0 z-[61] md:hidden bg-[var(--surface)] border-t border-[var(--border)] rounded-t-xl shadow-2xl max-h-[70vh] overflow-y-auto safe-area-pb">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] sticky top-0 bg-[var(--surface)]">
+              <span className="font-cinzel text-xs text-[var(--text3)] uppercase tracking-wider">Campanha</span>
+              <button onClick={() => setSeletorCampanhaAberto(false)} className="text-[var(--text3)] hover:text-[var(--text)]">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="py-1">
+              {campanhasAtivas.length === 0 ? (
+                <p className="text-center text-[var(--text3)] text-xs font-crimson py-4">Nenhuma campanha</p>
+              ) : (
+                campanhasAtivas.map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => { setCampanhaAtiva(c); setSeletorCampanhaAberto(false) }}
+                    className={cn(
+                      'w-full flex items-center justify-between gap-2 text-left px-4 py-3 text-sm font-crimson transition-colors',
+                      campanhaAtiva?.id === c.id ? 'text-[var(--gold)]' : 'text-[var(--text2)]'
+                    )}
+                  >
+                    <span className="truncate">{c.nome}</span>
+                    {campanhaAtiva?.id === c.id && <span className="text-xs flex-shrink-0">✓</span>}
+                  </button>
+                ))
+              )}
+              <Link
+                href="/campanhas"
+                onClick={() => setSeletorCampanhaAberto(false)}
+                className="block px-4 py-3 text-sm font-cinzel text-[var(--accent)] border-t border-[var(--border)]"
+              >
+                + Nova campanha
+              </Link>
+            </div>
+          </div>
+        </>
+      )}
     </header>
   )
 }
