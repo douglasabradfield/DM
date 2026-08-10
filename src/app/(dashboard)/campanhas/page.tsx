@@ -8,12 +8,25 @@ import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { cn } from '@/lib/utils'
 import { MODO_MESA_LIVRE } from '@/lib/planos'
+import { AvisoDesktop } from '@/components/ui/AvisoDesktop'
 import { Plus, X, UserPlus, ChevronLeft, Link2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const SISTEMAS = ['D&D 5e', 'Pathfinder', 'Call of Cthulhu', 'Tormenta', 'Vampiro: A Máscara', 'Outro']
 
+// Criar/editar campanha, gerenciar membros e convites é denso demais pra
+// telas pequenas — trocar a campanha ativa continua funcionando pelo
+// seletor do Header em qualquer tamanho, então bloquear esta página de
+// gestão inteira não tira nada que já funcionasse no mobile.
 export default function CampanhasPage() {
+  return (
+    <AvisoDesktop>
+      <CampanhasPageConteudo />
+    </AvisoDesktop>
+  )
+}
+
+function CampanhasPageConteudo() {
   const { campanhas, campanhaAtiva, setCampanhaAtiva, carregarCampanhas, papelPorCampanha } = useCampanha()
   const [selecionada, setSelecionada] = useState<Campanha | null>(null)
   const [visao, setVisao] = useState<'lista' | 'detalhe'>('lista')

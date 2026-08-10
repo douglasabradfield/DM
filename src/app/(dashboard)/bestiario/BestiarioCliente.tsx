@@ -173,7 +173,7 @@ function AbaPersonalizadoBestiario({ userId }: { userId: string }) {
               <Plus className="w-4 h-4" /> Criar Novo Monstro
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
             {carregando ? (
               <div className="p-4 text-center text-[var(--text3)] text-sm animate-pulse">Carregando...</div>
             ) : lista.length === 0 ? (
@@ -186,7 +186,10 @@ function AbaPersonalizadoBestiario({ userId }: { userId: string }) {
                 <button
                   key={m.id}
                   onClick={() => { setSelecionado(m); setVisao('detalhe') }}
-                  className={`w-full text-left px-3 py-2 border-b border-[var(--bg3)] transition-colors ${selecionado?.id === m.id ? 'bg-[var(--surface)]' : 'hover:bg-[var(--bg3)]'}`}
+                  className={cn(
+                    'w-full text-left px-3 py-2.5 rounded-lg border transition-colors',
+                    selecionado?.id === m.id ? 'bg-[var(--surface)] border-[var(--gold)]/40' : 'border-[var(--border)]/50 hover:border-[var(--border2)] hover:bg-[var(--bg3)]'
+                  )}
                 >
                   <div className="flex flex-col gap-0.5">
                     <span className="font-cinzel font-semibold text-sm text-[var(--dd-text)] leading-tight truncate">{m.nome}</span>
@@ -256,7 +259,7 @@ function AbaPersonalizadoBestiario({ userId }: { userId: string }) {
               </div>
 
               <PainelGrimorio titulo="Atributos" compacto className="mb-3">
-                <div className="grid grid-cols-6 gap-2 text-center">
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-center">
                   {atrs.map(({ label, val }) => {
                     const mod = calcularModificadorAtributo(val)
                     return (
@@ -898,6 +901,17 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
           <button onClick={onClose} className="text-[var(--border)] hover:text-[var(--red2)]"><X className="w-4 h-4" /></button>
         </div>
 
+        {/* Formulário estruturado (saves, perícias, ações...) é denso demais
+            para telas pequenas — no mobile mostra só o aviso e o fechar. */}
+        <div className="flex md:hidden flex-col items-center justify-center flex-1 p-8 text-center">
+          <p className="font-cinzel text-[var(--gold)] text-base mb-1">🖥️ Melhor no computador</p>
+          <p className="text-[var(--text3)] text-sm font-crimson max-w-xs">
+            {modo === 'criar' ? 'Criar' : 'Editar'} monstro usa um formulário grande, feito para telas maiores.
+            Abra no notebook ou tablet para usar.
+          </p>
+        </div>
+
+        <div className="hidden md:contents">
         {/* Abas de seção */}
             <div className="bg-[var(--bg2)] border-b border-[var(--border)] flex overflow-x-auto flex-shrink-0">
               {SECOES_ADMIN.map(s => (
@@ -1197,6 +1211,7 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
                 {salvando ? 'Salvando...' : modo === 'criar' ? '✨ Criar Monstro' : '💾 Salvar Tudo'}
               </button>
             </div>
+        </div>
       </div>
     </div>
   )
@@ -1478,7 +1493,7 @@ export function BestiarioCliente() {
                 </select>
               </div>
 
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
                 {carregando ? (
                   <div className="p-4 text-center text-[var(--text3)] text-sm animate-pulse">Carregando bestiário...</div>
                 ) : filtrados.length === 0 ? (
@@ -1488,9 +1503,10 @@ export function BestiarioCliente() {
                     <button
                       key={m.id}
                       onClick={() => selecionarMonstro(m)}
-                      className={`w-full text-left px-3 py-2 border-b border-[var(--bg3)] transition-colors ${
-                        selecionado?.id === m.id ? 'bg-[var(--surface)]' : 'hover:bg-[var(--bg3)]'
-                      }`}
+                      className={cn(
+                        'w-full text-left px-3 py-2.5 rounded-lg border transition-colors',
+                        selecionado?.id === m.id ? 'bg-[var(--surface)] border-[var(--gold)]/40' : 'border-[var(--border)]/50 hover:border-[var(--border2)] hover:bg-[var(--bg3)]'
+                      )}
                     >
                       <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-1">
@@ -1603,7 +1619,7 @@ export function BestiarioCliente() {
                 return (
                   <div className="max-w-3xl">
                     {/* Cabeçalho */}
-                    <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-start justify-between flex-wrap gap-2 mb-4">
                       <div>
                         <div className="flex items-center gap-2 flex-wrap mb-0.5">
                           <h2 className="font-cinzel text-[var(--gold)] text-2xl font-bold leading-tight">{m.name_pt}</h2>
@@ -1655,7 +1671,7 @@ export function BestiarioCliente() {
                     </div>
 
                     {/* Stats de combate */}
-                    <div className="grid grid-cols-4 gap-2 mb-3">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
                       <PainelGrimorio compacto className="text-center">
                         <div className="text-[var(--text3)] text-[10px] font-cinzel uppercase">CA</div>
                         <div className="text-[var(--gold)] text-xl font-cinzel font-bold">{m.armor_class}</div>
@@ -1683,7 +1699,7 @@ export function BestiarioCliente() {
                           Bônus de proficiência: <span className="text-[var(--text2)]">{m.proficiency_bonus}</span>
                         </p>
                       )}
-                      <div className="grid grid-cols-6 gap-2 text-center mb-2">
+                      <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-center mb-2">
                         {atrs.map(({ label, val }) => {
                           const mod = calcularModificadorAtributo(val)
                           return (
@@ -1697,7 +1713,7 @@ export function BestiarioCliente() {
                       </div>
                       <div className="border-t border-[var(--border)] pt-2 mt-1">
                         <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase mb-1.5">Testes de Resistência</p>
-                        <div className="grid grid-cols-6 gap-1 text-center">
+                        <div className="grid grid-cols-3 md:grid-cols-6 gap-1 text-center">
                           {savesCompletos.map(s => (
                             <div key={s.key} className={cn("rounded p-1.5", s.temProf ? "bg-[var(--accent)]/10 border border-[var(--accent)]/20" : "bg-[var(--bg3)]")}>
                               <div className="text-[var(--text3)] text-[9px] font-cinzel">{s.label}</div>

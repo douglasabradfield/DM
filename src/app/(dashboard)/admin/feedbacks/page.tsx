@@ -3,6 +3,7 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { verificarAdmin } from '@/lib/admin/verificar-admin'
 import { PainelFeedbacks } from '@/components/admin/PainelFeedbacks'
 import type { FeedbackAdmin } from '@/components/admin/PainelFeedbacks'
+import { AvisoDesktop } from '@/components/ui/AvisoDesktop'
 
 export const metadata = { title: 'Feedbacks — Admin Dungeon Desk' }
 
@@ -38,5 +39,9 @@ export default async function AdminFeedbacksPage() {
     email: f.user_id ? (emailPorId.get(f.user_id) ?? null) : null,
   }))
 
-  return <PainelFeedbacks feedbacks={feedbacksComEmail} />
+  return (
+    <AvisoDesktop>
+      <PainelFeedbacks feedbacks={feedbacksComEmail} />
+    </AvisoDesktop>
+  )
 }

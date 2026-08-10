@@ -86,7 +86,7 @@ function CardPersonagem({
               )}
               <p className="text-[var(--text3)] text-xs mt-0.5">{p.jogador_nome}</p>
             </div>
-            <div className="text-right ml-3 flex-shrink-0 pr-6">
+            <div className="text-right ml-3 flex-shrink-0 pr-11">
               <p className="text-[var(--text3)] text-xs font-cinzel">CA</p>
               <p className={`font-cinzel font-bold text-xl leading-none ${estilo.texto}`}>{p.ca || 10}</p>
             </div>
@@ -181,12 +181,12 @@ function CardPersonagem({
       </Link>
 
       {isDm && !inativo && (
-        <div ref={menuRef} className="absolute top-2 right-2 z-10">
+        <div ref={menuRef} className="absolute top-0 right-0 z-10">
           <button
             onClick={e => { e.preventDefault(); e.stopPropagation(); onToggleMenu() }}
-            className="w-6 h-6 rounded flex items-center justify-center text-[var(--text3)] hover:text-[var(--text)] hover:bg-[var(--surface)] transition-colors"
+            className="w-11 h-11 rounded flex items-center justify-center text-[var(--text3)] hover:text-[var(--text)] hover:bg-[var(--surface)] transition-colors"
           >
-            <MoreVertical className="w-3.5 h-3.5" />
+            <MoreVertical className="w-4 h-4" />
           </button>
           {menuAberto && (
             <div className="absolute right-0 top-full mt-1 w-36 bg-[var(--bg2)] border border-[var(--border)] rounded shadow-xl z-50">

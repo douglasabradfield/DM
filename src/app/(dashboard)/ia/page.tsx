@@ -9,6 +9,7 @@ import { useCampanha } from '@/store/campanha'
 import { createClient } from '@/lib/supabase/client'
 import { getLimiteIA } from '@/lib/ia/limites'
 import { MODO_MESA_LIVRE } from '@/lib/planos'
+import { AvisoDesktop } from '@/components/ui/AvisoDesktop'
 import { Bot, Send, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -19,7 +20,17 @@ interface Mensagem {
   timestamp: Date
 }
 
+// Assistente do mestre — fica atrás do aviso abaixo de md junto com as
+// outras ferramentas de mestre desta fase.
 export default function IAPage() {
+  return (
+    <AvisoDesktop>
+      <IAPageConteudo />
+    </AvisoDesktop>
+  )
+}
+
+function IAPageConteudo() {
   const [mensagens, setMensagens] = useState<Mensagem[]>([])
   const [input, setInput] = useState('')
   const [carregando, setCarregando] = useState(false)

@@ -11,9 +11,21 @@ import { Upload, Copy, ScrollText, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getPlano } from '@/lib/planos'
 import { BloqueioPlano } from '@/components/ui/BloqueioPlano'
+import { AvisoDesktop } from '@/components/ui/AvisoDesktop'
 import type { Local, Capitulo, ConteudoAventura } from '@/types/database'
 
+// Upload/organização de aventura (locais, NPCs, capítulos) é denso demais
+// pra telas pequenas — sem versão de consulta simples que valha manter
+// separada, a página inteira fica atrás do aviso abaixo de md.
 export default function AventuraPage() {
+  return (
+    <AvisoDesktop>
+      <AventuraPageConteudo />
+    </AvisoDesktop>
+  )
+}
+
+function AventuraPageConteudo() {
   const { campanhaAtiva, papelPorCampanha } = useCampanha()
   const router = useRouter()
   const [aventura, setAventura] = useState<ConteudoAventura | null>(null)

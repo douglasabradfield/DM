@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { verificarAdmin } from '@/lib/admin/verificar-admin'
 import { PainelAdmin } from '@/components/admin/PainelAdmin'
+import { AvisoDesktop } from '@/components/ui/AvisoDesktop'
 
 export interface UsuarioAdmin {
   id: string
@@ -51,5 +52,9 @@ export default async function AdminPage() {
     assinatura_status: assinaturaPorUsuario.get(p.id) ?? null,
   }))
 
-  return <PainelAdmin usuarios={usuarios} adminAtualId={user.id} />
+  return (
+    <AvisoDesktop>
+      <PainelAdmin usuarios={usuarios} adminAtualId={user.id} />
+    </AvisoDesktop>
+  )
 }
