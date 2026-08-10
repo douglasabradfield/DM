@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useCampanha } from '@/store/campanha'
-import type { Personagem, Spell, ItemInventario } from '@/types/dnd'
+import type { Personagem, Spell, InventarioItemDb } from '@/types/dnd'
 import { calcularModificadorAtributo, formatarModificador } from '@/lib/utils'
 import { DivisorOrnamentado } from '@/components/ui/DivisorOrnamentado'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
@@ -167,11 +167,12 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const [levelUp, setLevelUp] = useState<{ novoNivel: number; novaProf: number } | null>(null)
   const nivelNotificado = useRef(p.nivel)
 
-  // Inventário
-  const [inventario, setInventario] = useState<ItemInventario[]>(
-    Array.isArray(p.inventario) ? (p.inventario as ItemInventario[]) : []
-  )
-  const [itemPopup, setItemPopup] = useState<ItemInventario | null>(null)
+  // Inventário — Fase 4: lê/escreve em inventario_itens via API árbitro
+  // (/api/mesa/acao, modo ficha — só personagemId, sem sessão/batalha ativa
+  // exigida). personagens.inventario (jsonb) fica congelado como legado,
+  // nunca mais lido nem escrito por aqui.
+  const [inventario, setInventario] = useState<InventarioItemDb[]>([])
+  const [itemPopup, setItemPopup] = useState<InventarioItemDb | null>(null)
   const [buscaInventario, setBuscaInventario] = useState('')
   const [modalCompendio, setModalCompendio] = useState(false)
   const [buscaCompendio, setBuscaCompendio] = useState('')
@@ -179,17 +180,65 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const [itensCompendio, setItensCompendio] = useState<Record<string, unknown>[]>([])
   const [buscandoCompendio, setBuscandoCompendio] = useState(false)
 
-  function alterarQuantidade(idx: number, delta: number) {
-    setInventario(prev => prev
-      .map((item, i) => i === idx ? { ...item, quantidade: item.quantidade + delta } : item)
-      .filter(item => item.quantidade > 0)
-    )
-    setAlterado(true)
+  const carregarInventario = useCallback(() => {
+    createClient()
+      .from('inventario_itens')
+      .select('*')
+      .eq('personagem_id', p.id)
+      .order('nome')
+      .then(({ data }) => setInventario((data as InventarioItemDb[]) ?? []))
+  }, [p.id])
+
+  useEffect(() => { carregarInventario() }, [carregarInventario])
+
+  // Realtime — reflete itens recebidos por transferência (mesa) ou
+  // adicionados/removidos em outra aba sem precisar recarregar a página.
+  useEffect(() => {
+    const supabase = createClient()
+    const canal = supabase
+      .channel(`ficha-inventario-${p.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'inventario_itens', filter: `personagem_id=eq.${p.id}` },
+        carregarInventario
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(canal) }
+  }, [p.id, carregarInventario])
+
+  async function chamarInventarioApi(payload: Record<string, unknown>): Promise<boolean> {
+    try {
+      const resp = await fetch('/api/mesa/acao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personagemId: p.id, ...payload }),
+      })
+      const dados = await resp.json().catch(() => null)
+      if (!resp.ok) {
+        toast.error(dados?.erro ?? 'Erro ao atualizar inventário')
+        return false
+      }
+      return true
+    } catch {
+      toast.error('Sem conexão — tente novamente')
+      return false
+    }
   }
 
-  function removerItem(idx: number) {
-    setInventario(prev => prev.filter((_, i) => i !== idx))
-    setAlterado(true)
+  async function alterarQuantidade(item: InventarioItemDb, delta: number) {
+    const novaQtd = item.quantidade + delta
+    if (await chamarInventarioApi({ tipo: 'definir_item', itemId: item.id, quantidade: novaQtd })) carregarInventario()
+  }
+
+  async function removerItem(item: InventarioItemDb) {
+    if (await chamarInventarioApi({ tipo: 'definir_item', itemId: item.id, remover: true })) carregarInventario()
+  }
+
+  async function equiparItem(item: InventarioItemDb, equipado: boolean) {
+    if (await chamarInventarioApi({ tipo: 'definir_item', itemId: item.id, equipado })) {
+      carregarInventario()
+      setItemPopup(prev => prev && prev.id === item.id ? { ...prev, equipado } : prev)
+    }
   }
 
   const buscarCompendio = useCallback(async (termo: string, aba: string) => {
@@ -220,34 +269,36 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     return () => clearTimeout(t)
   }, [buscaCompendio, abaCompendio, buscarCompendio])
 
-  function adicionarDoCompendio(item: Record<string, unknown>) {
+  async function adicionarDoCompendio(item: Record<string, unknown>) {
     const slug = item.slug as string
     const namePt = item.name_pt as string
 
-    let novoItem: ItemInventario = { id: slug, nome: namePt, quantidade: 1, tipo: null, raridade: null, descricao: null }
+    let tipo: string
+    let raridade: string | null = null
+    let descricao = ''
 
     if (abaCompendio === 'magicos') {
-      novoItem = { ...novoItem, tipo: 'magico', raridade: item.rarity as string, descricao: (item.description_pt as string) || '' }
+      tipo = 'magico'
+      raridade = (item.rarity as string) ?? null
+      descricao = (item.description_pt as string) || ''
     } else if (abaCompendio === 'armas') {
-      novoItem = { ...novoItem, tipo: 'arma', descricao: `${item.damage_dice} ${item.damage_type_pt}${item.properties_pt ? ' · ' + item.properties_pt : ''}` }
+      tipo = 'arma'
+      descricao = `${item.damage_dice} ${item.damage_type_pt}${item.properties_pt ? ' · ' + item.properties_pt : ''}`
     } else if (abaCompendio === 'armaduras') {
-      novoItem = { ...novoItem, tipo: 'armadura', descricao: `${item.base_ac_formula_pt}${item.stealth_disadvantage ? ' · Desvantagem em Furtividade' : ''}${item.strength_requirement ? ` · Força mín. ${item.strength_requirement}` : ''}` }
+      tipo = 'armadura'
+      descricao = `${item.base_ac_formula_pt}${item.stealth_disadvantage ? ' · Desvantagem em Furtividade' : ''}${item.strength_requirement ? ` · Força mín. ${item.strength_requirement}` : ''}`
     } else {
-      novoItem = { ...novoItem, tipo: 'equipamento', descricao: (item.description_pt as string) || '' }
+      tipo = 'equipamento'
+      descricao = (item.description_pt as string) || ''
     }
 
-    setInventario(prev => {
-      const idx = prev.findIndex(i => i.id === slug)
-      if (idx >= 0) {
-        const novo = [...prev]
-        novo[idx] = { ...novo[idx], quantidade: novo[idx].quantidade + 1 }
-        toast.success(`+1 ${namePt}`)
-        return novo
-      }
-      toast.success(`${namePt} adicionado!`)
-      return [...prev, novoItem]
+    const ok = await chamarInventarioApi({
+      tipo: 'adicionar_item', itemRef: slug, nome: namePt, tipoItem: tipo, raridade, descricaoItem: descricao, quantidade: 1,
     })
-    setAlterado(true)
+    if (ok) {
+      toast.success(`${namePt} adicionado!`)
+      carregarInventario()
+    }
     setModalCompendio(false)
     setBuscaCompendio('')
     setItensCompendio([])
@@ -290,12 +341,14 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     setSalvando(true)
     try {
       const supabase = createClient()
-      // slots_magia é gravado só por salvarSlotsDb(); dados.slots_magia é um snapshot
-      // congelado do carregamento da ficha e sobrescreveria ajustes feitos depois.
-      const { slots_magia: _ignorado, ...dadosParaSalvar } = dados
+      // slots_magia é gravado só por salvarSlotsDb() — dados.slots_magia é um
+      // snapshot congelado do carregamento da ficha e sobrescreveria ajustes
+      // feitos depois. inventario (jsonb legado) não é mais gravado por
+      // aqui — itens agora vivem em inventario_itens, via API árbitro
+      // (chamarInventarioApi) — a coluna fica congelada como estava.
+      const { slots_magia: _ignorado, inventario: _inventarioLegado, ...dadosParaSalvar } = dados
       const { error } = await supabase.from('personagens').update({
         ...dadosParaSalvar,
-        inventario,
         nivel: parseInt(String(dados.nivel)) || 1,
         bonus_proficiencia: parseInt(String(dados.bonus_proficiencia)) || 2,
         pontos_experiencia: parseInt(String(dados.pontos_experiencia)) || 0,
@@ -1044,20 +1097,22 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                   </p>
                 ) : (
                   <div className="space-y-1">
-                    {inventario.map((item, idx) => {
+                    {inventario.map(item => {
                       if (buscaInventario && !item.nome.toLowerCase().includes(buscaInventario.toLowerCase())) return null
                       return (
-                        <div key={idx} className="flex items-center gap-2 px-2 py-1 bg-[var(--bg3)] rounded">
+                        <div key={item.id} className="flex items-center gap-2 px-2 py-1 bg-[var(--bg3)] rounded">
                           <button onClick={() => setItemPopup(item)} className="flex-1 text-left min-w-0">
-                            <span className="text-[var(--text)] text-sm font-crimson truncate block">{item.nome}</span>
+                            <span className="text-[var(--text)] text-sm font-crimson truncate block">
+                              {item.nome}{item.equipado && <span className="text-[var(--accent2)] text-[10px] ml-1">(equipado)</span>}
+                            </span>
                             {item.raridade && <span className="text-[var(--text3)] text-[10px] font-cinzel">{item.raridade}</span>}
                           </button>
                           <div className="flex items-center gap-1 flex-shrink-0">
-                            <button onClick={() => alterarQuantidade(idx, -1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">−</button>
+                            <button onClick={() => alterarQuantidade(item, -1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">−</button>
                             <span className="text-[var(--text)] text-xs w-5 text-center font-cinzel">{item.quantidade}</span>
-                            <button onClick={() => alterarQuantidade(idx, 1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">+</button>
+                            <button onClick={() => alterarQuantidade(item, 1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">+</button>
                           </div>
-                          <button onClick={() => removerItem(idx)} className="text-[var(--border)] hover:text-[var(--red2)] transition-colors flex-shrink-0">
+                          <button onClick={() => removerItem(item)} className="text-[var(--border)] hover:text-[var(--red2)] transition-colors flex-shrink-0">
                             <X className="w-3 h-3" />
                           </button>
                         </div>
@@ -1412,6 +1467,14 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               <p className="text-[var(--text2)] text-sm font-crimson leading-relaxed whitespace-pre-wrap">{itemPopup.descricao}</p>
             ) : (
               <p className="text-[var(--border)] text-sm font-crimson italic">Sem descrição disponível.</p>
+            )}
+            {podeEditar && (
+              <button
+                onClick={() => equiparItem(itemPopup, !itemPopup.equipado)}
+                className="mt-3 w-full py-2 rounded border border-[var(--border)] text-[var(--text2)] font-cinzel text-xs hover:border-[var(--accent2)] hover:text-[var(--accent2)] transition-colors"
+              >
+                {itemPopup.equipado ? 'Desequipar' : 'Equipar'}
+              </button>
             )}
           </div>
         </div>,

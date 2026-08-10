@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useBatalha } from '@/store/batalha'
@@ -13,7 +13,7 @@ import { getCondicao, TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
 import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
 import { BarraVida } from '@/components/batalha/BarraVida'
 import type { ArmaEmpunhada, Combatente, EntradaLog, TipoCondicao, EspacosMagiaBatalha, TipoEntradaLog } from '@/types/batalha'
-import type { ItemInventario, Personagem, Spell, TipoDano } from '@/types/dnd'
+import type { InventarioItemDb, Personagem, Spell, TipoDano } from '@/types/dnd'
 import { cn } from '@/lib/utils'
 import { Swords, X, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -113,6 +113,86 @@ async function chamarAcaoSessaoApi(payload: {
   } catch {
     return { ok: false, erro: 'Sem conexão — tente novamente' }
   }
+}
+
+// Inventário — mesma rota /api/mesa/acao, discriminada pelo `tipo` (não pela
+// presença de batalhaId/sessaoId): funciona a partir de sessão, de batalha
+// ou (para adicionar_item/definir_item, usados pela ficha) só com
+// personagemId, sem sessão nem batalha ativa.
+type TipoAcaoInventario =
+  | 'usar_item' | 'equipar_item' | 'descartar_item' | 'adicionar_item' | 'definir_item'
+  | 'transferir_item' | 'transferir_moeda' | 'ajuste_ouro' | 'distribuir' | 'conceder_inspiracao'
+
+interface ItemDistribuidoPayload {
+  nome: string
+  tipo?: string | null
+  raridade?: string | null
+  descricao?: string | null
+  quantidade: number
+  itemRef?: string | null
+}
+
+interface AcaoInventarioParams {
+  batalhaId?: string
+  combatenteId?: string
+  sessaoId?: string
+  personagemId?: string
+  tipo: TipoAcaoInventario
+  itemId?: string
+  itemRef?: string | null
+  nome?: string
+  tipoItem?: string | null
+  raridade?: string | null
+  descricaoItem?: string | null
+  quantidade?: number
+  equipado?: boolean
+  remover?: boolean
+  valorCura?: number
+  paraPersonagemId?: string
+  moeda?: 'pc' | 'pp' | 'pe' | 'po' | 'pl'
+  valor?: number
+  moedas?: Partial<Record<'pc' | 'pp' | 'pe' | 'po' | 'pl', number>>
+  paraPersonagemIds?: string[]
+  itens?: ItemDistribuidoPayload[]
+}
+
+interface ResultadoAcaoInventario extends ResultadoAcao {
+  descricao?: string
+}
+
+async function chamarAcaoInventario(payload: AcaoInventarioParams): Promise<ResultadoAcaoInventario> {
+  try {
+    const resp = await fetch('/api/mesa/acao', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const dados = await resp.json().catch(() => null)
+    if (!resp.ok) {
+      return { ok: false, erro: dados?.erro ?? 'Erro ao registrar ação' }
+    }
+    return { ok: true, descricao: dados?.descricao }
+  } catch {
+    return { ok: false, erro: 'Sem conexão — tente novamente' }
+  }
+}
+
+// Ícone por tipo de item — mesmo vocabulário de `tipo` usado no compêndio da
+// ficha (arma/armadura/magico/equipamento).
+function iconeItem(tipo: string | null): string {
+  switch (tipo) {
+    case 'arma': return '⚔️'
+    case 'armadura': return '🛡️'
+    case 'magico': return '✨'
+    case 'equipamento': return '🎒'
+    default: return '📦'
+  }
+}
+
+interface Destinatario {
+  id: string
+  nome: string
+  imagemUrl?: string | null
 }
 
 // Select compacto de tipo de dano — usado quando a ação não já traz um
@@ -1186,32 +1266,98 @@ function ModalMagias({
 // 🎒 Item — lista do inventário. Fase 3: só registra o uso no log e aplica
 // cura se o jogador informar um valor (poção). Sem decremento de
 // quantidade nem transferência — isso é Fase 4.
+type ContextoAcao = { sessaoId: string } | { batalhaId: string; combatenteId: string }
+
 function ModalItem({
-  personagemId, onUsar, onFechar,
+  personagemId, contexto, destinatarios, onFechar,
 }: {
   personagemId: string
-  onUsar: (item: { nome: string; cura: number }) => void
+  contexto: ContextoAcao
+  destinatarios: Destinatario[]
   onFechar: () => void
 }) {
   const [carregando, setCarregando] = useState(true)
-  const [itens, setItens] = useState<ItemInventario[]>([])
-  const [itemEscolhido, setItemEscolhido] = useState<ItemInventario | null>(null)
+  const [itens, setItens] = useState<InventarioItemDb[]>([])
+  const [itemEscolhido, setItemEscolhido] = useState<InventarioItemDb | null>(null)
+  const [vista, setVista] = useState<'detalhe' | 'usar' | 'dar'>('detalhe')
   const [cura, setCura] = useState('')
+  const [enviando, setEnviando] = useState(false)
 
-  useEffect(() => {
-    let cancelado = false
+  const carregarItens = useCallback(() => {
     createClient()
-      .from('personagens')
-      .select('inventario')
-      .eq('id', personagemId)
-      .single()
+      .from('inventario_itens')
+      .select('*')
+      .eq('personagem_id', personagemId)
+      .order('nome')
       .then(({ data }) => {
-        if (cancelado) return
-        setItens(Array.isArray(data?.inventario) ? (data.inventario as ItemInventario[]) : [])
+        setItens((data as InventarioItemDb[]) ?? [])
         setCarregando(false)
       })
-    return () => { cancelado = true }
   }, [personagemId])
+
+  useEffect(() => { carregarItens() }, [carregarItens])
+
+  // Realtime — reflete o que a API muda (inclusive itens recebidos por
+  // transferência de outro jogador enquanto o modal está aberto).
+  useEffect(() => {
+    const supabase = createClient()
+    const canal = supabase
+      .channel(`modal-item-${personagemId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'inventario_itens', filter: `personagem_id=eq.${personagemId}` },
+        carregarItens
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(canal) }
+  }, [personagemId, carregarItens])
+
+  async function executar(payload: Omit<AcaoInventarioParams, 'sessaoId' | 'personagemId' | 'batalhaId' | 'combatenteId'>) {
+    if (enviando) return
+    setEnviando(true)
+    const resultado = await chamarAcaoInventario({
+      ...('sessaoId' in contexto ? { sessaoId: contexto.sessaoId, personagemId } : { batalhaId: contexto.batalhaId, combatenteId: contexto.combatenteId }),
+      ...payload,
+    })
+    setEnviando(false)
+    if (!resultado.ok) {
+      toast.error(resultado.erro ?? 'Erro ao registrar ação')
+      return false
+    }
+    if (resultado.descricao) toast.success(resultado.descricao)
+    return true
+  }
+
+  async function usar() {
+    if (!itemEscolhido) return
+    const ok = await executar({ tipo: 'usar_item', itemId: itemEscolhido.id, valorCura: parseInt(cura) || 0 })
+    if (ok) { setItemEscolhido(null); carregarItens() }
+  }
+
+  async function darPara(destino: Destinatario) {
+    if (!itemEscolhido) return
+    const ok = await executar({ tipo: 'transferir_item', itemId: itemEscolhido.id, quantidade: 1, paraPersonagemId: destino.id })
+    if (ok) { setItemEscolhido(null); carregarItens() }
+  }
+
+  async function equipar(equipado: boolean) {
+    if (!itemEscolhido) return
+    const ok = await executar({ tipo: 'equipar_item', itemId: itemEscolhido.id, equipado })
+    if (ok) setItemEscolhido(prev => prev ? { ...prev, equipado } : prev)
+  }
+
+  async function descartar() {
+    if (!itemEscolhido) return
+    if (!window.confirm(`Descartar ${itemEscolhido.quantidade}x ${itemEscolhido.nome}?`)) return
+    const ok = await executar({ tipo: 'descartar_item', itemId: itemEscolhido.id, quantidade: itemEscolhido.quantidade })
+    if (ok) { setItemEscolhido(null); carregarItens() }
+  }
+
+  function abrirItem(item: InventarioItemDb) {
+    setItemEscolhido(item)
+    setVista('detalhe')
+    setCura('')
+  }
 
   return createPortal(
     <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/60 p-3" onClick={onFechar}>
@@ -1233,27 +1379,54 @@ function ModalItem({
               <p className="text-[var(--text3)] text-xs font-crimson text-center py-4">Inventário vazio</p>
             ) : (
               <div className="space-y-1">
-                {itens.map((item, i) => (
+                {itens.map(item => (
                   <button
-                    key={`${item.id}-${i}`}
-                    onClick={() => { setItemEscolhido(item); setCura('') }}
-                    className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg bg-[var(--surface)] hover:bg-[var(--bg2)] border border-[var(--border)] text-left min-h-[44px] transition-colors"
+                    key={item.id}
+                    onClick={() => abrirItem(item)}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg bg-[var(--surface)] hover:bg-[var(--bg2)] border border-[var(--border)] text-left min-h-[44px] transition-colors"
                   >
-                    <span className="text-[var(--text)] text-sm font-crimson truncate">{item.nome}</span>
+                    <span className="text-base flex-shrink-0">{iconeItem(item.tipo)}</span>
+                    <span className="text-[var(--text)] text-sm font-crimson truncate flex-1">
+                      {item.nome}{item.equipado && <span className="text-[var(--accent2)] text-[10px] ml-1">(equipado)</span>}
+                    </span>
                     <span className="text-[var(--text3)] text-xs font-cinzel flex-shrink-0">×{item.quantidade}</span>
                   </button>
                 ))}
               </div>
             )}
           </>
-        ) : (
+        ) : vista === 'dar' ? (
           <>
             <div className="flex items-center gap-2 mb-3">
-              <button onClick={() => setItemEscolhido(null)} className="text-[var(--text3)] hover:text-[var(--text)] p-1 -m-1 flex-shrink-0">←</button>
-              <h3 className="font-cinzel text-[var(--gold)] font-bold text-sm truncate flex-1">{itemEscolhido.nome}</h3>
-              <button onClick={onFechar} className="text-[var(--border)] hover:text-[var(--red2)] p-1 -m-1 flex-shrink-0">
-                <X className="w-4 h-4" />
-              </button>
+              <button onClick={() => setVista('detalhe')} className="text-[var(--text3)] hover:text-[var(--text)] p-1 -m-1 flex-shrink-0">←</button>
+              <h3 className="font-cinzel text-[var(--gold)] font-bold text-sm truncate flex-1">Dar {itemEscolhido.nome}</h3>
+            </div>
+            {destinatarios.length === 0 ? (
+              <p className="text-[var(--text3)] text-xs font-crimson text-center py-4">Ninguém mais para receber agora.</p>
+            ) : (
+              <>
+                <p className="text-[var(--text3)] text-[11px] font-crimson mb-2">Toque em quem vai receber</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {destinatarios.map(d => (
+                    <button
+                      key={d.id}
+                      disabled={enviando}
+                      onClick={() => darPara(d)}
+                      className="flex flex-col items-center gap-1 disabled:opacity-40"
+                    >
+                      <Avatar nome={d.nome} imagemUrl={d.imagemUrl} tamanho={44} />
+                      <span className="text-[9px] text-[var(--text3)] truncate w-full text-center font-crimson">{d.nome}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        ) : vista === 'usar' ? (
+          <>
+            <div className="flex items-center gap-2 mb-3">
+              <button onClick={() => setVista('detalhe')} className="text-[var(--text3)] hover:text-[var(--text)] p-1 -m-1 flex-shrink-0">←</button>
+              <h3 className="font-cinzel text-[var(--gold)] font-bold text-sm truncate flex-1">Usar {itemEscolhido.nome}</h3>
             </div>
             <label className="block mb-3">
               <span className="text-[var(--text3)] text-[10px] font-cinzel uppercase block mb-1">Cura aplicada (se for poção — opcional)</span>
@@ -1265,14 +1438,62 @@ function ModalItem({
                 onChange={e => setCura(e.target.value)}
                 placeholder="0"
                 className="input-dd w-full text-center text-lg py-2"
+                autoFocus
               />
             </label>
             <button
-              onClick={() => onUsar({ nome: itemEscolhido.nome, cura: parseInt(cura) || 0 })}
-              className="w-full py-3 rounded-lg bg-[var(--gold)] text-[var(--bg)] font-cinzel text-sm font-bold min-h-[48px]"
+              onClick={usar}
+              disabled={enviando}
+              className="w-full py-3 rounded-lg bg-[var(--gold)] text-[var(--bg)] font-cinzel text-sm font-bold min-h-[48px] disabled:opacity-50"
             >
               Registrar uso
             </button>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2 mb-3">
+              <button onClick={() => setItemEscolhido(null)} className="text-[var(--text3)] hover:text-[var(--text)] p-1 -m-1 flex-shrink-0">←</button>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-cinzel text-[var(--gold)] font-bold text-sm truncate">{itemEscolhido.nome}</h3>
+                {itemEscolhido.raridade && <p className="text-[var(--text3)] text-[10px] font-cinzel">{itemEscolhido.raridade}</p>}
+              </div>
+              <button onClick={onFechar} className="text-[var(--border)] hover:text-[var(--red2)] p-1 -m-1 flex-shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {itemEscolhido.descricao && (
+              <p className="text-[var(--text2)] text-xs font-crimson leading-relaxed mb-3">{itemEscolhido.descricao}</p>
+            )}
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                onClick={() => setVista('usar')}
+                disabled={enviando}
+                className="py-2.5 rounded-lg bg-[var(--gold)] text-[var(--bg)] font-cinzel text-xs font-bold min-h-[44px] disabled:opacity-50"
+              >
+                Usar
+              </button>
+              <button
+                onClick={() => setVista('dar')}
+                disabled={enviando}
+                className="py-2.5 rounded-lg border border-[var(--accent2)]/50 text-[var(--accent2)] font-cinzel text-xs min-h-[44px] disabled:opacity-50"
+              >
+                Dar
+              </button>
+              <button
+                onClick={() => equipar(!itemEscolhido.equipado)}
+                disabled={enviando}
+                className="py-2.5 rounded-lg border border-[var(--border)] text-[var(--text2)] font-cinzel text-xs min-h-[44px] disabled:opacity-50"
+              >
+                {itemEscolhido.equipado ? 'Desequipar' : 'Equipar'}
+              </button>
+              <button
+                onClick={descartar}
+                disabled={enviando}
+                className="py-2.5 rounded-lg border border-[var(--red2)]/50 text-[var(--red2)] font-cinzel text-xs min-h-[44px] disabled:opacity-50"
+              >
+                Descartar
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -1716,23 +1937,25 @@ function CartaoPersonagemSessao({
 }
 
 function BarraAcoesSessao({
-  podeAgir, onAbrirMagia, onAbrirItem, onAbrirOuro, onAbrirDescanso,
+  podeAgir, onAbrirMagia, onAbrirItem, onAbrirOuro, onAbrirDescanso, botoesDM,
 }: {
   podeAgir: boolean
   onAbrirMagia: () => void
   onAbrirItem: () => void
   onAbrirOuro: () => void
   onAbrirDescanso: () => void
+  botoesDM?: { label: string; onClick: () => void }[]
 }) {
   const botoes = [
     { label: '✨ Magia', onClick: onAbrirMagia },
     { label: '🎒 Item', onClick: onAbrirItem },
     { label: '💰 Ouro', onClick: onAbrirOuro },
     { label: '🛏️ Descanso', onClick: onAbrirDescanso },
+    ...(botoesDM ?? []),
   ]
   return (
     <div className="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg2)] px-2 py-1.5">
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className={cn('grid gap-1.5', botoes.length > 4 ? 'grid-cols-3' : 'grid-cols-4')}>
         {botoes.map(b => (
           <button
             key={b.label}
@@ -1752,25 +1975,109 @@ function BarraAcoesSessao({
   )
 }
 
-const MOEDAS: { id: 'pc' | 'pp' | 'pe' | 'po' | 'pl'; label: string }[] = [
-  { id: 'pc', label: 'Cobre (pc)' },
-  { id: 'pp', label: 'Prata (pp)' },
-  { id: 'pe', label: 'Electro (pe)' },
-  { id: 'po', label: 'Ouro (po)' },
+// Ordem de exibição pedida: platina primeiro (maior valor), cobre por
+// último — não é a ordem de gravação no banco (pc/pp/pe/po/pl), só a leitura.
+const MOEDAS: { id: 'pl' | 'po' | 'pe' | 'pp' | 'pc'; label: string }[] = [
   { id: 'pl', label: 'Platina (pl)' },
+  { id: 'po', label: 'Ouro (po)' },
+  { id: 'pe', label: 'Electro (pe)' },
+  { id: 'pp', label: 'Prata (pp)' },
+  { id: 'pc', label: 'Cobre (pc)' },
 ]
 
+// Taxas de conversão padrão de D&D 5e para peças de ouro (po): 1 pl = 10po,
+// 1 pe = 0,5po, 1 pp = 0,1po, 1 pc = 0,01po.
+const TAXA_PARA_PO: Record<'pl' | 'po' | 'pe' | 'pp' | 'pc', number> = { pl: 10, po: 1, pe: 0.5, pp: 0.1, pc: 0.01 }
+
+function totalEmPO(moedas: Partial<Record<'pl' | 'po' | 'pe' | 'pp' | 'pc', number>> | null | undefined): number {
+  if (!moedas) return 0
+  return MOEDAS.reduce((soma, m) => soma + (moedas[m.id] ?? 0) * TAXA_PARA_PO[m.id], 0)
+}
+
 function ModalOuro({
-  personagem, onConfirmar, onFechar,
+  personagem, sessaoId, destinatarios, onFechar,
 }: {
   personagem: Personagem
-  onConfirmar: (moeda: 'pc' | 'pp' | 'pe' | 'po' | 'pl', valor: number) => void
+  sessaoId: string
+  destinatarios: Destinatario[]
   onFechar: () => void
 }) {
-  const [moeda, setMoeda] = useState<'pc' | 'pp' | 'pe' | 'po' | 'pl'>('po')
-  const [texto, setTexto] = useState('')
-  const valor = parseInt(texto) || 0
-  const atual = personagem.moedas?.[moeda] ?? 0
+  const [valores, setValores] = useState<Record<'pl' | 'po' | 'pe' | 'pp' | 'pc', string>>({ pl: '', po: '', pe: '', pp: '', pc: '' })
+  const [vista, setVista] = useState<'principal' | 'dar'>('principal')
+  const [enviando, setEnviando] = useState(false)
+
+  const deltas = useMemo(() => {
+    const d: Partial<Record<'pl' | 'po' | 'pe' | 'pp' | 'pc', number>> = {}
+    for (const m of MOEDAS) {
+      const v = parseInt(valores[m.id]) || 0
+      if (v !== 0) d[m.id] = v
+    }
+    return d
+  }, [valores])
+  const temValor = Object.keys(deltas).length > 0
+
+  function limpar() { setValores({ pl: '', po: '', pe: '', pp: '', pc: '' }) }
+
+  async function aplicar(sinal: 1 | -1) {
+    if (!temValor || enviando) return
+    setEnviando(true)
+    const moedasEnvio = Object.fromEntries(Object.entries(deltas).map(([m, v]) => [m, v! * sinal]))
+    const resultado = await chamarAcaoInventario({
+      sessaoId, personagemId: personagem.id, tipo: 'ajuste_ouro', moedas: moedasEnvio,
+    })
+    setEnviando(false)
+    if (!resultado.ok) { toast.error(resultado.erro ?? 'Erro ao ajustar moedas'); return }
+    toast.success(resultado.descricao ?? 'Moedas ajustadas')
+    limpar()
+    onFechar()
+  }
+
+  async function darPara(destino: Destinatario) {
+    if (!temValor || enviando) return
+    setEnviando(true)
+    const resultado = await chamarAcaoInventario({
+      sessaoId, personagemId: personagem.id, tipo: 'transferir_moeda', moedas: deltas, paraPersonagemId: destino.id,
+    })
+    setEnviando(false)
+    if (!resultado.ok) { toast.error(resultado.erro ?? 'Erro ao transferir moedas'); return }
+    toast.success(resultado.descricao ?? 'Moedas transferidas')
+    limpar()
+    onFechar()
+  }
+
+  if (vista === 'dar') {
+    return createPortal(
+      <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/60 p-3" onClick={onFechar}>
+        <div className="bg-[var(--bg3)] border border-[var(--border2)] rounded-xl shadow-2xl w-full max-w-xs p-4" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center gap-2 mb-3">
+            <button onClick={() => setVista('principal')} className="text-[var(--text3)] hover:text-[var(--text)] p-1 -m-1 flex-shrink-0">←</button>
+            <h3 className="font-cinzel text-[var(--gold)] font-bold text-sm flex-1">Dar moedas</h3>
+          </div>
+          {destinatarios.length === 0 ? (
+            <p className="text-[var(--text3)] text-xs font-crimson text-center py-4">Ninguém mais para receber agora.</p>
+          ) : (
+            <>
+              <p className="text-[var(--text3)] text-[11px] font-crimson mb-2">Toque em quem vai receber</p>
+              <div className="grid grid-cols-4 gap-2">
+                {destinatarios.map(d => (
+                  <button
+                    key={d.id}
+                    disabled={enviando}
+                    onClick={() => darPara(d)}
+                    className="flex flex-col items-center gap-1 disabled:opacity-40"
+                  >
+                    <Avatar nome={d.nome} imagemUrl={d.imagemUrl} tamanho={44} />
+                    <span className="text-[9px] text-[var(--text3)] truncate w-full text-center font-crimson">{d.nome}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>,
+      document.body
+    )
+  }
 
   return createPortal(
     <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/60 p-3" onClick={onFechar}>
@@ -1782,38 +2089,280 @@ function ModalOuro({
           </button>
         </div>
 
-        <select value={moeda} onChange={e => setMoeda(e.target.value as typeof moeda)} className="input-dd w-full text-sm mb-2">
-          {MOEDAS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-        </select>
-        <p className="text-[var(--text3)] text-xs font-crimson mb-2">Atual: {atual}</p>
+        <div className="text-center py-2 mb-3 rounded-lg bg-[var(--bg2)] border border-[var(--border)]">
+          <span className="font-cinzel font-bold text-2xl text-[var(--gold)]">{totalEmPO(personagem.moedas).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</span>
+          <span className="text-[var(--text3)] text-xs ml-1.5">PO (total convertido)</span>
+        </div>
 
-        <input
-          type="number"
-          inputMode="numeric"
-          min={0}
-          value={texto}
-          onChange={e => setTexto(e.target.value)}
-          placeholder="0"
-          className="input-dd w-full text-center text-lg py-2 mb-3"
-          autoFocus
-        />
+        <div className="grid grid-cols-5 gap-1 mb-3">
+          {MOEDAS.map(m => (
+            <div key={m.id}>
+              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase block text-center">{m.id.toUpperCase()}</label>
+              <p className="text-[var(--text2)] text-[10px] font-crimson text-center mb-0.5">{personagem.moedas?.[m.id] ?? 0}</p>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={valores[m.id]}
+                onChange={e => setValores(prev => ({ ...prev, [m.id]: e.target.value }))}
+                placeholder="0"
+                className="input-dd w-full text-center text-sm py-1.5"
+              />
+            </div>
+          ))}
+        </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 mb-2">
           <button
-            onClick={() => valor > 0 && onConfirmar(moeda, -valor)}
-            disabled={valor <= 0}
+            onClick={() => aplicar(-1)}
+            disabled={!temValor || enviando}
             className="flex-1 py-2.5 rounded-lg border border-[var(--red2)]/50 text-[var(--red2)] font-cinzel text-sm min-h-[44px] disabled:opacity-40"
           >
-            − Remover
+            − Perder
           </button>
           <button
-            onClick={() => valor > 0 && onConfirmar(moeda, valor)}
-            disabled={valor <= 0}
+            onClick={() => aplicar(1)}
+            disabled={!temValor || enviando}
             className="flex-1 py-2.5 rounded-lg bg-[var(--gold)] text-[var(--bg)] font-cinzel font-bold text-sm min-h-[44px] disabled:opacity-40"
           >
-            + Adicionar
+            + Ganhar
           </button>
         </div>
+        <button
+          onClick={() => setVista('dar')}
+          disabled={!temValor || enviando}
+          className="w-full py-2.5 rounded-lg border border-[var(--accent2)]/50 text-[var(--accent2)] font-cinzel text-sm min-h-[44px] disabled:opacity-40"
+        >
+          Dar a outro jogador
+        </button>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// DM only — cria itens/credita moedas do zero para um ou mais personagens
+// de uma vez (loot pós-batalha, presente da história etc.). Não parte do
+// inventário de ninguém, por isso não usa o gesto de "toque no avatar
+// confirma" do Dar — aqui há uma lista de destinatários a compor antes de
+// aplicar tudo junto.
+function ModalDistribuirTesouro({
+  sessaoId, personagens, onFechar,
+}: {
+  sessaoId: string
+  personagens: Personagem[]
+  onFechar: () => void
+}) {
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
+  const [itens, setItens] = useState<ItemDistribuidoPayload[]>([])
+  const [abaCompendio, setAbaCompendio] = useState<'magicos' | 'armas' | 'armaduras' | 'gear'>('gear')
+  const [buscaItem, setBuscaItem] = useState('')
+  const [resultadosItem, setResultadosItem] = useState<Record<string, unknown>[]>([])
+  const [buscandoItem, setBuscandoItem] = useState(false)
+  const [nomeAvulso, setNomeAvulso] = useState('')
+  const [valores, setValores] = useState<Record<'pl' | 'po' | 'pe' | 'pp' | 'pc', string>>({ pl: '', po: '', pe: '', pp: '', pc: '' })
+  const [dividirIgualmente, setDividirIgualmente] = useState(false)
+  const [enviando, setEnviando] = useState(false)
+
+  const buscarItens = useCallback(async (termo: string, aba: string) => {
+    if (!termo.trim()) { setResultadosItem([]); return }
+    setBuscandoItem(true)
+    try {
+      const tabelas: Record<string, { tabela: string; campos: string }> = {
+        magicos:   { tabela: 'magic_items',      campos: 'slug,name_pt,name_en,category,rarity,description_pt' },
+        armas:     { tabela: 'equipment_weapons', campos: 'slug,name_pt,name_en,damage_dice,damage_type_pt,properties_pt' },
+        armaduras: { tabela: 'equipment_armor',   campos: 'slug,name_pt,name_en,base_ac_formula_pt,category_pt' },
+        gear:      { tabela: 'equipment_gear',    campos: 'slug,name_pt,name_en,category_pt,description_pt' },
+      }
+      const { tabela, campos } = tabelas[aba] ?? tabelas.gear
+      const { data } = await createClient().from(tabela).select(campos).or(`name_pt.ilike.%${termo}%,name_en.ilike.%${termo}%`).limit(10)
+      setResultadosItem((data ?? []) as unknown as Record<string, unknown>[])
+    } finally {
+      setBuscandoItem(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const t = setTimeout(() => buscarItens(buscaItem, abaCompendio), 300)
+    return () => clearTimeout(t)
+  }, [buscaItem, abaCompendio, buscarItens])
+
+  function alternarDestinatario(id: string) {
+    setSelecionados(prev => {
+      const novo = new Set(prev)
+      if (novo.has(id)) novo.delete(id); else novo.add(id)
+      return novo
+    })
+  }
+
+  function adicionarDoCompendio(item: Record<string, unknown>) {
+    const namePt = item.name_pt as string
+    let tipo = 'equipamento'
+    let raridade: string | null = null
+    let descricao = ''
+    if (abaCompendio === 'magicos') { tipo = 'magico'; raridade = (item.rarity as string) ?? null; descricao = (item.description_pt as string) || '' }
+    else if (abaCompendio === 'armas') { tipo = 'arma'; descricao = `${item.damage_dice} ${item.damage_type_pt}` }
+    else if (abaCompendio === 'armaduras') { tipo = 'armadura'; descricao = (item.base_ac_formula_pt as string) || '' }
+    else { descricao = (item.description_pt as string) || '' }
+
+    setItens(prev => [...prev, { nome: namePt, tipo, raridade, descricao, quantidade: 1, itemRef: item.slug as string }])
+    setBuscaItem('')
+    setResultadosItem([])
+  }
+
+  function adicionarAvulso() {
+    if (!nomeAvulso.trim()) return
+    setItens(prev => [...prev, { nome: nomeAvulso.trim(), quantidade: 1 }])
+    setNomeAvulso('')
+  }
+
+  function removerItemDaLista(idx: number) {
+    setItens(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  const moedasBase = useMemo(() => {
+    const m: Partial<Record<'pl' | 'po' | 'pe' | 'pp' | 'pc', number>> = {}
+    for (const [k, v] of Object.entries(valores)) {
+      const n = parseInt(v) || 0
+      if (n > 0) m[k as 'pl' | 'po' | 'pe' | 'pp' | 'pc'] = n
+    }
+    return m
+  }, [valores])
+
+  const podeAplicar = selecionados.size > 0 && (itens.length > 0 || Object.keys(moedasBase).length > 0)
+
+  async function aplicar() {
+    if (!podeAplicar || enviando) return
+    setEnviando(true)
+    const nDestinatarios = selecionados.size
+    const moedasPorPessoa = dividirIgualmente
+      ? Object.fromEntries(Object.entries(moedasBase).map(([m, v]) => [m, Math.floor((v ?? 0) / nDestinatarios)]))
+      : moedasBase
+    const resultado = await chamarAcaoInventario({
+      sessaoId, tipo: 'distribuir', paraPersonagemIds: Array.from(selecionados), itens, moedas: moedasPorPessoa,
+    })
+    setEnviando(false)
+    if (!resultado.ok) { toast.error(resultado.erro ?? 'Erro ao distribuir tesouro'); return }
+    toast.success(resultado.descricao ?? 'Tesouro distribuído!')
+    onFechar()
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/60 p-3" onClick={onFechar}>
+      <div
+        className="bg-[var(--bg3)] border border-[var(--border2)] rounded-xl shadow-2xl w-full max-w-sm p-4 max-h-[85vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-cinzel text-[var(--gold)] font-bold text-sm">🎁 Distribuir Tesouro</h3>
+          <button onClick={onFechar} className="text-[var(--border)] hover:text-[var(--red2)] p-1 -m-1">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase mb-1.5">Quem recebe</p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {personagens.map(p => {
+            const ativo = selecionados.has(p.id)
+            return (
+              <button key={p.id} onClick={() => alternarDestinatario(p.id)} className="flex flex-col items-center gap-0.5 w-14">
+                <div className="rounded-full p-0.5" style={{ boxShadow: ativo ? '0 0 0 2px var(--gold)' : '0 0 0 1px var(--border)' }}>
+                  <Avatar nome={p.nome} imagemUrl={p.imagem_url} tamanho={40} />
+                </div>
+                <span className="text-[9px] text-[var(--text3)] truncate w-full text-center font-crimson">{p.nome}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase mb-1.5">Itens</p>
+        <div className="flex gap-1 mb-2">
+          {(['gear', 'armas', 'armaduras', 'magicos'] as const).map(aba => (
+            <button
+              key={aba}
+              onClick={() => setAbaCompendio(aba)}
+              className={cn(
+                'flex-1 py-1 rounded text-[10px] font-cinzel border',
+                abaCompendio === aba ? 'border-[var(--gold)] text-[var(--gold)]' : 'border-[var(--border)] text-[var(--text3)]'
+              )}
+            >
+              {{ gear: 'Equip.', armas: 'Armas', armaduras: 'Armad.', magicos: 'Mágicos' }[aba]}
+            </button>
+          ))}
+        </div>
+        <input
+          type="text"
+          value={buscaItem}
+          onChange={e => setBuscaItem(e.target.value)}
+          placeholder="Buscar no compêndio..."
+          className="input-dd w-full text-xs py-1.5 mb-1"
+        />
+        {buscandoItem && <p className="text-[var(--text3)] text-[10px] font-crimson py-1">Buscando...</p>}
+        {resultadosItem.length > 0 && (
+          <div className="space-y-0.5 mb-2 max-h-32 overflow-y-auto">
+            {resultadosItem.map((item, i) => (
+              <button
+                key={i}
+                onClick={() => adicionarDoCompendio(item)}
+                className="w-full text-left px-2 py-1 rounded bg-[var(--bg3)] hover:bg-[var(--surface)] text-[var(--text)] text-xs font-crimson truncate"
+              >
+                + {item.name_pt as string}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-1 mb-2">
+          <input
+            type="text"
+            value={nomeAvulso}
+            onChange={e => setNomeAvulso(e.target.value)}
+            placeholder="Ou digite um item avulso..."
+            className="input-dd flex-1 text-xs py-1.5"
+          />
+          <button onClick={adicionarAvulso} disabled={!nomeAvulso.trim()} className="px-3 rounded bg-[var(--surface)] border border-[var(--border)] text-[var(--text2)] text-xs font-cinzel disabled:opacity-40">
+            + Add
+          </button>
+        </div>
+        {itens.length > 0 && (
+          <div className="space-y-1 mb-3">
+            {itens.map((item, i) => (
+              <div key={i} className="flex items-center gap-2 px-2 py-1 bg-[var(--bg3)] rounded">
+                <span className="text-[var(--text)] text-xs font-crimson flex-1 truncate">{item.nome}</span>
+                <button onClick={() => removerItemDaLista(i)} className="text-[var(--border)] hover:text-[var(--red2)]">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase mb-1.5">Moedas (por destinatário)</p>
+        <div className="grid grid-cols-5 gap-1 mb-2">
+          {MOEDAS.map(m => (
+            <div key={m.id}>
+              <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase block text-center">{m.id.toUpperCase()}</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={valores[m.id]}
+                onChange={e => setValores(prev => ({ ...prev, [m.id]: e.target.value }))}
+                placeholder="0"
+                className="input-dd w-full text-center text-sm py-1.5"
+              />
+            </div>
+          ))}
+        </div>
+        <label className="flex items-center gap-1.5 mb-3">
+          <input type="checkbox" checked={dividirIgualmente} onChange={e => setDividirIgualmente(e.target.checked)} className="w-3.5 h-3.5 accent-[var(--accent)]" />
+          <span className="text-[var(--text2)] text-xs font-crimson">Dividir moedas igualmente entre os escolhidos (em vez de dar o valor cheio a cada um)</span>
+        </label>
+
+        <button
+          onClick={aplicar}
+          disabled={!podeAplicar || enviando}
+          className="w-full py-3 rounded-lg bg-[var(--gold)] text-[var(--bg)] font-cinzel text-sm font-bold min-h-[48px] disabled:opacity-40"
+        >
+          {enviando ? 'Distribuindo...' : `Distribuir para ${selecionados.size || 0}`}
+        </button>
       </div>
     </div>,
     document.body
@@ -1949,6 +2498,8 @@ export function MesaCliente() {
   const [modalItemSessaoAberto, setModalItemSessaoAberto] = useState(false)
   const [modalOuroAberto, setModalOuroAberto] = useState(false)
   const [modalDescansoAberto, setModalDescansoAberto] = useState(false)
+  const [modalDistribuirAberto, setModalDistribuirAberto] = useState(false)
+  const [concedendoInspiracao, setConcedendoInspiracao] = useState(false)
 
   // O notebook (TabelaCombate) continua o cockpit; a /mesa vira controle
   // remoto do DM andando pela mesa — opera monstros, NPCs e PJs ausentes
@@ -2117,6 +2668,41 @@ export function MesaCliente() {
     [personagensSessao, userId]
   )
 
+  // Toast de "recebi algo" — via Realtime em `transferencias`, não pela
+  // resposta síncrona da própria chamada (essa já mostra o toast de quem
+  // deu). Guardado em ref porque o callback do canal é registrado uma vez
+  // e não deve carregar um `meuCombatentes`/`meusPersonagensSessao` velho.
+  const meusPersonagemIdsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const ids = new Set<string>()
+    meusPersonagensSessao.forEach(p => ids.add(p.id))
+    meuCombatentes.forEach(c => { if (c.personagem_id) ids.add(c.personagem_id) })
+    meusPersonagemIdsRef.current = ids
+  }, [meusPersonagensSessao, meuCombatentes])
+
+  useEffect(() => {
+    if (!userId) return
+    const supabase = createClient()
+    const canal = supabase
+      .channel(`mesa-transferencias:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'transferencias' },
+        (payload: { new: { para_personagem_id: string | null; de_nome: string | null; tipo: 'item' | 'moeda'; item_nome: string | null; quantidade: number | null; moedas: Record<string, number> | null; criado_por: string | null } }) => {
+          const t = payload.new
+          if (!t.para_personagem_id || !meusPersonagemIdsRef.current.has(t.para_personagem_id)) return
+          if (t.criado_por === userId) return
+          const remetente = t.de_nome ?? 'Alguém'
+          const oQue = t.tipo === 'item'
+            ? `${t.quantidade}x ${t.item_nome}`
+            : Object.entries(t.moedas ?? {}).map(([m, v]) => `${v} ${m.toUpperCase()}`).join(', ')
+          toast.success(`🎁 ${remetente} te deu ${oQue}`)
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(canal) }
+  }, [userId])
+
   useEffect(() => {
     if (!ehDM) {
       if (meusPersonagensSessao.length === 0) { setPersonagemOperadoIdSessao(null); return }
@@ -2200,16 +2786,6 @@ export function MesaCliente() {
     }
   }
 
-  function usarItemSessao(item: { nome: string; cura: number }) {
-    setModalItemSessaoAberto(false)
-    enviarAcaoSessao({ tipo: 'cura', valor: item.cura, nomeAcao: item.nome })
-  }
-
-  function ajustarOuroSessao(moeda: 'pc' | 'pp' | 'pe' | 'po' | 'pl', valor: number) {
-    setModalOuroAberto(false)
-    enviarAcaoSessao({ tipo: 'ajuste_ouro', moeda, valor })
-  }
-
   function descansoLongoSessao() {
     setModalDescansoAberto(false)
     enviarAcaoSessao({ tipo: 'descanso_longo' })
@@ -2218,6 +2794,19 @@ export function MesaCliente() {
   function descansoCurtoSessao(dadosGastos: number, curaInformada: number) {
     setModalDescansoAberto(false)
     enviarAcaoSessao({ tipo: 'descanso_curto', dadosGastos, curaInformada })
+  }
+
+  // DM só — concede ao PJ que estiver operando no seletor da sessão (troque
+  // o seletor "🎭 Operando" para escolher outro jogador antes de conceder).
+  async function concederInspiracao() {
+    if (!sessaoAtiva || !personagemOperadoSessao || concedendoInspiracao) return
+    setConcedendoInspiracao(true)
+    const resultado = await chamarAcaoInventario({
+      sessaoId: sessaoAtiva.id, personagemId: personagemOperadoSessao.id, tipo: 'conceder_inspiracao',
+    })
+    setConcedendoInspiracao(false)
+    if (!resultado.ok) { toast.error(resultado.erro ?? 'Erro ao conceder inspiração'); return }
+    toast.success(resultado.descricao ?? 'Inspiração concedida!')
   }
 
   function cancelarAcao() {
@@ -2328,22 +2917,6 @@ export function MesaCliente() {
       nivelMagia: nivelConjurado ?? undefined,
       marcarEfeitoAtivo: efeitoAtivo ? magia.nome : undefined,
     })
-  }
-
-  function usarItem(item: { nome: string; cura: number }) {
-    setModalItemAberto(false)
-    if (!combatenteOperado) return
-    const pending: AcaoPendente = {
-      // Mesma regra de conjurarMagia: a API só cura quando o tipo está em
-      // TIPOS_CURA — 'usar_item' cairia no ramo de dano.
-      tipo: item.cura > 0 ? 'cura' : 'usar_item', nomeAcao: item.nome, efeito: item.cura > 0 ? 'cura' : 'nenhum',
-      precisaAlvo: false, precisaValor: false, tipoDanoPadrao: null,
-    }
-    if (item.cura > 0) {
-      enviarAcao(pending, [{ id: combatenteOperado.id, nome: combatenteOperado.nome }], item.cura, null)
-    } else {
-      enviarAcao(pending, [], null, null)
-    }
   }
 
   function escolherReacao(opt: typeof OPCOES_REACAO[number]) {
@@ -2534,6 +3107,10 @@ export function MesaCliente() {
             onAbrirItem={() => setModalItemSessaoAberto(true)}
             onAbrirOuro={() => setModalOuroAberto(true)}
             onAbrirDescanso={() => setModalDescansoAberto(true)}
+            botoesDM={ehDM ? [
+              { label: '🎁 Distribuir', onClick: () => setModalDistribuirAberto(true) },
+              { label: '⭐ Inspiração', onClick: concederInspiracao },
+            ] : undefined}
           />
         )}
 
@@ -2547,18 +3124,24 @@ export function MesaCliente() {
           />
         )}
 
-        {modalItemSessaoAberto && personagemOperadoSessao && (
+        {modalItemSessaoAberto && personagemOperadoSessao && sessaoAtiva && (
           <ModalItem
             personagemId={personagemOperadoSessao.id}
-            onUsar={usarItemSessao}
+            contexto={{ sessaoId: sessaoAtiva.id }}
+            destinatarios={personagensSessao
+              .filter(p => p.id !== personagemOperadoSessao.id)
+              .map(p => ({ id: p.id, nome: p.nome, imagemUrl: p.imagem_url }))}
             onFechar={() => setModalItemSessaoAberto(false)}
           />
         )}
 
-        {modalOuroAberto && personagemOperadoSessao && (
+        {modalOuroAberto && personagemOperadoSessao && sessaoAtiva && (
           <ModalOuro
             personagem={personagemOperadoSessao}
-            onConfirmar={ajustarOuroSessao}
+            sessaoId={sessaoAtiva.id}
+            destinatarios={personagensSessao
+              .filter(p => p.id !== personagemOperadoSessao.id)
+              .map(p => ({ id: p.id, nome: p.nome, imagemUrl: p.imagem_url }))}
             onFechar={() => setModalOuroAberto(false)}
           />
         )}
@@ -2569,6 +3152,14 @@ export function MesaCliente() {
             onLongo={descansoLongoSessao}
             onCurto={descansoCurtoSessao}
             onFechar={() => setModalDescansoAberto(false)}
+          />
+        )}
+
+        {modalDistribuirAberto && ehDM && sessaoAtiva && (
+          <ModalDistribuirTesouro
+            sessaoId={sessaoAtiva.id}
+            personagens={personagensSessao}
+            onFechar={() => setModalDistribuirAberto(false)}
           />
         )}
       </div>
@@ -2671,10 +3262,13 @@ export function MesaCliente() {
         />
       )}
 
-      {modalItemAberto && combatenteOperado?.personagem_id && (
+      {modalItemAberto && combatenteOperado?.personagem_id && batalhaId && (
         <ModalItem
           personagemId={combatenteOperado.personagem_id}
-          onUsar={usarItem}
+          contexto={{ batalhaId, combatenteId: combatenteOperado.id }}
+          destinatarios={combatentes
+            .filter((c): c is typeof c & { personagem_id: string } => !!c.personagem_id && c.personagem_id !== combatenteOperado.personagem_id)
+            .map(c => ({ id: c.personagem_id, nome: c.nome, imagemUrl: infoPersonagens[c.personagem_id]?.imagem_url }))}
           onFechar={() => setModalItemAberto(false)}
         />
       )}

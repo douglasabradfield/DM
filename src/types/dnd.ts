@@ -379,6 +379,22 @@ export interface ItemInventario {
   descricao: string | null
 }
 
+// Linha da tabela inventario_itens (Fase 4) — substitui gradualmente
+// Personagem.inventario (jsonb, mantido congelado como legado).
+export interface InventarioItemDb {
+  id: string
+  personagem_id: string
+  item_ref: string | null
+  nome: string
+  tipo: string | null
+  raridade: string | null
+  descricao: string | null
+  quantidade: number
+  equipado: boolean
+  notas: string | null
+  criado_em?: string
+}
+
 export interface EspacoMagia {
   nivel: number
   total: number
