@@ -38,7 +38,10 @@ const itensNav: ItemNav[] = [
 
 export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string }) {
   const pathname = usePathname()
-  const { campanhaAtiva, campanhas, setCampanhaAtiva, setCampanhas, carregarCampanhas, papelPorCampanha } = useCampanha()
+  const {
+    campanhaAtiva, campanhas, setCampanhaAtiva, setCampanhas, carregarCampanhas, papelPorCampanha,
+    carregarSessaoAtiva,
+  } = useCampanha()
   const [dropdownAberto, setDropdownAberto] = useState(false)
   const [modalNova, setModalNova] = useState(false)
   const [nomeCampanha, setNomeCampanha] = useState('')
@@ -47,6 +50,17 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { carregarCampanhas() }, [])
+
+  // Ponto único de carga da sessão ativa — Sidebar é montado por todo o
+  // layout do dashboard (DM e jogador, /batalha e /mesa), então qualquer
+  // tela que leia sessaoAtiva do store já a encontra carregada, sem
+  // precisar de um useEffect próprio (e sem risco de esquecer de adicionar
+  // um em uma tela nova). Dispara de novo sempre que a campanha ativa muda.
+  useEffect(() => {
+    if (!campanhaAtiva?.id) return
+    carregarSessaoAtiva(campanhaAtiva.id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campanhaAtiva?.id])
 
   useEffect(() => {
     const salvo = localStorage.getItem('sidebar-minimizada')

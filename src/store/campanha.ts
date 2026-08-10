@@ -7,6 +7,11 @@ import { createClient } from '@/lib/supabase/client'
 interface EstadoCampanha {
   campanhaAtiva: Campanha | null
   sessaoAtiva: Sessao | null
+  // Distingue "ainda não carregou" de "carregou e não há sessão" — sem
+  // isso, sessaoAtiva null é ambíguo e telas guardadas por !sessaoAtiva
+  // (ex: MesaCliente) mostram "nenhuma sessão" por um instante mesmo
+  // quando existe uma, só porque o fetch ainda não voltou.
+  sessaoCarregando: boolean
   campanhas: Campanha[]
   papelPorCampanha: Record<string, 'dm' | 'jogador'>
 
@@ -18,6 +23,9 @@ interface EstadoCampanha {
   // Sessão — ambiente da mesa, independente de batalha (pode conter 0..N)
   iniciarSessao: (titulo?: string) => Promise<Sessao>
   encerrarSessao: () => Promise<void>
+  // Chamado uma única vez, centralizado em Sidebar.tsx (montado por todo o
+  // layout do dashboard) sempre que campanhaAtiva muda — não em cada tela
+  // que lê sessaoAtiva. Ver comentário em Sidebar.tsx.
   carregarSessaoAtiva: (campanhaId: string) => Promise<void>
 }
 
@@ -67,6 +75,7 @@ export const useCampanha = create<EstadoCampanha>()(
     (set, get) => ({
       campanhaAtiva: null,
       sessaoAtiva: null,
+      sessaoCarregando: true,
       campanhas: [],
       papelPorCampanha: {},
 
@@ -103,7 +112,7 @@ export const useCampanha = create<EstadoCampanha>()(
 
         if (error) throw error
 
-        set({ sessaoAtiva: sessao as Sessao })
+        set({ sessaoAtiva: sessao as Sessao, sessaoCarregando: false })
         assinarRealtimeSessao(campanhaId, set)
         return sessao as Sessao
       },
@@ -119,10 +128,11 @@ export const useCampanha = create<EstadoCampanha>()(
           .eq('id', sessaoId)
 
         if (error) throw error
-        set({ sessaoAtiva: null })
+        set({ sessaoAtiva: null, sessaoCarregando: false })
       },
 
       carregarSessaoAtiva: async (campanhaId) => {
+        set({ sessaoCarregando: true })
         const supabase = createClient()
         const { data: sessao } = await supabase
           .from('sessoes')
@@ -131,7 +141,7 @@ export const useCampanha = create<EstadoCampanha>()(
           .neq('status', 'encerrada')
           .maybeSingle()
 
-        set({ sessaoAtiva: (sessao as Sessao) ?? null })
+        set({ sessaoAtiva: (sessao as Sessao) ?? null, sessaoCarregando: false })
         assinarRealtimeSessao(campanhaId, set)
       },
 

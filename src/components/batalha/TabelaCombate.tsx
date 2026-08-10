@@ -42,7 +42,7 @@ export function TabelaCombate() {
     revelacaoPv, definirRevelacaoPv,
   } = useBatalha()
   const {
-    campanhaAtiva, sessaoAtiva, iniciarSessao, encerrarSessao, carregarSessaoAtiva,
+    campanhaAtiva, sessaoAtiva, sessaoCarregando, iniciarSessao, encerrarSessao,
   } = useCampanha()
 
   // Canal Realtime da batalha — assina quando batalhaId aparece, encerra no
@@ -105,9 +105,8 @@ export function TabelaCombate() {
     if (idAtual && statusBatalha === 'inativa') {
       carregarBatalhaAtiva(idAtual)
     }
-    if (idAtual) {
-      carregarSessaoAtiva(idAtual)
-    }
+    // sessaoAtiva é carregada centralizadamente em Sidebar.tsx (montado por
+    // todo o layout do dashboard) — não duplica a chamada aqui.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campanhaAtiva?.id])
 
@@ -205,7 +204,9 @@ export function TabelaCombate() {
         {/* Sessão — estado independente da batalha, controla se a mesa (fora
             deste notebook) tem algo pra mostrar aos jogadores. */}
         <div className="bg-[var(--bg3)] border-b border-[var(--border)] px-3 py-1.5 flex items-center gap-2 flex-wrap">
-          {sessaoAtiva ? (
+          {sessaoCarregando ? (
+            <span className="text-[var(--text3)] text-xs font-cinzel">Carregando sessão...</span>
+          ) : sessaoAtiva ? (
             <>
               <span className="text-[var(--green2)] text-xs font-cinzel">
                 🟢 Sessão {sessaoAtiva.numero ?? '—'} · iniciada às{' '}
@@ -308,7 +309,7 @@ export function TabelaCombate() {
             <BotaoRunico
               variante="ouro"
               tamanho="sm"
-              disabled={!sessaoAtiva}
+              disabled={sessaoCarregando || !sessaoAtiva}
               title={sessaoAtiva ? undefined : 'Inicie uma sessão antes de começar a batalha'}
               onClick={() => setModalIniciar(true)}
             >

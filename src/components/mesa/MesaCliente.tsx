@@ -1931,7 +1931,7 @@ export function MesaCliente() {
     combatentes, log, rodadaAtual, turnoAtual, turnoCombatenteId, ativa,
     statusBatalha, batalhaId, revelacaoPv, carregarBatalhaAtiva, definirArmaEmpunhada,
   } = useBatalha()
-  const { campanhaAtiva, sessaoAtiva } = useCampanha()
+  const { campanhaAtiva, sessaoAtiva, sessaoCarregando } = useCampanha()
   const { ehDM } = usePermissao()
 
   const [userId, setUserId] = useState<string | null>(null)
@@ -2452,6 +2452,14 @@ export function MesaCliente() {
         <Swords className="w-10 h-10 text-[var(--border)]" />
         <p className="font-cinzel text-[var(--border)] text-lg">Selecione uma campanha</p>
         <p className="text-[var(--border)] text-sm font-crimson">Escolha uma campanha no menu para ver a mesa.</p>
+      </div>
+    )
+  }
+
+  if (sessaoCarregando) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <p className="text-[var(--text3)] font-cinzel text-sm">Carregando...</p>
       </div>
     )
   }
