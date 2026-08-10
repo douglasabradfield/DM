@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useCampanha } from '@/store/campanha'
 import type { Personagem, Spell, InventarioItemDb } from '@/types/dnd'
-import { calcularModificadorAtributo, formatarModificador } from '@/lib/utils'
+import { calcularModificadorAtributo, formatarModificador, cn } from '@/lib/utils'
 import { DivisorOrnamentado } from '@/components/ui/DivisorOrnamentado'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
@@ -694,8 +694,29 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     router.refresh()
   }
 
+  const dropdownMenu = menuAberto && (
+    <div className="absolute right-0 top-full mt-1 bg-[var(--bg2)] border border-[var(--border)] rounded shadow-xl z-50 min-w-[160px]">
+      <button
+        onClick={() => { setMenuAberto(false); abrirModalCopiar() }}
+        className="w-full text-left px-3 py-2 text-xs font-cinzel text-[var(--text3)] hover:bg-[var(--surface)] hover:text-[var(--gold)] transition-colors"
+      >
+        Copiar personagem
+      </button>
+      {isDM && !p.user_id && p.tipo_personagem === 'jogador' && (
+        <button
+          onClick={() => { setMenuAberto(false); setModalTransferir(true) }}
+          className="w-full text-left px-3 py-2 text-xs font-cinzel text-[var(--text3)] hover:bg-[var(--surface)] hover:text-[var(--gold)] transition-colors border-t border-[var(--border)]"
+        >
+          👤 Transferir para Jogador
+        </button>
+      )}
+    </div>
+  )
+
+  const PAGINAS_LABEL: [1 | 2 | 3, string][] = [[1, 'Ficha'], [2, 'Detalhes'], [3, 'Magias']]
+
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-4xl mx-auto pb-32 md:pb-0">
       {/* Banner de aprovação pendente */}
       {!dados.ativo && isDM && (
         <div className="mb-4 p-4 bg-[var(--accent2)]/10 border border-[var(--accent2)]/40 rounded-xl flex items-center justify-between gap-4">
@@ -730,65 +751,86 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         </div>
       )}
       {/* Cabeçalho */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="font-cinzel text-2xl text-[var(--gold)]">{dados.nome}</h1>
-          <p className="text-[var(--text3)] text-sm">{dados.raca} · {dados.classe} Nv{dados.nivel} · {dados.alinhamento}</p>
+      <div className="mb-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="font-cinzel text-2xl text-[var(--gold)] truncate">{dados.nome}</h1>
+            <p className="text-[var(--text3)] text-sm truncate">{dados.raca} · {dados.classe} Nv{dados.nivel} · {dados.alinhamento}</p>
+          </div>
+
+          {/* Desktop: inalterado */}
+          <div className="hidden md:flex items-center gap-2 flex-shrink-0">
+            {[1, 2, 3].map(n => (
+              <button
+                key={n}
+                onClick={() => setPagina(n)}
+                className={`font-cinzel text-xs px-3 py-1.5 rounded border transition-colors ${
+                  pagina === n ? 'bg-[var(--surface)] border-[var(--gold)] text-[var(--gold)]' : 'border-[var(--border)] text-[var(--text3)] hover:border-[var(--border2)]'
+                }`}
+              >
+                Página {n}
+              </button>
+            ))}
+            <div className="relative">
+              <button
+                onClick={() => setMenuAberto(v => !v)}
+                className="font-cinzel text-xs px-2 py-1.5 rounded border border-[var(--border)] text-[var(--text3)] hover:border-[var(--border2)] transition-colors"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+              {dropdownMenu}
+            </div>
+            <button
+              onClick={voltar}
+              className="font-cinzel text-xs px-3 py-1.5 rounded border border-[var(--border)] text-[var(--text3)] hover:border-[var(--border2)] transition-colors"
+            >
+              ← Voltar
+            </button>
+            <BotaoRunico variante="ouro" tamanho="sm" onClick={salvar} carregando={salvando} disabled={!podeEditar}>
+              Salvar
+            </BotaoRunico>
+          </div>
+
+          {/* Mobile: só o essencial — o resto some para a barra de abas e o rodapé fixo */}
+          <div className="flex md:hidden items-center gap-1.5 flex-shrink-0">
+            <div className="relative">
+              <button
+                onClick={() => setMenuAberto(v => !v)}
+                className="p-2 rounded border border-[var(--border)] text-[var(--text3)]"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+              {dropdownMenu}
+            </div>
+            <button
+              onClick={voltar}
+              className="font-cinzel text-sm px-2.5 py-1.5 rounded border border-[var(--border)] text-[var(--text3)]"
+            >
+              ←
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {[1, 2, 3].map(n => (
+
+        {/* Mobile: seletor de página compacto, substitui as abas de desktop */}
+        <div className="flex md:hidden gap-1 mt-3">
+          {PAGINAS_LABEL.map(([n, label]) => (
             <button
               key={n}
               onClick={() => setPagina(n)}
-              className={`font-cinzel text-xs px-3 py-1.5 rounded border transition-colors ${
-                pagina === n ? 'bg-[var(--surface)] border-[var(--gold)] text-[var(--gold)]' : 'border-[var(--border)] text-[var(--text3)] hover:border-[var(--border2)]'
+              className={`flex-1 font-cinzel text-xs py-2 rounded border transition-colors ${
+                pagina === n ? 'bg-[var(--surface)] border-[var(--gold)] text-[var(--gold)]' : 'border-[var(--border)] text-[var(--text3)]'
               }`}
             >
-              Página {n}
+              {label}
             </button>
           ))}
-          <div className="relative">
-            <button
-              onClick={() => setMenuAberto(v => !v)}
-              className="font-cinzel text-xs px-2 py-1.5 rounded border border-[var(--border)] text-[var(--text3)] hover:border-[var(--border2)] transition-colors"
-            >
-              <MoreVertical className="w-4 h-4" />
-            </button>
-            {menuAberto && (
-              <div className="absolute right-0 top-full mt-1 bg-[var(--bg2)] border border-[var(--border)] rounded shadow-xl z-50 min-w-[160px]">
-                <button
-                  onClick={() => { setMenuAberto(false); abrirModalCopiar() }}
-                  className="w-full text-left px-3 py-2 text-xs font-cinzel text-[var(--text3)] hover:bg-[var(--surface)] hover:text-[var(--gold)] transition-colors"
-                >
-                  Copiar personagem
-                </button>
-                {isDM && !p.user_id && p.tipo_personagem === 'jogador' && (
-                  <button
-                    onClick={() => { setMenuAberto(false); setModalTransferir(true) }}
-                    className="w-full text-left px-3 py-2 text-xs font-cinzel text-[var(--text3)] hover:bg-[var(--surface)] hover:text-[var(--gold)] transition-colors border-t border-[var(--border)]"
-                  >
-                    👤 Transferir para Jogador
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-          <button
-            onClick={voltar}
-            className="font-cinzel text-xs px-3 py-1.5 rounded border border-[var(--border)] text-[var(--text3)] hover:border-[var(--border2)] transition-colors"
-          >
-            ← Voltar
-          </button>
-          <BotaoRunico variante="ouro" tamanho="sm" onClick={salvar} carregando={salvando} disabled={!podeEditar}>
-            Salvar
-          </BotaoRunico>
         </div>
       </div>
 
       {pagina === 1 && (
         <div className="space-y-3">
           {/* Header linha 1: Nome | Classe+Nível | Antecedente | Jogador */}
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <div>
               <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Nome</label>
               <input type="text" value={dados.nome ?? ''} onChange={e => atualizar('nome', e.target.value)} className="w-full input-dd" disabled={!podeEditar} />
@@ -800,7 +842,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               </div>
               <div>
                 <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Nível</label>
-                <input type="number" value={dados.nivel} onChange={e => atualizar('nivel', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" disabled={!podeEditar} />
+                <input type="number" inputMode="numeric" value={dados.nivel} onChange={e => atualizar('nivel', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" disabled={!podeEditar} />
               </div>
             </div>
             <div>
@@ -814,7 +856,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           </div>
 
           {/* Header linha 2: Inspiração | Raça | Tendência | XP */}
-          <div className="grid grid-cols-4 gap-2 items-start">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-start">
             <InspiracaoHeroica
               valor={typeof dados.inspiracao === 'number' ? dados.inspiracao : 0}
               onChange={val => atualizar('inspiracao', val as never)}
@@ -867,8 +909,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
             </div>
           </div>
 
-          {/* Corpo: 3 colunas */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Corpo: 3 colunas (empilha em telas < md) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {/* Col 1 — Atributos estreitos + Prof/Salvaguardas/Perícias ao lado */}
             <div className="space-y-2">
               <div className="flex gap-3">
@@ -893,6 +935,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                       <span className="font-cinzel font-bold text-[var(--gold)] text-xl leading-none">+</span>
                       <input
                         type="number"
+                        inputMode="numeric"
                         min={2}
                         max={6}
                         value={dados.bonus_proficiencia || 2}
@@ -951,6 +994,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                 <div className="w-8 h-8 rounded-full border border-[var(--border)] bg-[var(--bg)] flex items-center justify-center flex-shrink-0">
                   <input
                     type="number"
+                    inputMode="numeric"
                     value={percepcaoPassiva}
                     onChange={e => setPercepcaoPassivaOverride(parseInt(e.target.value) || 0)}
                     onFocus={e => e.target.select()}
@@ -984,15 +1028,15 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               <div className="grid grid-cols-3 gap-1">
                 <div>
                   <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">CA</label>
-                  <input type="number" value={dados.ca} onChange={e => atualizar('ca', parseInt(e.target.value) || 10)} className="w-full input-dd text-center" disabled={!podeEditar} />
+                  <input type="number" inputMode="numeric" value={dados.ca} onChange={e => atualizar('ca', parseInt(e.target.value) || 10)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
                 <div>
                   <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Iniciativa</label>
-                  <input type="number" value={dados.iniciativa} onChange={e => atualizar('iniciativa', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
+                  <input type="number" inputMode="numeric" value={dados.iniciativa} onChange={e => atualizar('iniciativa', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
                 <div>
                   <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Desl. (m)</label>
-                  <input type="number" value={dados.deslocamento} onChange={e => atualizar('deslocamento', parseInt(e.target.value) || 9)} className="w-full input-dd text-center" disabled={!podeEditar} />
+                  <input type="number" inputMode="numeric" value={dados.deslocamento} onChange={e => atualizar('deslocamento', parseInt(e.target.value) || 9)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
               </div>
 
@@ -1000,15 +1044,15 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               <div className="grid grid-cols-3 gap-1">
                 <div>
                   <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase block">PV Máx</label>
-                  <input type="number" value={dados.pv_maximo} onChange={e => atualizar('pv_maximo', parseInt(e.target.value) || 1)} className="w-full input-dd text-center" disabled={!podeEditar} />
+                  <CampoNumerico value={dados.pv_maximo} onChange={v => atualizar('pv_maximo', v)} min={1} disabled={!podeEditar} />
                 </div>
                 <div>
                   <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase block">PV Atual</label>
-                  <input type="number" value={dados.pv_atual} onChange={e => atualizar('pv_atual', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar || emCombate} />
+                  <CampoNumerico value={dados.pv_atual} onChange={v => atualizar('pv_atual', v)} min={0} disabled={!podeEditar || emCombate} />
                 </div>
                 <div>
                   <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase block">PV Temp</label>
-                  <input type="number" value={dados.pv_temporarios} onChange={e => atualizar('pv_temporarios', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar || emCombate} />
+                  <CampoNumerico value={dados.pv_temporarios} onChange={v => atualizar('pv_temporarios', v)} min={0} disabled={!podeEditar || emCombate} />
                 </div>
               </div>
 
@@ -1041,7 +1085,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               <PainelGrimorio titulo="Ataques" compacto>
                 <div className="space-y-1">
                   {(dados.ataques ?? []).map((atq, i) => (
-                    <div key={i} className="grid grid-cols-3 gap-1 text-xs">
+                    <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-1 text-xs">
                       <input value={atq.nome} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], nome: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="Nome" />
                       <input value={atq.bonus_ataque} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], bonus_ataque: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="+5" />
                       <input value={atq.dano} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], dano: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="1d8+3" />
@@ -1207,8 +1251,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
             ))}
           </div>
 
-          {/* Corpo: 2 colunas */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Corpo: 2 colunas (empilha em telas < md) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Col 1 — Aparência + História */}
             <div className="space-y-3">
               <PainelGrimorio titulo="Aparência Física" compacto>
@@ -1252,7 +1296,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       {pagina === 3 && (
         <div className="space-y-4">
           <PainelGrimorio titulo="Conjuração" ornamentado>
-            <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
                 <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Classe Conjuradora</label>
                 <input type="text" value={dados.classe_conjuradora ?? ''} onChange={e => atualizar('classe_conjuradora', e.target.value)} className="w-full input-dd" placeholder="Mago, Clérigo..." disabled={!podeEditar} />
@@ -1263,7 +1307,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               </div>
               <div>
                 <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">CD de Magia</label>
-                <input type="number" value={dados.cd_magia ?? ''} onChange={e => atualizar('cd_magia', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
+                <input type="number" inputMode="numeric" value={dados.cd_magia ?? ''} onChange={e => atualizar('cd_magia', parseInt(e.target.value) || 0)} className="w-full input-dd text-center" disabled={!podeEditar} />
               </div>
             </div>
 
@@ -1291,6 +1335,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                       {modoAjuste ? (
                         <input
                           type="number"
+                          inputMode="numeric"
                           min={0}
                           max={9}
                           value={total}
@@ -1434,6 +1479,13 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           </PainelGrimorio>
         </div>
       )}
+
+      {/* Mobile: Salvar sempre alcançável, sem depender do fim do scroll */}
+      <div className="above-bottomnav fixed inset-x-0 md:hidden z-40 px-4 pt-2 pb-3 bg-[var(--bg2)] border-t border-[var(--border)]">
+        <BotaoRunico variante="ouro" tamanho="sm" onClick={salvar} carregando={salvando} disabled={!podeEditar} className="w-full">
+          Salvar
+        </BotaoRunico>
+      </div>
 
       {levelUp && (
         <ModalLevelUp
@@ -1717,8 +1769,7 @@ function AtributoCard({ abrev, value, onChange, disabled }: {
   const mod = calcularModificadorAtributo(value)
   return (
     <div
-      className="flex flex-col items-center border-2 border-[var(--border)] rounded-xl overflow-hidden bg-[var(--surface)]"
-      style={{ width: 64 }}
+      className="flex flex-col items-center border-2 border-[var(--border)] rounded-xl overflow-hidden bg-[var(--surface)] w-20 md:w-16 flex-shrink-0"
     >
       <div className="w-full text-center py-0.5 bg-[var(--bg3)] border-b border-[var(--border)]">
         <span className="font-cinzel text-[var(--text3)] text-[8px] uppercase tracking-widest">{abrev}</span>
@@ -1726,18 +1777,79 @@ function AtributoCard({ abrev, value, onChange, disabled }: {
       <div className="my-1.5 w-9 h-9 rounded-full border-2 border-[var(--border)] bg-[var(--bg)] flex items-center justify-center">
         <span className="font-cinzel font-bold text-base text-[var(--gold)] leading-none">{formatarModificador(mod)}</span>
       </div>
-      <div className="w-full border-t border-[var(--border)] bg-[var(--bg3)]">
+      <div className="w-full border-t border-[var(--border)] bg-[var(--bg3)] flex items-center">
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={() => onChange(Math.max(1, value - 1))}
+          disabled={disabled}
+          className="md:hidden flex-shrink-0 w-5 h-7 text-[var(--text3)] hover:text-[var(--text)] disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold leading-none"
+        >−</button>
         <input
           type="number"
+          inputMode="numeric"
           min={1}
           max={30}
           value={value}
           onChange={e => onChange(parseInt(e.target.value) || 10)}
           onFocus={e => e.target.select()}
           disabled={disabled}
-          className="w-full text-center font-cinzel font-bold text-sm py-1 bg-transparent border-none outline-none text-[var(--text)] focus:text-[var(--gold)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="w-full min-w-0 flex-1 text-center font-cinzel font-bold text-sm py-1 bg-transparent border-none outline-none text-[var(--text)] focus:text-[var(--gold)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={() => onChange(Math.min(30, value + 1))}
+          disabled={disabled}
+          className="md:hidden flex-shrink-0 w-5 h-7 text-[var(--text3)] hover:text-[var(--text)] disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold leading-none"
+        >+</button>
       </div>
+    </div>
+  )
+}
+
+// Campo numérico com steppers +/− visíveis só no mobile (md:hidden) — no
+// desktop o input fica idêntico ao original, os botões apenas não renderizam.
+function CampoNumerico({ value, onChange, min, max, step = 1, disabled, inputClassName }: {
+  value: number
+  onChange: (v: number) => void
+  min?: number
+  max?: number
+  step?: number
+  disabled?: boolean
+  inputClassName?: string
+}) {
+  function ajustar(delta: number) {
+    let novo = value + delta
+    if (min !== undefined) novo = Math.max(min, novo)
+    if (max !== undefined) novo = Math.min(max, novo)
+    onChange(novo)
+  }
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => ajustar(-step)}
+        disabled={disabled}
+        className="md:hidden flex-shrink-0 w-7 h-7 rounded bg-[var(--bg3)] text-[var(--text2)] hover:bg-[var(--surface2)] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-sm font-bold leading-none"
+      >−</button>
+      <input
+        type="number"
+        inputMode="numeric"
+        value={value}
+        onChange={e => onChange(parseInt(e.target.value) || (min ?? 0))}
+        onFocus={e => e.target.select()}
+        disabled={disabled}
+        className={inputClassName ?? 'w-full input-dd text-center'}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => ajustar(step)}
+        disabled={disabled}
+        className="md:hidden flex-shrink-0 w-7 h-7 rounded bg-[var(--bg3)] text-[var(--text2)] hover:bg-[var(--surface2)] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-sm font-bold leading-none"
+      >+</button>
     </div>
   )
 }

@@ -327,8 +327,44 @@ export default function CriarPersonagemPage() {
     )
   }
 
+  function renderBotoesNavegacao() {
+    return (
+      <>
+        <button
+          onClick={() => { const ant = passos[idxAtual - 1]; if (ant) setPasso(ant); else router.push('/personagens') }}
+          className="flex items-center gap-2 px-4 py-2 font-cinzel text-sm text-[var(--text3)] border border-[var(--border)] rounded hover:border-[var(--text)] transition-colors"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          {idxAtual === 0 ? 'Cancelar' : 'Anterior'}
+        </button>
+        {passo === 'revisao' ? (
+          <button
+            onClick={criarPersonagem}
+            disabled={salvando || !personagem.nome}
+            className="flex items-center gap-2 px-5 py-2 font-cinzel text-sm bg-[var(--accent)] text-white rounded hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {salvando ? 'Enviando...' : (
+              <>
+                <span className="hidden md:inline">⚔️ Enviar para Aprovação</span>
+                <span className="md:hidden">⚔️ Enviar</span>
+              </>
+            )}
+          </button>
+        ) : (
+          <button
+            onClick={() => { const prox = passos[idxAtual + 1]; if (prox) setPasso(prox) }}
+            disabled={!podeProsseguir(passo, personagem)}
+            className="flex items-center gap-2 px-5 py-2 font-cinzel text-sm bg-[var(--accent)] text-white rounded hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            Próximo <ChevronRight className="w-4 h-4" />
+          </button>
+        )}
+      </>
+    )
+  }
+
   return (
-    <div className="p-4 max-w-3xl mx-auto">
+    <div className="p-4 pb-28 md:pb-4 max-w-3xl mx-auto">
       {/* Header com progresso */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
@@ -403,32 +439,14 @@ export default function CriarPersonagemPage() {
         />
       )}
 
-      {/* Navegação */}
-      <div className="flex justify-between mt-6 pt-4 border-t border-[var(--border)]">
-        <button
-          onClick={() => { const ant = passos[idxAtual - 1]; if (ant) setPasso(ant); else router.push('/personagens') }}
-          className="flex items-center gap-2 px-4 py-2 font-cinzel text-sm text-[var(--text3)] border border-[var(--border)] rounded hover:border-[var(--text)] transition-colors"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          {idxAtual === 0 ? 'Cancelar' : 'Anterior'}
-        </button>
-        {passo === 'revisao' ? (
-          <button
-            onClick={criarPersonagem}
-            disabled={salvando || !personagem.nome}
-            className="flex items-center gap-2 px-5 py-2 font-cinzel text-sm bg-[var(--accent)] text-white rounded hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {salvando ? 'Enviando...' : '⚔️ Enviar para Aprovação'}
-          </button>
-        ) : (
-          <button
-            onClick={() => { const prox = passos[idxAtual + 1]; if (prox) setPasso(prox) }}
-            disabled={!podeProsseguir(passo, personagem)}
-            className="flex items-center gap-2 px-5 py-2 font-cinzel text-sm bg-[var(--accent)] text-white rounded hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            Próximo <ChevronRight className="w-4 h-4" />
-          </button>
-        )}
+      {/* Navegação — desktop: inalterada, em fluxo normal */}
+      <div className="hidden md:flex justify-between mt-6 pt-4 border-t border-[var(--border)]">
+        {renderBotoesNavegacao()}
+      </div>
+
+      {/* Navegação — mobile: fixa no rodapé, sempre alcançável */}
+      <div className="above-bottomnav fixed inset-x-0 md:hidden z-40 flex justify-between gap-2 px-4 pt-2 pb-3 bg-[var(--bg2)] border-t border-[var(--border)]">
+        {renderBotoesNavegacao()}
       </div>
     </div>
   )
@@ -803,7 +821,7 @@ function StepRevisao({ personagem, racaDados, classeDados, antecedenteDados, pvM
             <p className="font-cinzel font-bold text-[var(--gold)] text-xl">{classeDados.dado_vida}</p>
           </div>
         </div>
-        <div className="grid grid-cols-6 gap-1 pt-2 border-t border-[var(--border)]">
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-1 pt-2 border-t border-[var(--border)]">
           {ATRIBUTOS_KEYS.map(key => {
             const final = atribFinal(key)
             const mod = Math.floor((final - 10) / 2)

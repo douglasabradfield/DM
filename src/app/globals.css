@@ -295,6 +295,13 @@ body::before {
   padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
 }
 
+/* Posiciona uma barra fixa logo acima do BottomNav (que já reserva sua
+   própria safe-area via .safe-area-pb) — evita duas barras fixas sobrepostas
+   no rodapé em telas pequenas. */
+.above-bottomnav {
+  bottom: calc(3.9rem + env(safe-area-inset-bottom));
+}
+
 /* Esconder scrollbar no mobile */
 @media (max-width: 768px) {
   * { scrollbar-width: none; }
