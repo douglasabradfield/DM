@@ -7,7 +7,7 @@ import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoAdicionarPersonagem } from '@/components/ui/BotaoAdicionarPersonagem'
 import { BotaoReportar } from '@/components/ui/BotaoReportar'
 import { BloqueioPlano } from '@/components/ui/BloqueioPlano'
-import { Search, Plus, X, Trash2 } from 'lucide-react'
+import { Search, Plus, X, Trash2, SlidersHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getPlano } from '@/lib/planos'
 import toast from 'react-hot-toast'
@@ -123,7 +123,7 @@ function AbaPersonalizadoMagias({ userId }: { userId: string }) {
               <Plus className="w-4 h-4" /> Criar Nova Magia
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
             {carregando ? (
               <div className="p-4 text-center text-[var(--text3)] text-sm animate-pulse">Carregando...</div>
             ) : lista.length === 0 ? (
@@ -136,7 +136,10 @@ function AbaPersonalizadoMagias({ userId }: { userId: string }) {
                 <button
                   key={m.id}
                   onClick={() => { setSelecionada(m); setVisao('detalhe') }}
-                  className={`w-full text-left px-3 py-2 border-b border-[var(--bg3)] transition-colors ${selecionada?.id === m.id ? 'bg-[var(--surface)]' : 'hover:bg-[var(--bg3)]'}`}
+                  className={cn(
+                    'w-full text-left px-3 py-2.5 rounded-lg border transition-colors',
+                    selecionada?.id === m.id ? 'bg-[var(--surface)] border-[var(--gold)]/40' : 'border-[var(--border)]/50 hover:border-[var(--border2)] hover:bg-[var(--bg3)]'
+                  )}
                 >
                   <div className="flex flex-col gap-0.5">
                     <span className="font-cinzel font-semibold text-sm text-[var(--dd-text)] leading-tight truncate">{m.nome}</span>
@@ -163,7 +166,7 @@ function AbaPersonalizadoMagias({ userId }: { userId: string }) {
             </div>
           ) : (
             <div className="max-w-2xl">
-              <div className="mb-4 flex items-start justify-between gap-4">
+              <div className="mb-4 flex items-start justify-between flex-wrap gap-4">
                 <div>
                   <h2 className="font-cinzel text-[var(--accent2)] text-2xl font-bold">{selecionada.nome}</h2>
                   <p className="text-[var(--text2)] text-sm mt-1">
@@ -181,7 +184,7 @@ function AbaPersonalizadoMagias({ userId }: { userId: string }) {
                 </button>
               </div>
               <PainelGrimorio compacto className="mb-3">
-                <div className="grid grid-cols-2 gap-2 text-sm font-crimson">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm font-crimson">
                   <div><span className="text-[var(--text3)] font-cinzel text-xs">Tempo: </span><span className="text-[var(--text)]">{selecionada.dados.tempo_conjuracao}</span></div>
                   <div><span className="text-[var(--text3)] font-cinzel text-xs">Alcance: </span><span className="text-[var(--text)]">{selecionada.dados.alcance}</span></div>
                   <div><span className="text-[var(--text3)] font-cinzel text-xs">Componentes: </span><span className="text-[var(--text)]">{selecionada.dados.componentes}</span></div>
@@ -280,6 +283,7 @@ export function MagiasCliente() {
   const [filtroNivel, setFiltroNivel] = useState<number | ''>('')
   const [filtroEscola, setFiltroEscola] = useState('')
   const [filtroClasse, setFiltroClasse] = useState('')
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -330,6 +334,40 @@ export function MagiasCliente() {
 
   const corEscola = (escola: string | null) => COR_ESCOLA[escola ?? ''] ?? 'var(--text3)'
 
+  const filtrosMagia = (
+    <>
+      <div className="flex gap-1">
+        <select
+          value={filtroNivel}
+          onChange={e => setFiltroNivel(e.target.value === '' ? '' : parseInt(e.target.value))}
+          className="flex-1 input-dd text-xs"
+        >
+          <option value="">Nível</option>
+          <option value={0}>Truque</option>
+          {Array.from({ length: 9 }, (_, i) => (
+            <option key={i + 1} value={i + 1}>{i + 1}º Nível</option>
+          ))}
+        </select>
+        <select
+          value={filtroEscola}
+          onChange={e => setFiltroEscola(e.target.value)}
+          className="flex-1 input-dd text-xs"
+        >
+          <option value="">Escola</option>
+          {ESCOLAS.map(e => <option key={e} value={e}>{e}</option>)}
+        </select>
+      </div>
+      <select
+        value={filtroClasse}
+        onChange={e => setFiltroClasse(e.target.value)}
+        className="w-full input-dd text-xs"
+      >
+        <option value="">Todas as classes</option>
+        {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+    </>
+  )
+
   if (userPlano === null) return null
 
   const plano = getPlano(userPlano)
@@ -367,48 +405,29 @@ export function MagiasCliente() {
               visao === 'detalhe' ? "hidden md:flex" : "flex"
             )}>
               <div className="p-3 border-b border-[var(--border)] space-y-2">
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
-                  <input
-                    type="text"
-                    value={busca}
-                    onChange={e => setBusca(e.target.value)}
-                    placeholder="Buscar magia (PT ou EN)..."
-                    className="w-full input-dd pl-9 text-sm"
-                  />
-                </div>
-                <div className="flex gap-1">
-                  <select
-                    value={filtroNivel}
-                    onChange={e => setFiltroNivel(e.target.value === '' ? '' : parseInt(e.target.value))}
-                    className="flex-1 input-dd text-xs"
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
+                    <input
+                      type="text"
+                      value={busca}
+                      onChange={e => setBusca(e.target.value)}
+                      placeholder="Buscar magia (PT ou EN)..."
+                      className="w-full input-dd pl-9 text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setFiltrosAbertos(true)}
+                    className="md:hidden flex-shrink-0 w-9 h-9 rounded border border-[var(--border)] flex items-center justify-center text-[var(--text2)] hover:border-[var(--border2)] transition-colors"
+                    title="Filtros"
                   >
-                    <option value="">Nível</option>
-                    <option value={0}>Truque</option>
-                    {Array.from({ length: 9 }, (_, i) => (
-                      <option key={i + 1} value={i + 1}>{i + 1}º Nível</option>
-                    ))}
-                  </select>
-                  <select
-                    value={filtroEscola}
-                    onChange={e => setFiltroEscola(e.target.value)}
-                    className="flex-1 input-dd text-xs"
-                  >
-                    <option value="">Escola</option>
-                    {ESCOLAS.map(e => <option key={e} value={e}>{e}</option>)}
-                  </select>
+                    <SlidersHorizontal className="w-4 h-4" />
+                  </button>
                 </div>
-                <select
-                  value={filtroClasse}
-                  onChange={e => setFiltroClasse(e.target.value)}
-                  className="w-full input-dd text-xs"
-                >
-                  <option value="">Todas as classes</option>
-                  {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <div className="hidden md:block space-y-2">{filtrosMagia}</div>
               </div>
 
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
                 {carregando ? (
                   <div className="p-4 text-center text-[var(--text3)] text-sm animate-pulse">Carregando magias...</div>
                 ) : filtradas.length === 0 ? (
@@ -418,9 +437,10 @@ export function MagiasCliente() {
                     <button
                       key={m.id}
                       onClick={() => selecionarMagia(m)}
-                      className={`w-full text-left px-3 py-2 border-b border-[var(--bg3)] transition-colors ${
-                        selecionada?.id === m.id ? 'bg-[var(--surface)]' : 'hover:bg-[var(--bg3)]'
-                      }`}
+                      className={cn(
+                        'w-full text-left px-3 py-2.5 rounded-lg border transition-colors',
+                        selecionada?.id === m.id ? 'bg-[var(--surface)] border-[var(--gold)]/40' : 'border-[var(--border)]/50 hover:border-[var(--border2)] hover:bg-[var(--bg3)]'
+                      )}
                     >
                       <div className="flex flex-col gap-0.5">
                         <span className="font-cinzel font-semibold text-sm text-[var(--dd-text)] leading-tight truncate">
@@ -434,6 +454,28 @@ export function MagiasCliente() {
                   ))
                 )}
               </div>
+
+              {/* Filtros — folha inferior no mobile */}
+              {filtrosAbertos && (
+                <>
+                  <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setFiltrosAbertos(false)} />
+                  <div className="fixed inset-x-0 bottom-0 above-bottomnav z-50 md:hidden bg-[var(--bg2)] border-t border-[var(--border)] rounded-t-xl shadow-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-cinzel text-xs text-[var(--text3)] uppercase tracking-wider">Filtros</span>
+                      <button onClick={() => setFiltrosAbertos(false)} className="text-[var(--text3)] hover:text-[var(--text)]">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="space-y-2">{filtrosMagia}</div>
+                    <button
+                      onClick={() => setFiltrosAbertos(false)}
+                      className="w-full py-2 bg-[var(--accent)] hover:opacity-90 text-white rounded font-cinzel text-sm transition-opacity"
+                    >
+                      Aplicar
+                    </button>
+                  </div>
+                </>
+              )}
 
               <div className="p-2 border-t border-[var(--border)] text-center">
                 <p className="text-[var(--text3)] text-xs font-cinzel">{filtradas.length} de {lista.length} magia(s)</p>
@@ -460,7 +502,7 @@ export function MagiasCliente() {
                 </div>
               ) : (
                 <div className="max-w-2xl">
-                  <div className="mb-4 flex items-start justify-between gap-4">
+                  <div className="mb-4 flex items-start justify-between flex-wrap gap-4">
                     <div>
                       <h2 className="font-cinzel text-[var(--accent2)] text-2xl font-bold">{selecionada.name_pt}</h2>
                       <p className="text-[var(--border)] text-sm italic">{selecionada.name_en}</p>
@@ -493,7 +535,7 @@ export function MagiasCliente() {
                   </div>
 
                   <PainelGrimorio compacto className="mb-3">
-                    <div className="grid grid-cols-2 gap-2 text-sm font-crimson">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm font-crimson">
                       <div><span className="text-[var(--text3)] font-cinzel text-xs">Tempo: </span><span className="text-[var(--text)]">{selecionada.casting_time_pt}</span></div>
                       <div><span className="text-[var(--text3)] font-cinzel text-xs">Alcance: </span><span className="text-[var(--text)]">{selecionada.range_pt}</span></div>
                       <div><span className="text-[var(--text3)] font-cinzel text-xs">Componentes: </span><span className="text-[var(--text)]">{selecionada.components_pt}</span></div>

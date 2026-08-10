@@ -260,13 +260,13 @@ export default function DiarioPage() {
     !ehJogador || entrada.criado_por === userId
 
   return (
-    <div className="p-4">
-      <div className="flex items-center justify-between mb-4">
+    <div className="p-4 pb-24 md:pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div>
           <h2 className="font-cinzel text-[var(--gold)] text-lg font-bold">Diário de Campanha</h2>
           <p className="text-[var(--text3)] text-sm font-crimson">{entradas.length} entradas registradas</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {log.length > 0 && !ehJogador && (
             <BotaoRunico variante="secundario" tamanho="sm" onClick={exportarLogBatalha}>
               <Sword className="w-3 h-3" /> Exportar Log de Batalha
@@ -277,6 +277,17 @@ export default function DiarioPage() {
           </BotaoRunico>
         </div>
       </div>
+
+      {/* Mobile: botão flutuante — sempre alcançável mesmo com a lista rolada */}
+      <button
+        onClick={() => { setVisibilidade(ehJogador ? 'grupo' : 'dm'); setCriando(true) }}
+        className="md:hidden fixed right-4 above-bottomnav z-40 w-14 h-14 rounded-full
+                   bg-[var(--gold)] text-[var(--bg)] shadow-2xl flex items-center justify-center
+                   active:scale-95 transition-transform"
+        aria-label="Nova entrada"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
 
       {/* Filtros */}
       <div className="flex gap-2 mb-4 flex-wrap">
@@ -386,7 +397,7 @@ export default function DiarioPage() {
             const estaEditando = entradaEditando?.id === entrada.id
             return (
               <PainelGrimorio key={entrada.id} compacto>
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span style={{ color: COR_TIPO[entrada.tipo] }}>{ICONES_TIPO[entrada.tipo]}</span>
                     {entrada.titulo && (

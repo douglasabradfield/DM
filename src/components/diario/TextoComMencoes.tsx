@@ -91,10 +91,13 @@ export function TextoComMencoes({ texto, className }: TextoComMencoesProps) {
   function abrirPopup(id: string, e: React.MouseEvent) {
     e.stopPropagation()
     const rect = (e.target as HTMLElement).getBoundingClientRect()
+    const vv = window.visualViewport
+    const alturaVisivel = vv?.height ?? window.innerHeight
+    const larguraVisivel = vv?.width ?? window.innerWidth
     const popupH = 200
     const popupW = 256
-    const x = Math.min(rect.left, window.innerWidth - popupW - 8)
-    const y = rect.bottom + 8 + popupH > window.innerHeight ? rect.top - popupH - 8 : rect.bottom + 8
+    const x = Math.max(8, Math.min(rect.left, larguraVisivel - popupW - 8))
+    const y = rect.bottom + 8 + popupH > alturaVisivel ? Math.max(8, rect.top - popupH - 8) : rect.bottom + 8
     setPopup(prev => (prev?.id === id ? null : { id, x, y }))
   }
 

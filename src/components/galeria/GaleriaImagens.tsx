@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { useCampanha } from '@/store/campanha'
 import { X, Upload, Search, Trash2, ExternalLink, Eye, EyeOff } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
 interface ImagemGaleria {
@@ -29,6 +30,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
   const [carregando, setCarregando] = useState(true)
   const [busca, setBusca] = useState('')
   const [selecionada, setSelecionada] = useState<ImagemGaleria | null>(null)
+  const [visualizando, setVisualizando] = useState<ImagemGaleria | null>(null)
   const [modalAdicionar, setModalAdicionar] = useState(false)
   const [nome, setNome] = useState('')
   const [url, setUrl] = useState('')
@@ -147,6 +149,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
     await supabase.from('imagens').delete().eq('id', id)
     setImagens(prev => prev.filter(i => i.id !== id))
     if (selecionadaRef.current?.id === id) setSelecionada(null)
+    setVisualizando(prev => prev?.id === id ? null : prev)
     toast.success('Removida')
   }
 
@@ -162,6 +165,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
     if (selecionadaRef.current?.id === img.id) {
       setSelecionada(prev => prev ? { ...prev, visivel_jogadores: novoValor } : null)
     }
+    setVisualizando(prev => prev?.id === img.id ? { ...prev, visivel_jogadores: novoValor } : prev)
     toast.success(novoValor ? 'Visível para jogadores' : 'Oculto para jogadores')
   }
 
@@ -180,7 +184,79 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col h-full">
+      {/* Mobile: busca + adicionar + grade de miniaturas */}
+      <div className="flex md:hidden flex-col h-full">
+        <div className="flex items-center gap-2 p-3 border-b border-[var(--border)] flex-shrink-0">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
+            <input
+              type="text"
+              value={busca}
+              onChange={e => setBusca(e.target.value)}
+              placeholder={`Buscar ${labelTipo.toLowerCase()}...`}
+              className="w-full input-dd pl-9 text-sm"
+            />
+          </div>
+          {!ehJogador && (
+            <button
+              onClick={() => setModalAdicionar(true)}
+              className="flex-shrink-0 w-9 h-9 rounded bg-[var(--accent)] hover:opacity-90 text-[var(--bg)] flex items-center justify-center transition-colors"
+              title={`Adicionar ${labelTipo}`}
+            >
+              <Upload className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3">
+          {carregando ? (
+            <p className="p-4 text-center text-[var(--text3)] text-sm animate-pulse">Carregando...</p>
+          ) : filtradas.length === 0 ? (
+            <p className="p-4 text-center text-[var(--border)] text-sm font-crimson">
+              {imagens.length === 0
+                ? `Nenhum${tipo === 'mapa' ? '' : 'a'} ${labelTipo.toLowerCase()} adicionad${tipo === 'mapa' ? 'o' : 'a'}`
+                : 'Nenhum resultado'}
+            </p>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {filtradas.map(img => (
+                <button
+                  key={img.id}
+                  onClick={() => setVisualizando(img)}
+                  className="relative aspect-square rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg3)]"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.url}
+                    alt={img.nome}
+                    className="w-full h-full object-cover"
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                  />
+                  {!ehJogador && (
+                    <span className={cn(
+                      'absolute top-1 right-1 rounded-full p-1',
+                      img.visivel_jogadores ? 'bg-[var(--green2)]/80 text-white' : 'bg-black/60 text-white/70'
+                    )}>
+                      {img.visivel_jogadores ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
+                    </span>
+                  )}
+                  <span className="absolute bottom-0 inset-x-0 bg-black/70 text-white text-[10px] px-1 py-0.5 truncate text-left">
+                    {img.nome}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="p-2 border-t border-[var(--border)] text-center flex-shrink-0">
+          <p className="text-[var(--text3)] text-xs font-cinzel">{filtradas.length} de {imagens.length}</p>
+        </div>
+      </div>
+
+      {/* Desktop: lista lateral + visualizador, inalterados */}
+      <div className="hidden md:flex h-full">
       {/* Lista lateral */}
       <div className="w-72 border-r border-[var(--border)] flex flex-col">
         <div className="p-3 border-b border-[var(--border)] space-y-2">
@@ -415,6 +491,173 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
         </div>,
         document.body
       )}
+      </div>
+
+      {/* Visualizador fullscreen — mobile */}
+      {visualizando && (
+        <VisualizadorFullscreen
+          imagem={visualizando}
+          ehJogador={ehJogador}
+          onClose={() => setVisualizando(null)}
+          onToggleVis={() => toggleVisibilidade(visualizando)}
+          onRemover={() => remover(visualizando.id)}
+        />
+      )}
     </div>
+  )
+}
+
+function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRemover }: {
+  imagem: ImagemGaleria
+  ehJogador: boolean
+  onClose: () => void
+  onToggleVis: () => void
+  onRemover: () => void
+}) {
+  const [scale, setScale] = useState(1)
+  const [pos, setPos] = useState({ x: 0, y: 0 })
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const startDist = useRef(0)
+  const startScale = useRef(1)
+  const startPos = useRef({ x: 0, y: 0 })
+  const startMid = useRef({ x: 0, y: 0 })
+  const arrastandoUnico = useRef(false)
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  function distancia(a: { x: number; y: number }, b: { x: number; y: number }) {
+    return Math.hypot(a.x - b.x, a.y - b.y)
+  }
+  function pontoMedio(a: { x: number; y: number }, b: { x: number; y: number }) {
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+  }
+
+  function onPointerDown(e: React.PointerEvent) {
+    (e.target as Element).setPointerCapture(e.pointerId)
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()]
+      startDist.current = distancia(a, b)
+      startScale.current = scale
+      startMid.current = pontoMedio(a, b)
+      startPos.current = pos
+      arrastandoUnico.current = false
+    } else if (pointers.current.size === 1) {
+      arrastandoUnico.current = scale > 1
+      startPos.current = pos
+      startMid.current = { x: e.clientX, y: e.clientY }
+    }
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    if (!pointers.current.has(e.pointerId)) return
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()]
+      const novaDist = distancia(a, b)
+      const novaEscala = Math.min(4, Math.max(1, startScale.current * (novaDist / (startDist.current || novaDist))))
+      const novoMid = pontoMedio(a, b)
+      setScale(novaEscala)
+      setPos({
+        x: startPos.current.x + (novoMid.x - startMid.current.x),
+        y: startPos.current.y + (novoMid.y - startMid.current.y),
+      })
+    } else if (pointers.current.size === 1 && arrastandoUnico.current) {
+      const p = [...pointers.current.values()][0]
+      setPos({
+        x: startPos.current.x + (p.x - startMid.current.x),
+        y: startPos.current.y + (p.y - startMid.current.y),
+      })
+    }
+  }
+
+  function onPointerUp(e: React.PointerEvent) {
+    pointers.current.delete(e.pointerId)
+    if (pointers.current.size === 0) {
+      arrastandoUnico.current = false
+      if (scale <= 1.02) { setScale(1); setPos({ x: 0, y: 0 }) }
+    } else if (pointers.current.size === 1) {
+      const p = [...pointers.current.values()][0]
+      arrastandoUnico.current = scale > 1
+      startPos.current = pos
+      startMid.current = p
+    }
+  }
+
+  function alternarZoom() {
+    if (scale > 1) { setScale(1); setPos({ x: 0, y: 0 }) } else { setScale(2) }
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999] bg-black flex flex-col"
+      onClick={e => { if (e.target === e.currentTarget && scale <= 1) onClose() }}
+    >
+      <div className="flex items-center justify-between gap-2 p-3 flex-shrink-0">
+        <p className="text-white/80 text-sm font-crimson truncate pr-2">{imagem.nome}</p>
+        <button
+          onClick={onClose}
+          className="flex-shrink-0 w-11 h-11 rounded-full bg-white/10 text-white flex items-center justify-center active:bg-white/20 transition-colors"
+          aria-label="Fechar"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      <div
+        className="flex-1 overflow-hidden touch-none flex items-center justify-center select-none"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onDoubleClick={alternarZoom}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={imagem.url}
+          alt={imagem.nome}
+          className="max-w-full max-h-full"
+          style={{
+            transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
+            transition: pointers.current.size > 0 ? 'none' : 'transform 0.15s ease-out',
+          }}
+          draggable={false}
+        />
+      </div>
+
+      {!ehJogador && (
+        <div className="flex items-center justify-center gap-3 p-3 flex-shrink-0 bg-black/40">
+          <button
+            onClick={onToggleVis}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-cinzel transition-colors',
+              imagem.visivel_jogadores ? 'bg-[var(--green2)]/20 text-[var(--green2)]' : 'bg-white/10 text-white/70'
+            )}
+          >
+            {imagem.visivel_jogadores ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+            {imagem.visivel_jogadores ? 'Visível' : 'Oculto'}
+          </button>
+          <a
+            href={imagem.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-cinzel bg-white/10 text-white/70"
+          >
+            <ExternalLink className="w-4 h-4" /> Original
+          </a>
+          <button
+            onClick={onRemover}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-cinzel bg-[var(--red2)]/20 text-[var(--red2)]"
+          >
+            <Trash2 className="w-4 h-4" /> Remover
+          </button>
+        </div>
+      )}
+    </div>,
+    document.body
   )
 }

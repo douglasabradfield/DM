@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
+import { AtSign } from 'lucide-react'
 
 interface Mencao {
   id: string
@@ -54,6 +55,18 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
   const [dropdownPos, setDropdownPos] = useState<{ x: number; y: number } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // Altura mínima fixada uma vez (rows × altura de linha) — o textarea nunca
+  // fica menor que isso, mas cresce com o conteúdo em vez de exigir resize
+  // manual (arrastar a alcinha é pouco confiável no toque).
+  const alturaMinima = useRef<number | null>(null)
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    if (alturaMinima.current === null) alturaMinima.current = el.scrollHeight
+    el.style.height = 'auto'
+    el.style.height = `${Math.max(alturaMinima.current, el.scrollHeight)}px`
+  }, [value])
+
   const buscarPersonagens = useCallback(async (query: string) => {
     if (!campanhaId) return
     const supabase = createClient()
@@ -71,6 +84,29 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
     buscarPersonagens(queryMencao)
   }, [queryMencao, buscarPersonagens])
 
+  // visualViewport encolhe quando o teclado do celular abre — window.innerHeight
+  // não muda, então usá-lo aqui colocaria o popup embaixo do teclado, fora da
+  // área visível.
+  function posicionarDropdown(cursor: number) {
+    if (!textareaRef.current) { setDropdownPos(null); return }
+    try {
+      const coords = getCaretCoordinates(textareaRef.current, cursor)
+      const vv = window.visualViewport
+      const alturaVisivel = vv?.height ?? window.innerHeight
+      const larguraVisivel = vv?.width ?? window.innerWidth
+      const dropdownH = Math.min(8 * 44, 200)
+      const y = coords.y + 20 + dropdownH > alturaVisivel
+        ? coords.y - dropdownH - 4
+        : coords.y + 20
+      setDropdownPos({
+        x: Math.max(8, Math.min(coords.x, larguraVisivel - 224 - 8)),
+        y: Math.max(8, Math.min(y, alturaVisivel - dropdownH - 8)),
+      })
+    } catch {
+      setDropdownPos(null)
+    }
+  }
+
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const texto = e.target.value
     const cursor = e.target.selectionStart
@@ -81,25 +117,28 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
     if (match) {
       setQueryMencao(match[1])
       setIndiceSelecionado(0)
-      if (textareaRef.current) {
-        try {
-          const coords = getCaretCoordinates(textareaRef.current, cursor)
-          const dropdownH = Math.min(8 * 44, 200)
-          const y = coords.y + 20 + dropdownH > window.innerHeight
-            ? coords.y - dropdownH - 4
-            : coords.y + 20
-          setDropdownPos({
-            x: Math.max(8, Math.min(coords.x, window.innerWidth - 224 - 8)),
-            y: Math.max(8, y),
-          })
-        } catch {
-          setDropdownPos(null)
-        }
-      }
+      posicionarDropdown(cursor)
     } else {
       setQueryMencao(null)
       setDropdownPos(null)
     }
+  }
+
+  // Botão da barra de ferramentas — insere "@" no cursor e abre a mesma
+  // sugestão de menção do teclado, útil no celular onde alcançar "@" ou
+  // digitar sem querer disparar o autocorretor pode ser incômodo.
+  function inserirArroba() {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    const pos = textarea.selectionStart
+    onChange(`${value.slice(0, pos)}@${value.slice(pos)}`)
+    setQueryMencao('')
+    setIndiceSelecionado(0)
+    setTimeout(() => {
+      textarea.focus()
+      textarea.setSelectionRange(pos + 1, pos + 1)
+      posicionarDropdown(pos + 1)
+    }, 0)
   }
 
   function inserirMencao(nome: string, id: string) {
@@ -150,7 +189,7 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
             <button
               key={s.id}
               onMouseDown={e => { e.preventDefault(); inserirMencao(s.nome, s.id) }}
-              className={`w-full text-left px-3 py-1.5 text-sm font-crimson transition-colors ${i === indiceSelecionado ? 'bg-[var(--surface)] text-[var(--gold)]' : 'text-[var(--text)] hover:bg-[var(--bg3)]'}`}
+              className={`w-full text-left px-3 py-2.5 text-sm font-crimson transition-colors ${i === indiceSelecionado ? 'bg-[var(--surface)] text-[var(--gold)]' : 'text-[var(--text)] hover:bg-[var(--bg3)]'}`}
             >
               @{s.nome}
             </button>
@@ -161,7 +200,17 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
     : null
 
   return (
-    <>
+    <div>
+      <div className="flex items-center gap-1 mb-1">
+        <button
+          type="button"
+          onClick={inserirArroba}
+          title="Mencionar personagem"
+          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-cinzel text-[var(--text3)] bg-[var(--bg3)] hover:text-[var(--gold)] hover:bg-[var(--surface)] transition-colors"
+        >
+          <AtSign className="w-3 h-3" /> Mencionar
+        </button>
+      </div>
       <textarea
         ref={textareaRef}
         value={value}
@@ -172,6 +221,6 @@ export function EditorComMencoes({ value, onChange, rows = 5, placeholder, class
         className={className}
       />
       {dropdown}
-    </>
+    </div>
   )
 }

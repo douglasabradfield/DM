@@ -7,7 +7,7 @@ import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoAdicionarPersonagem } from '@/components/ui/BotaoAdicionarPersonagem'
 import { BotaoReportar } from '@/components/ui/BotaoReportar'
 import { BloqueioPlano } from '@/components/ui/BloqueioPlano'
-import { Search, Plus, X, Trash2 } from 'lucide-react'
+import { Search, Plus, X, Trash2, SlidersHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getPlano } from '@/lib/planos'
 import toast from 'react-hot-toast'
@@ -127,7 +127,7 @@ function AbaMagicos() {
       detalhe={
         !selecionado ? null : (
           <div className="max-w-2xl">
-            <div className="mb-4 flex items-start justify-between gap-4">
+            <div className="mb-4 flex items-start justify-between flex-wrap gap-4">
               <div>
                 <h2 className="font-cinzel text-[var(--gold)] text-2xl font-bold">{selecionado.name_pt}</h2>
                 <p className="text-[var(--border)] text-sm italic">{selecionado.name_en}</p>
@@ -160,7 +160,7 @@ function AbaMagicos() {
                   tipo="item"
                   nome={selecionado.name_pt}
                   dadosExtras={{
-                    item_id: selecionado.id,
+                    slug: selecionado.slug,
                     tipo: 'magico',
                     raridade: selecionado.rarity ?? null,
                     descricao: selecionado.description_pt ?? null,
@@ -259,7 +259,7 @@ function AbaArmas() {
       detalhe={
         !selecionado ? null : (
           <div className="max-w-2xl">
-            <div className="mb-4 flex items-start justify-between gap-4">
+            <div className="mb-4 flex items-start justify-between flex-wrap gap-4">
               <div>
                 <h2 className="font-cinzel text-[var(--red2)] text-2xl font-bold">{selecionado.name_pt}</h2>
                 <p className="text-[var(--border)] text-sm italic">{selecionado.name_en}</p>
@@ -369,7 +369,7 @@ function AbaArmaduras() {
       detalhe={
         !selecionado ? null : (
           <div className="max-w-2xl">
-            <div className="mb-4 flex items-start justify-between gap-4">
+            <div className="mb-4 flex items-start justify-between flex-wrap gap-4">
               <div>
                 <h2 className="font-cinzel text-[var(--accent2)] text-2xl font-bold">{selecionado.name_pt}</h2>
                 <p className="text-[var(--border)] text-sm italic">{selecionado.name_en}</p>
@@ -386,7 +386,7 @@ function AbaArmaduras() {
                   tipo="item"
                   nome={selecionado.name_pt}
                   dadosExtras={{
-                    item_id: selecionado.id,
+                    slug: selecionado.slug,
                     tipo: 'armadura',
                     descricao: [
                       selecionado.base_ac_formula_pt,
@@ -480,7 +480,7 @@ function AbaEquipamentos() {
       detalhe={
         !selecionado ? null : (
           <div className="max-w-2xl">
-            <div className="mb-4 flex items-start justify-between gap-4">
+            <div className="mb-4 flex items-start justify-between flex-wrap gap-4">
               <div>
                 <h2 className="font-cinzel text-[var(--text)] text-2xl font-bold">{selecionado.name_pt}</h2>
                 <p className="text-[var(--border)] text-sm italic">{selecionado.name_en}</p>
@@ -496,7 +496,7 @@ function AbaEquipamentos() {
                 <BotaoAdicionarPersonagem
                   tipo="item"
                   nome={selecionado.name_pt}
-                  dadosExtras={{ item_id: selecionado.id, tipo: 'equipamento', descricao: selecionado.description_pt ?? null }}
+                  dadosExtras={{ slug: selecionado.slug, tipo: 'equipamento', descricao: selecionado.description_pt ?? null }}
                 />
               </div>
             </div>
@@ -624,7 +624,7 @@ function AbaPersonalizadoItens({ userId }: { userId: string }) {
         detalhe={
           !selecionado ? null : (
             <div className="max-w-2xl">
-              <div className="mb-4 flex items-start justify-between gap-4">
+              <div className="mb-4 flex items-start justify-between flex-wrap gap-4">
                 <div>
                   <h2 className="font-cinzel text-[var(--gold)] text-2xl font-bold">{selecionado.nome}</h2>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -739,6 +739,7 @@ function ListaDetalhe({
   placeholderDetalhe: string
 }) {
   const [visao, setVisao] = useState<'lista' | 'detalhe'>('lista')
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -748,14 +749,25 @@ function ListaDetalhe({
         visao === 'detalhe' ? "hidden md:flex" : "flex"
       )}>
         <div className="p-3 border-b border-[var(--border)] space-y-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
-            <input type="text" value={busca} onChange={e => onBusca(e.target.value)} placeholder={placeholder} className="w-full input-dd pl-9 text-sm" />
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
+              <input type="text" value={busca} onChange={e => onBusca(e.target.value)} placeholder={placeholder} className="w-full input-dd pl-9 text-sm" />
+            </div>
+            {filtros && (
+              <button
+                onClick={() => setFiltrosAbertos(true)}
+                className="md:hidden flex-shrink-0 w-9 h-9 rounded border border-[var(--border)] flex items-center justify-center text-[var(--text2)] hover:border-[var(--border2)] transition-colors"
+                title="Filtros"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+              </button>
+            )}
           </div>
-          {filtros}
+          {filtros && <div className="hidden md:block space-y-2">{filtros}</div>}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
           {carregando ? (
             <div className="p-4 text-center text-[var(--text3)] text-sm animate-pulse">Carregando...</div>
           ) : itens.length === 0 ? (
@@ -765,7 +777,10 @@ function ListaDetalhe({
               <button
                 key={item.id}
                 onClick={() => { item.onClick(); setVisao('detalhe') }}
-                className={`w-full text-left px-3 py-2 border-b border-[var(--bg3)] transition-colors ${item.ativo ? 'bg-[var(--surface)]' : 'hover:bg-[var(--bg3)]'}`}
+                className={cn(
+                  'w-full text-left px-3 py-2.5 rounded-lg border transition-colors',
+                  item.ativo ? 'bg-[var(--surface)] border-[var(--gold)]/40' : 'border-[var(--border)]/50 hover:border-[var(--border2)] hover:bg-[var(--bg3)]'
+                )}
               >
                 <div className="flex flex-col gap-0.5">
                   <span className="font-cinzel font-semibold text-sm text-[var(--dd-text)] leading-tight truncate">
@@ -785,6 +800,28 @@ function ListaDetalhe({
           <p className="text-[var(--text3)] text-xs font-cinzel">{nFiltrados} de {total}</p>
         </div>
       </div>
+
+      {/* Filtros — folha inferior no mobile */}
+      {filtrosAbertos && filtros && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setFiltrosAbertos(false)} />
+          <div className="fixed inset-x-0 bottom-0 above-bottomnav z-50 md:hidden bg-[var(--bg2)] border-t border-[var(--border)] rounded-t-xl shadow-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-cinzel text-xs text-[var(--text3)] uppercase tracking-wider">Filtros</span>
+              <button onClick={() => setFiltrosAbertos(false)} className="text-[var(--text3)] hover:text-[var(--text)]">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-2">{filtros}</div>
+            <button
+              onClick={() => setFiltrosAbertos(false)}
+              className="w-full py-2 bg-[var(--accent)] hover:opacity-90 text-white rounded font-cinzel text-sm transition-opacity"
+            >
+              Aplicar
+            </button>
+          </div>
+        </>
+      )}
 
       {/* Detalhe */}
       <div className={cn(
