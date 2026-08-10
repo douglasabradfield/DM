@@ -295,6 +295,11 @@ body::before {
   padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
 }
 
+/* Safe area para o Header — topo da tela em modo standalone (notch/Dynamic Island) */
+.safe-area-pt {
+  padding-top: env(safe-area-inset-top);
+}
+
 /* Posiciona uma barra fixa logo acima do BottomNav (que já reserva sua
    própria safe-area via .safe-area-pb) — evita duas barras fixas sobrepostas
    no rodapé em telas pequenas. */

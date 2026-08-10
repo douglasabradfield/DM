@@ -10,6 +10,7 @@ import { useState, useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import { useControleSessao } from '@/hooks/useControleSessao'
 import { ModalIniciarSessao } from '@/components/campanha/ModalIniciarSessao'
+import { InstalarApp } from '@/components/layout/InstalarApp'
 
 interface HeaderProps {
   titulo: string
@@ -102,7 +103,7 @@ export function Header({ titulo, usuario }: HeaderProps) {
   const campanhasAtivas = campanhas.filter(c => c.ativa !== false)
 
   return (
-    <header className="h-12 bg-[var(--bg2)] border-b border-[var(--border)] flex items-center justify-between px-2 sm:px-4 gap-2">
+    <header className="min-h-12 bg-[var(--bg2)] border-b border-[var(--border)] flex items-center justify-between px-2 sm:px-4 gap-2 safe-area-pt">
       {/* Desktop: título + campanha (inalterado) */}
       <div className="hidden md:flex items-center gap-3">
         <h2 className="font-cinzel text-[var(--gold)] font-semibold text-sm truncate max-w-[120px] sm:max-w-none">{titulo}</h2>
@@ -328,6 +329,8 @@ export function Header({ titulo, usuario }: HeaderProps) {
                   <Settings className="w-4 h-4" />
                   Minha Conta
                 </Link>
+                <div className="border-t border-[var(--border)]" />
+                <InstalarApp />
                 <div className="border-t border-[var(--border)]" />
                 <button
                   onClick={sair}
