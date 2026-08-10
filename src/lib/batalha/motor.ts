@@ -10,14 +10,15 @@ interface AlvoDano {
 }
 
 // PV temporários absorvem primeiro — o resto (se houver) desconta do PV atual, nunca abaixo de zero.
+// tipoDano null = dano sem tipo (queda, narrativo) — ignora resistência/imunidade/vulnerabilidade de propósito.
 export function calcularDano(
   valor: number,
-  tipoDano: TipoDano,
+  tipoDano: TipoDano | null,
   alvo: AlvoDano
 ): { danoFinal: number; absorvidoTemporario: number; modificador: string } {
-  const { danoFinal, modificador } = aplicarResistencias(
-    valor, tipoDano, alvo.resistencias, alvo.imunidades, alvo.vulnerabilidades
-  )
+  const { danoFinal, modificador } = tipoDano
+    ? aplicarResistencias(valor, tipoDano, alvo.resistencias, alvo.imunidades, alvo.vulnerabilidades)
+    : { danoFinal: valor, modificador: '' }
   const absorvidoTemporario = alvo.pv_temporarios > 0 ? Math.min(alvo.pv_temporarios, danoFinal) : 0
   return { danoFinal, absorvidoTemporario, modificador }
 }

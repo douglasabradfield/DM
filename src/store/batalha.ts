@@ -333,7 +333,7 @@ interface EstadoBatalhaStore {
   confirmarIniciativa: () => void
 
   // PV
-  aplicarDano: (id: string, dano: number, tipo: TipoDano, silencioso?: boolean) => { danoFinal: number; morreu: boolean } | undefined
+  aplicarDano: (id: string, dano: number, tipo: TipoDano | null, silencioso?: boolean) => { danoFinal: number; morreu: boolean; modificador: string } | undefined
   aplicarCura: (id: string, cura: number, silencioso?: boolean) => { curaEfetiva: number } | undefined
   atualizarPV: (id: string, pvAtual: number) => void
   atualizarPVMax: (id: string, pvMax: number) => void
@@ -1041,7 +1041,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         const xpGanho = caiu && c.tipo === 'monstro' && c.dados_monstro?.xp ? c.dados_monstro.xp : 0
 
         let descricao: string
-        if (danoFinal === 0) {
+        if (danoFinal === 0 && tipo) {
           descricao = `${c.nome} é IMUNE a ${tipo}`
         } else {
           descricao = `${nomeAtacante} causou ${danoFinal} de dano${tipo ? ` (${tipo})` : ''} em ${c.nome}`
@@ -1096,7 +1096,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           })
         }, 600)
 
-        return { danoFinal, morreu: caiu }
+        return { danoFinal, morreu: caiu, modificador }
       },
 
       aplicarCura: (id, cura, silencioso = false) => {

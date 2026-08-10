@@ -21,7 +21,8 @@ import { createClient } from '@/lib/supabase/client'
 import { getNivelPorXP } from '@/lib/dados-dnd/xp-niveis'
 import { TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
 import { calcularDificuldade, xpParaCR, type NivelDificuldade } from '@/lib/dados-dnd/xp-encontro'
-import type { Personagem } from '@/types/dnd'
+import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
+import type { Personagem, TipoDano } from '@/types/dnd'
 import {
   Play, SkipForward, ChevronLeft, ChevronRight,
   RotateCcw, Zap, RefreshCw, Plus, Star, ChevronDown,
@@ -1088,6 +1089,23 @@ interface AlvoAcao {
 const TIPOS_CURA_ACAO = new Set(['cura', 'cura_bonus', 'pv_temporarios', 'estabilizar'])
 const TIPOS_MAGIA_SLOTS = new Set(['magia', 'contra_magia', 'acao_bonus_magia', 'outra_reacao'])
 
+// O modal não rastreia qual ataque específico foi usado (só a categoria da
+// ação) — então só dá pra inferir o tipo de dano quando TODOS os ataques do
+// combatente concordam no mesmo tipo. Caso contrário, fica sem seleção e o
+// DM escolhe manualmente.
+function inferirTipoDano(c: Combatente | null): TipoDano | null {
+  if (!c) return null
+  const tipos = new Set<string>()
+  if (c.dados_personagem?.ataques) {
+    c.dados_personagem.ataques.forEach(a => { if (a.tipo_dano) tipos.add(a.tipo_dano) })
+  } else if (c.ataques_estruturados) {
+    c.ataques_estruturados.forEach(a => { if (a.damage_dice && a.damage_type_pt) tipos.add(a.damage_type_pt) })
+  }
+  if (tipos.size !== 1) return null
+  const [unico] = tipos
+  return TIPOS_DANO.some(t => t.id === unico) ? (unico as TipoDano) : null
+}
+
 function ModalRegistrarAcao({
   combatentes,
   preenchido,
@@ -1105,10 +1123,22 @@ function ModalRegistrarAcao({
   const [salvando, setSalvando] = useState(false)
   const [alvos, setAlvos] = useState<AlvoAcao[]>([])
   const [observacao, setObservacao] = useState('')
+  const [tipoDanoAcao, setTipoDanoAcao] = useState<TipoDano | 'sem_tipo' | ''>('')
 
   const ativos = combatentes.filter(c => !c.ausente && !c.morto)
   const tipoInfo = GRUPOS_ACAO.flatMap(g => g.opcoes.map(o => ({ ...o, icone: g.icone }))).find(o => o.value === tipo)
   const ehMagia = TIPOS_MAGIA_SLOTS.has(tipo)
+  const origemCombatente = ativos.find(c => c.nome === origemNome) ?? null
+  const temAlvoDano = alvos.some(a => a.efeitoTipo === 'dano')
+
+  // Pré-seleciona o tipo de dano quando dá pra inferir do atacante escolhido;
+  // se não der, fica em branco e o DM precisa escolher (inclusive "Sem tipo").
+  useEffect(() => {
+    if (!origemNome) return
+    const inferido = inferirTipoDano(origemCombatente)
+    if (inferido) setTipoDanoAcao(inferido)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [origemNome])
 
   function efeitoPadrao(): 'dano' | 'cura' {
     return TIPOS_CURA_ACAO.has(tipo) ? 'cura' : 'dano'
@@ -1134,9 +1164,9 @@ function ModalRegistrarAcao({
 
   async function confirmar() {
     if (!tipo || !origemNome || salvando) return
+    if (temAlvoDano && !tipoDanoAcao) return
     setErroSlot('')
 
-    const origemCombatente = ativos.find(c => c.nome === origemNome) ?? null
     const descontarSlot = ehMagia && nivelMagia > 0 && origemCombatente
 
     if (descontarSlot && origemCombatente) {
@@ -1189,27 +1219,29 @@ function ModalRegistrarAcao({
     }
 
     const alvosValidos = alvos.filter(a => a.combatenteId && a.valor > 0)
+    const tipoDanoParaMotor: TipoDano | null = tipoDanoAcao && tipoDanoAcao !== 'sem_tipo' ? tipoDanoAcao : null
 
     // Aplica silenciosamente (sem gerar a entrada 'dano'/'cura' automática de
     // aplicarDano/aplicarCura) e guarda o valor final pós-resistência/cap para
     // as entradas contábeis abaixo — a UI mostra a narrativa, a agregação do
     // diário lê as contábeis.
-    const resumosContabeis: { nome: string; valor: number; efeitoTipo: 'dano' | 'cura' }[] = []
+    const resumosContabeis: { nome: string; valor: number; efeitoTipo: 'dano' | 'cura'; modificador: string }[] = []
     for (const alvo of alvosValidos) {
       if (alvo.efeitoTipo === 'cura') {
         const resultado = aplicarCura(alvo.combatenteId, alvo.valor, true)
-        resumosContabeis.push({ nome: alvo.nome, valor: resultado?.curaEfetiva ?? alvo.valor, efeitoTipo: 'cura' })
+        resumosContabeis.push({ nome: alvo.nome, valor: resultado?.curaEfetiva ?? alvo.valor, efeitoTipo: 'cura', modificador: '' })
       } else {
-        const resultado = aplicarDano(alvo.combatenteId, alvo.valor, 'cortante', true)
-        resumosContabeis.push({ nome: alvo.nome, valor: resultado?.danoFinal ?? alvo.valor, efeitoTipo: 'dano' })
+        const resultado = aplicarDano(alvo.combatenteId, alvo.valor, tipoDanoParaMotor, true)
+        resumosContabeis.push({ nome: alvo.nome, valor: resultado?.danoFinal ?? alvo.valor, efeitoTipo: 'dano', modificador: resultado?.modificador ?? '' })
       }
     }
 
     const nivelLabel = ehMagia ? (nivelMagia === 0 ? ' (Truque)' : ` (N${nivelMagia})`) : ''
     const acaoLabel = `${tipoInfo?.label ?? tipo}${nivelLabel}`
-    const alvosDesc = alvosValidos.map(a =>
-      `${a.nome}: ${a.valor} ${a.efeitoTipo === 'cura' ? 'cura' : 'dano'}`
-    )
+    const alvosDesc = resumosContabeis.map(r => {
+      const modSufixo = r.efeitoTipo === 'dano' && r.modificador ? ` (${r.modificador})` : ''
+      return `${r.nome}: ${r.valor} ${r.efeitoTipo === 'cura' ? 'cura' : 'dano'}${modSufixo}`
+    })
     const partes: string[] = [
       `${tipoInfo?.icone ?? '📝'} ${acaoLabel} — ${origemNome}`,
       ...(alvosDesc.length > 0 ? [`→ ${alvosDesc.join(', ')}`] : []),
@@ -1220,19 +1252,20 @@ function ModalRegistrarAcao({
       tipo: tipo as EntradaLog['tipo'],
       origem: origemNome,
       alvo: alvosValidos.map(a => a.nome).join(', '),
-      valor: alvosValidos.reduce((sum, a) => sum + a.valor, 0),
-      tipo_dano: null,
+      valor: resumosContabeis.reduce((sum, r) => sum + r.valor, 0),
+      tipo_dano: temAlvoDano ? tipoDanoParaMotor : null,
       descricao: partes.join(' '),
     })
 
     resumosContabeis.forEach(r => {
+      const modSufixo = r.efeitoTipo === 'dano' && r.modificador ? ` (${r.modificador})` : ''
       adicionarEntradaLog({
         tipo: r.efeitoTipo,
         origem: origemNome,
         alvo: r.nome,
         valor: r.valor,
-        tipo_dano: r.efeitoTipo === 'dano' ? 'cortante' : null,
-        descricao: `${origemNome} → ${r.nome}: ${r.valor} ${r.efeitoTipo}`,
+        tipo_dano: r.efeitoTipo === 'dano' ? tipoDanoParaMotor : null,
+        descricao: `${origemNome} → ${r.nome}: ${r.valor} ${r.efeitoTipo}${modSufixo}`,
         resumo: true,
       })
     })
@@ -1358,6 +1391,29 @@ function ModalRegistrarAcao({
           )}
         </div>
 
+        {/* Tipo de dano — pertence à ação, um seletor só pra todos os alvos */}
+        {temAlvoDano && (
+          <div>
+            <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Tipo de dano *</label>
+            <select
+              value={tipoDanoAcao}
+              onChange={e => setTipoDanoAcao(e.target.value as TipoDano | 'sem_tipo' | '')}
+              className="input-dd w-full text-sm"
+            >
+              <option value="">— Selecione o tipo —</option>
+              {TIPOS_DANO.map(t => (
+                <option key={t.id} value={t.id}>{t.icone} {t.nome}</option>
+              ))}
+              <option value="sem_tipo">🚫 Sem tipo (ignora resistência/imunidade/vulnerabilidade)</option>
+            </select>
+            {!tipoDanoAcao && (
+              <p className="text-[var(--red2)] text-xs mt-1 font-crimson">
+                Obrigatório — escolha &quot;Sem tipo&quot; para dano narrativo (queda etc.) que ignora resistências.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Observação */}
         <div>
           <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Observação (opcional)</label>
@@ -1376,7 +1432,7 @@ function ModalRegistrarAcao({
           </button>
           <button
             onClick={confirmar}
-            disabled={!tipo || !origemNome || salvando}
+            disabled={!tipo || !origemNome || salvando || (temAlvoDano && !tipoDanoAcao)}
             className="flex-1 py-2 bg-[var(--accent)] hover:opacity-90 text-white rounded font-cinzel text-sm disabled:opacity-50"
           >
             {salvando ? 'Registrando...' : 'Registrar'}
