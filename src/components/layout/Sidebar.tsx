@@ -15,6 +15,8 @@ import {
 import toast from 'react-hot-toast'
 import { planoSuficiente, getPlano, type PlanoId } from '@/lib/planos'
 import { usePlanoEfetivo } from '@/hooks/usePlanoEfetivo'
+import { useControleSessao } from '@/hooks/useControleSessao'
+import { ModalIniciarSessao } from '@/components/campanha/ModalIniciarSessao'
 
 type ItemNav = {
   href: string; icone: React.ElementType; label: string; cor: string
@@ -109,7 +111,14 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
   const ehJogador = campanhaAtiva
     ? papelPorCampanha[campanhaAtiva.id] === 'jogador'
     : false
+  const ehDM = campanhaAtiva ? papelPorCampanha[campanhaAtiva.id] === 'dm' : false
   const itensVisiveis = itensNav.filter(item => !item.dmOnly || !ehJogador)
+
+  const {
+    sessaoAtiva, sessaoCarregando, encerrando,
+    modalIniciarAberto, abrirModalIniciar, fecharModalIniciar,
+    confirmarIniciarSessao, handleEncerrarSessao,
+  } = useControleSessao()
 
   return (
     <>
@@ -191,6 +200,49 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
             </div>
           )}
         </div>
+
+        {/* Controle de sessão — estado da campanha (Fase 3.5), não da
+            batalha. Só o DM da campanha ativa vê; o jogador só sente o
+            efeito (a /mesa habilitando). */}
+        {ehDM && (
+          <div className="border-b border-[var(--border)] px-2 py-2">
+            {minimizada ? (
+              <button
+                onClick={sessaoAtiva ? handleEncerrarSessao : abrirModalIniciar}
+                disabled={sessaoCarregando || encerrando}
+                title={sessaoAtiva ? `Sessão ${sessaoAtiva.numero ?? ''} ativa — clique para encerrar` : 'Iniciar sessão'}
+                className="w-full flex items-center justify-center py-1.5 rounded hover:bg-[var(--surface)] transition-colors disabled:opacity-50"
+              >
+                <span className="text-sm">{sessaoAtiva ? '🟢' : '▶️'}</span>
+              </button>
+            ) : sessaoCarregando ? (
+              <p className="text-[var(--text3)] text-[10px] font-cinzel text-center py-1">Carregando sessão...</p>
+            ) : sessaoAtiva ? (
+              <div className="space-y-1">
+                <p className="text-[var(--green2)] text-[10px] font-cinzel truncate" title={sessaoAtiva.iniciada_em ?? undefined}>
+                  🟢 Sessão {sessaoAtiva.numero ?? '—'} ·{' '}
+                  {sessaoAtiva.iniciada_em
+                    ? new Date(sessaoAtiva.iniciada_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                    : '—'}
+                </p>
+                <button
+                  onClick={handleEncerrarSessao}
+                  disabled={encerrando}
+                  className="w-full text-[10px] font-cinzel py-1 rounded border border-[var(--red2)]/50 text-[var(--red2)] hover:bg-[var(--red2)]/10 transition-colors disabled:opacity-50"
+                >
+                  {encerrando ? 'Encerrando...' : 'Encerrar sessão'}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={abrirModalIniciar}
+                className="w-full text-xs font-cinzel py-1.5 rounded bg-[var(--gold)]/10 border border-[var(--gold)]/40 text-[var(--gold)] hover:bg-[var(--gold)]/20 transition-colors"
+              >
+                ▶️ Iniciar sessão
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Navegação */}
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
@@ -361,6 +413,10 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
             </div>
           </div>
         </div>
+      )}
+
+      {modalIniciarAberto && (
+        <ModalIniciarSessao onConfirmar={confirmarIniciarSessao} onCancelar={fecharModalIniciar} />
       )}
     </>
   )

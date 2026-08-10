@@ -8,6 +8,8 @@ import { getTemaAtual, aplicarTema, type NomeTema, TEMAS } from '@/lib/tema'
 import { LogOut, User, ChevronDown, Settings, Bell, Shield, X } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
+import { useControleSessao } from '@/hooks/useControleSessao'
+import { ModalIniciarSessao } from '@/components/campanha/ModalIniciarSessao'
 
 interface HeaderProps {
   titulo: string
@@ -25,14 +27,21 @@ interface Notificacao {
 
 export function Header({ titulo, usuario }: HeaderProps) {
   const router = useRouter()
-  const { campanhaAtiva, campanhas, setCampanhaAtiva } = useCampanha()
+  const { campanhaAtiva, campanhas, setCampanhaAtiva, papelPorCampanha } = useCampanha()
   const [menuAberto, setMenuAberto] = useState(false)
   const [temaMenuAberto, setTemaMenuAberto] = useState(false)
   const [tema, setTema] = useState<NomeTema>('grimorio')
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>([])
   const [notifAberto, setNotifAberto] = useState(false)
   const [seletorCampanhaAberto, setSeletorCampanhaAberto] = useState(false)
+  const [sessaoFolhaAberta, setSessaoFolhaAberta] = useState(false)
   const userIdRef = useRef<string | null>(null)
+  const ehDM = campanhaAtiva ? papelPorCampanha[campanhaAtiva.id] === 'dm' : false
+  const {
+    sessaoAtiva, sessaoCarregando, encerrando,
+    modalIniciarAberto, abrirModalIniciar, fecharModalIniciar,
+    confirmarIniciarSessao, handleEncerrarSessao,
+  } = useControleSessao()
 
   useEffect(() => {
     const t = getTemaAtual()
@@ -116,6 +125,21 @@ export function Header({ titulo, usuario }: HeaderProps) {
           <span className="truncate">{campanhaAtiva?.nome ?? 'Sem campanha'}</span>
           <ChevronDown className="w-3 h-3 flex-shrink-0" />
         </button>
+
+        {/* Controle de sessão — só o DM vê; jogador só sente o efeito (a
+            /mesa habilitando). Mesmo estado/ações da Sidebar, via
+            useControleSessao — aqui abre folha própria. */}
+        {ehDM && (
+          <button
+            onClick={() => setSessaoFolhaAberta(true)}
+            disabled={sessaoCarregando}
+            title={sessaoAtiva ? `Sessão ${sessaoAtiva.numero ?? ''} ativa` : 'Iniciar sessão'}
+            className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center
+                       bg-[var(--bg3)] border border-[var(--border)] disabled:opacity-50"
+          >
+            <span className="text-xs">{sessaoAtiva ? '🟢' : '▶️'}</span>
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
@@ -360,6 +384,56 @@ export function Header({ titulo, usuario }: HeaderProps) {
             </div>
           </div>
         </>
+      )}
+
+      {/* Folha inferior: sessão (mobile) */}
+      {sessaoFolhaAberta && (
+        <>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 md:hidden"
+            onClick={() => setSessaoFolhaAberta(false)}
+          />
+          <div className="fixed inset-x-0 bottom-0 z-[61] md:hidden bg-[var(--surface)] border-t border-[var(--border)] rounded-t-xl shadow-2xl safe-area-pb">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
+              <span className="font-cinzel text-xs text-[var(--text3)] uppercase tracking-wider">Sessão</span>
+              <button onClick={() => setSessaoFolhaAberta(false)} className="text-[var(--text3)] hover:text-[var(--text)]">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4">
+              {sessaoCarregando ? (
+                <p className="text-[var(--text3)] text-sm font-crimson text-center py-2">Carregando sessão...</p>
+              ) : sessaoAtiva ? (
+                <div className="space-y-3">
+                  <p className="text-[var(--green2)] text-sm font-cinzel">
+                    🟢 Sessão {sessaoAtiva.numero ?? '—'} · iniciada às{' '}
+                    {sessaoAtiva.iniciada_em
+                      ? new Date(sessaoAtiva.iniciada_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                      : '—'}
+                  </p>
+                  <button
+                    onClick={async () => { await handleEncerrarSessao(); setSessaoFolhaAberta(false) }}
+                    disabled={encerrando}
+                    className="w-full py-2.5 rounded-lg border border-[var(--red2)]/50 text-[var(--red2)] font-cinzel text-sm hover:bg-[var(--red2)]/10 transition-colors disabled:opacity-50"
+                  >
+                    {encerrando ? 'Encerrando...' : 'Encerrar sessão'}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setSessaoFolhaAberta(false); abrirModalIniciar() }}
+                  className="w-full py-2.5 rounded-lg bg-[var(--gold)]/10 border border-[var(--gold)]/40 text-[var(--gold)] font-cinzel text-sm hover:bg-[var(--gold)]/20 transition-colors"
+                >
+                  ▶️ Iniciar sessão
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {modalIniciarAberto && (
+        <ModalIniciarSessao onConfirmar={confirmarIniciarSessao} onCancelar={fecharModalIniciar} />
       )}
     </header>
   )
