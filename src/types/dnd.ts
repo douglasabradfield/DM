@@ -195,25 +195,40 @@ export interface Spell {
   name_en: string
   level: number
   school_pt: string | null
+  school_en?: string | null
   casting_time_pt: string | null
+  casting_time_en?: string | null
   range_pt: string | null
+  range_en?: string | null
   components_pt: string | null
+  components_en?: string | null
   duration_pt: string | null
+  duration_en?: string | null
   concentration: boolean
   ritual: boolean
   description_pt: string | null
+  description_en?: string | null
   classes_pt: string | null
   classes_en: string | null
+  source_page_start?: number | null
   damage_dice?: string | null
   damage_type_en?: string | null
   damage_type_pt?: string | null
+  damage2_dice?: string | null
+  damage2_type_en?: string | null
+  damage2_type_pt?: string | null
   save_ability?: string | null
   save_effect?: string | null
   attack_type?: string | null
+  roller?: string | null
   upcast_dice?: string | null
+  conditions_applied_pt?: string | null
   heal_dice?: string | null
   aoe_type?: string | null
   aoe_size_ft?: number | null
+  criado_por?: string | null
+  campanha_id?: string | null
+  visivel_jogadores?: boolean
 }
 
 export interface MagicItem {

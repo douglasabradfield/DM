@@ -523,10 +523,17 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     setBuscandoMagia(true)
     try {
       const supabase = createClient()
-      const { data, error } = await supabase
+      let query = supabase
         .from('spells')
         .select('id, slug, name_pt, name_en, level, school_pt, casting_time_pt, range_pt, components_pt, duration_pt, description_pt, classes_pt, concentration, ritual')
         .ilike('name_pt', `%${termo}%`)
+      // Magias custom só aparecem para quem está na campanha dona — e, para
+      // quem não é DM, só se o mestre marcou visivel_jogadores.
+      const ehDM = papelPorCampanha[p.campanha_id] === 'dm'
+      query = ehDM
+        ? query.or(`criado_por.is.null,campanha_id.eq.${p.campanha_id}`)
+        : query.or(`criado_por.is.null,and(campanha_id.eq.${p.campanha_id},visivel_jogadores.eq.true)`)
+      const { data, error } = await query
         .order('level', { ascending: true })
         .order('name_pt', { ascending: true })
         .limit(20)
@@ -535,7 +542,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     } finally {
       setBuscandoMagia(false)
     }
-  }, [])
+  }, [p.campanha_id, papelPorCampanha])
 
   useEffect(() => {
     const t = setTimeout(() => buscarMagias(buscaMagia), 300)
