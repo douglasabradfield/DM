@@ -255,16 +255,19 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       }
       const { tabela, campos } = tabelas[aba] ?? tabelas.gear
       const supabase = createClient()
-      const { data } = await supabase
-        .from(tabela)
-        .select(campos)
-        .or(`name_pt.ilike.%${termo}%,name_en.ilike.%${termo}%`)
-        .limit(10)
+      // Itens custom só aparecem para quem está na campanha dona — e, para
+      // quem não é DM, só se o mestre marcou visivel_jogadores.
+      const ehDM = papelPorCampanha[p.campanha_id] === 'dm'
+      let query = supabase.from(tabela).select(campos).or(`name_pt.ilike.%${termo}%,name_en.ilike.%${termo}%`)
+      query = ehDM
+        ? query.or(`criado_por.is.null,campanha_id.eq.${p.campanha_id}`)
+        : query.or(`criado_por.is.null,and(campanha_id.eq.${p.campanha_id},visivel_jogadores.eq.true)`)
+      const { data } = await query.limit(10)
       setItensCompendio((data ?? []) as unknown as Record<string, unknown>[])
     } finally {
       setBuscandoCompendio(false)
     }
-  }, [])
+  }, [p.campanha_id, papelPorCampanha])
 
   useEffect(() => {
     const t = setTimeout(() => buscarCompendio(buscaCompendio, abaCompendio), 300)

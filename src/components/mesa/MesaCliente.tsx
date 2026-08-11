@@ -2153,9 +2153,10 @@ function ModalOuro({
 // confirma" do Dar — aqui há uma lista de destinatários a compor antes de
 // aplicar tudo junto.
 function ModalDistribuirTesouro({
-  sessaoId, personagens, onFechar,
+  sessaoId, campanhaId, personagens, onFechar,
 }: {
   sessaoId: string
+  campanhaId: string
   personagens: Personagem[]
   onFechar: () => void
 }) {
@@ -2181,12 +2182,19 @@ function ModalDistribuirTesouro({
         gear:      { tabela: 'equipment_gear',    campos: 'slug,name_pt,name_en,category_pt,description_pt' },
       }
       const { tabela, campos } = tabelas[aba] ?? tabelas.gear
-      const { data } = await createClient().from(tabela).select(campos).or(`name_pt.ilike.%${termo}%,name_en.ilike.%${termo}%`).limit(10)
+      // Modal só abre para o DM (ver render em MesaCliente), então itens
+      // custom da campanha sempre aparecem, independente de visivel_jogadores.
+      const { data } = await createClient()
+        .from(tabela)
+        .select(campos)
+        .or(`name_pt.ilike.%${termo}%,name_en.ilike.%${termo}%`)
+        .or(`criado_por.is.null,campanha_id.eq.${campanhaId}`)
+        .limit(10)
       setResultadosItem((data ?? []) as unknown as Record<string, unknown>[])
     } finally {
       setBuscandoItem(false)
     }
-  }, [])
+  }, [campanhaId])
 
   useEffect(() => {
     const t = setTimeout(() => buscarItens(buscaItem, abaCompendio), 300)
@@ -3163,9 +3171,10 @@ export function MesaCliente() {
           />
         )}
 
-        {modalDistribuirAberto && ehDM && sessaoAtiva && (
+        {modalDistribuirAberto && ehDM && sessaoAtiva && campanhaAtiva && (
           <ModalDistribuirTesouro
             sessaoId={sessaoAtiva.id}
+            campanhaId={campanhaAtiva.id}
             personagens={personagensSessao}
             onFechar={() => setModalDistribuirAberto(false)}
           />

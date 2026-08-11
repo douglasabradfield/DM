@@ -241,12 +241,19 @@ export interface MagicItem {
   requires_attunement: boolean
   attunement_notes_pt: string | null
   is_consumable: boolean
+  is_cursed?: boolean
+  is_sentient?: boolean
   has_charges: boolean
   charges_max: number | null
   activation_type: string | null
   description_pt: string | null
   mechanics_pt: string | null
   source_page_start: number | null
+  weight_lb?: number | null
+  gp_value?: number | null
+  criado_por?: string | null
+  campanha_id?: string | null
+  visivel_jogadores?: boolean
 }
 
 export interface EquipmentWeapon {
@@ -262,6 +269,14 @@ export interface EquipmentWeapon {
   mastery_pt: string | null
   weight_lb: number | null
   cost_cp: number | null
+  range_ft?: number | null
+  damage_type_en?: string | null
+  properties_en?: string | null
+  description_pt?: string | null
+  description_en?: string | null
+  criado_por?: string | null
+  campanha_id?: string | null
+  visivel_jogadores?: boolean
 }
 
 export interface EquipmentArmor {
@@ -270,11 +285,18 @@ export interface EquipmentArmor {
   name_pt: string
   name_en: string
   category_pt: string | null
+  category_en?: string | null
   base_ac_formula_pt: string | null
+  base_ac_formula_en?: string | null
   strength_requirement: number | null
   stealth_disadvantage: boolean
   weight_lb: number | null
   cost_cp: number | null
+  description_pt?: string | null
+  description_en?: string | null
+  criado_por?: string | null
+  campanha_id?: string | null
+  visivel_jogadores?: boolean
 }
 
 export interface EquipmentGear {
@@ -286,6 +308,10 @@ export interface EquipmentGear {
   cost_gp: number | null
   weight_lb: number | null
   description_pt: string | null
+  description_en?: string | null
+  criado_por?: string | null
+  campanha_id?: string | null
+  visivel_jogadores?: boolean
 }
 
 export interface Condicao {
