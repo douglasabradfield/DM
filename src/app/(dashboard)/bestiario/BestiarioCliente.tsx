@@ -9,7 +9,7 @@ import { useBatalha } from '@/store/batalha'
 import { usePermissao } from '@/hooks/usePermissao'
 import { useCampanha } from '@/store/campanha'
 import { calcularModificadorAtributo, formatarModificador, cn } from '@/lib/utils'
-import { Search, Swords, Plus, X, Trash2, Pencil, ShieldAlert } from 'lucide-react'
+import { Search, Swords, Plus, X, Trash2, Pencil, ShieldAlert, Star } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import { BotaoReportar } from '@/components/ui/BotaoReportar'
@@ -578,6 +578,7 @@ const MONSTRO_VAZIO = {
 // valor antes do insert/update, senão o PostgREST retorna 400.
 const CAMPOS_OBRIGATORIOS: { chave: keyof typeof MONSTRO_VAZIO; secao: SecaoAdmin; rotulo: string }[] = [
   { chave: 'name_pt', secao: 'basico', rotulo: 'Nome PT' },
+  { chave: 'name_en', secao: 'basico', rotulo: 'Nome EN' },
   { chave: 'size_pt', secao: 'basico', rotulo: 'Tamanho' },
   { chave: 'type_pt', secao: 'basico', rotulo: 'Tipo' },
   { chave: 'alignment_pt', secao: 'basico', rotulo: 'Alinhamento' },
@@ -674,6 +675,12 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
 
   const [secao, setSecao] = useState<SecaoAdmin>('basico')
   const [salvando, setSalvando] = useState(false)
+  // Default false mantido de propósito (revisado nesta rodada, não é
+  // esquecimento): diferente de magia/item, um monstro é segredo do
+  // mestre até ser revelado em jogo — mesmo o bestiário sendo tela
+  // exclusiva de DM, visivel_jogadores também controla o que aparece
+  // fora dele (ex.: qualquer futura tela voltada a jogador). Manter
+  // "escondido" como padrão é o lado seguro.
   const [visivelJogadores, setVisivelJogadores] = useState(monstro?.visivel_jogadores ?? false)
   const [sufixoSlug] = useState(() => gerarSufixoAleatorio())
   const [camposInvalidos, setCamposInvalidos] = useState<Set<string>>(new Set())
@@ -776,6 +783,17 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
       languages_pt: basico.languages_pt || null,
       traits_rules_pt: textoTracos || null,
       actions_rules_pt: textoAcoes || null,
+      // *_en não têm campo próprio no formulário — espelham o *_pt, igual ao
+      // que já acontecia só na criação. Movido para dadosBasicos (usado
+      // também no update) porque editar um monstro do SRD e corrigir, por
+      // exemplo, size_pt deixava size_en com o valor antigo, dessincronizado.
+      name_en: basico.name_en.trim() || basico.name_pt,
+      size_en: basico.size_pt,
+      type_en: basico.type_pt,
+      alignment_en: basico.alignment_pt,
+      speed_en: basico.speed_pt,
+      senses_en: basico.senses_pt || null,
+      languages_en: basico.languages_pt || null,
     }
     for (const campo of CAMPOS_INTEIRO_OPCIONAIS) {
       dadosBasicos[campo] = paraInteiroOpcional(basico[campo])
@@ -785,11 +803,6 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
 
     const dadosCriacao = {
       ...dadosBasicos,
-      name_en: basico.name_en.trim() || basico.name_pt,
-      size_en: basico.size_pt,
-      type_en: basico.type_pt,
-      alignment_en: basico.alignment_pt,
-      speed_en: basico.speed_pt,
       slug: slugGerado,
       criado_por: criadoPor,
       campanha_id: campanhaId,
@@ -868,7 +881,16 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
     if (acoesForm.length > 0) {
       const acoesParaInserir = acoesForm
         .filter(a => a.name_pt)
-        .map(({ id: _id, monster_id: _mid, ...rest }) => ({ ...rest, monster_id: Number(mid) }))
+        .map(({ id: _id, monster_id: _mid, ...rest }) => ({
+          ...rest,
+          monster_id: Number(mid),
+          // damage_type_en/damage2_type_en não têm campo próprio no
+          // formulário (só o select em PT) — sem isso, ações criadas pela
+          // UI ficavam com o tipo de dano em inglês nulo, diferente de uma
+          // ação importada do SRD.
+          damage_type_en: rest.damage_type_pt ? (MAPA_DANO_PT_EN[rest.damage_type_pt] ?? rest.damage_type_en ?? null) : null,
+          damage2_type_en: rest.damage2_type_pt ? (MAPA_DANO_PT_EN[rest.damage2_type_pt] ?? rest.damage2_type_en ?? null) : null,
+        }))
       const { error } = await supabase.from('monster_actions').insert(acoesParaInserir)
       if (error) { toast.error(`Erro ao salvar ações: ${error.message}`); houveErroAuxiliar = true }
     }
@@ -953,7 +975,7 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
                   )}
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className={lbl}>Nome PT <span className="text-[var(--red2)]">*</span></label><input className={campoInvalido('name_pt')} value={basico.name_pt} onChange={e => setBasico(b => ({ ...b, name_pt: e.target.value }))} /></div>
-                    <div><label className={lbl}>Nome EN</label><input className={inp} value={basico.name_en} onChange={e => setBasico(b => ({ ...b, name_en: e.target.value }))} placeholder="(opcional — usa o nome PT se vazio)" /></div>
+                    <div><label className={lbl}>Nome EN <span className="text-[var(--red2)]">*</span></label><input className={campoInvalido('name_en')} value={basico.name_en} onChange={e => setBasico(b => ({ ...b, name_en: e.target.value }))} placeholder="usado nas referências em inglês" /></div>
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     <div><label className={lbl}>Tamanho <span className="text-[var(--red2)]">*</span></label><input className={campoInvalido('size_pt')} value={basico.size_pt} onChange={e => setBasico(b => ({ ...b, size_pt: e.target.value }))} /></div>
@@ -1151,9 +1173,21 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
                       </div>
                       <div className="grid grid-cols-4 gap-2 mb-2">
                         <div><label className={lbl}>Dano</label><input className="w-full input-dd text-sm mt-0.5" value={a.damage_dice ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, damage_dice: e.target.value } : x))} placeholder="2d6+4" /></div>
-                        <div><label className={lbl}>Tipo Dano PT</label><input className="w-full input-dd text-sm mt-0.5" value={a.damage_type_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, damage_type_pt: e.target.value } : x))} /></div>
+                        <div>
+                          <label className={lbl}>Tipo Dano</label>
+                          <select className="w-full input-dd text-sm mt-0.5" value={a.damage_type_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, damage_type_pt: e.target.value || null } : x))}>
+                            <option value="">— Nenhum —</option>
+                            {TIPOS_DANO_OPCOES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
                         <div><label className={lbl}>Dano 2</label><input className="w-full input-dd text-sm mt-0.5" value={a.damage2_dice ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, damage2_dice: e.target.value } : x))} /></div>
-                        <div><label className={lbl}>Tipo Dano 2 PT</label><input className="w-full input-dd text-sm mt-0.5" value={a.damage2_type_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, damage2_type_pt: e.target.value } : x))} /></div>
+                        <div>
+                          <label className={lbl}>Tipo Dano 2</label>
+                          <select className="w-full input-dd text-sm mt-0.5" value={a.damage2_type_pt ?? ''} onChange={e => setAcoesForm(f => f.map((x, j) => j === i ? { ...x, damage2_type_pt: e.target.value || null } : x))}>
+                            <option value="">— Nenhum —</option>
+                            {TIPOS_DANO_OPCOES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2 mb-2">
                         <div>
@@ -1335,6 +1369,27 @@ export function BestiarioCliente() {
       else proximo.delete(String(m.id))
       return proximo
     })
+  }
+
+  async function tornarPadrao(m: MonsterDetailed) {
+    if (!confirm(`Tornar "${m.name_pt}" um monstro padrão? Ele deixará de ser exclusivo desta campanha e passará a aparecer para todas as campanhas.`)) return
+    const faltando: string[] = []
+    if (!m.name_en?.trim()) faltando.push('Nome EN')
+    if (!m.type_pt?.trim()) faltando.push('Tipo')
+    if (!m.size_pt?.trim()) faltando.push('Tamanho')
+    if (!m.alignment_pt?.trim()) faltando.push('Alinhamento')
+    if (faltando.length > 0) {
+      toast.error(`Preencha antes de tornar padrão: ${faltando.join(', ')}`)
+      return
+    }
+    const supabase = createClient()
+    const { data, error } = await supabase.from('monsters').update({ criado_por: null, campanha_id: null }).eq('id', m.id).select(`
+      *, monster_saves(*), monster_skills(*),
+      monster_damage_modifiers(*), monster_condition_immunities(*), monster_actions(*)
+    `).single()
+    if (error) { toast.error(error.message); return }
+    toast.success(`"${m.name_pt}" agora é um monstro padrão!`)
+    monstroSalvo(data as MonsterDetailed)
   }
 
   async function excluirMonstro(m: MonsterDetailed) {
@@ -1650,6 +1705,15 @@ export function BestiarioCliente() {
                             title="Excluir monstro"
                           >
                             <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        {isAdmin && m.criado_por && (
+                          <button
+                            onClick={() => tornarPadrao(m)}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-[var(--gold)]/10 border border-[var(--gold)]/40 text-[var(--gold)] rounded text-sm font-cinzel hover:bg-[var(--gold)]/20 transition-colors"
+                            title="Tornar este monstro padrão para todas as campanhas"
+                          >
+                            <Star className="w-3.5 h-3.5" /> Tornar padrão
                           </button>
                         )}
                         {podeEditarMonstro && (
