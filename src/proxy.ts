@@ -24,7 +24,9 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') ||
-    request.nextUrl.pathname.startsWith('/cadastro')
+    request.nextUrl.pathname.startsWith('/cadastro') ||
+    request.nextUrl.pathname.startsWith('/recuperar-senha') ||
+    request.nextUrl.pathname.startsWith('/redefinir-senha')
 
   const isDashboardRoute = request.nextUrl.pathname.startsWith('/batalha') ||
     request.nextUrl.pathname.startsWith('/personagens') ||
@@ -40,7 +42,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (isAuthRoute && user) {
+  // /redefinir-senha é sempre acessada com uma sessão de recuperação ativa
+  // (ou prestes a ser criada pelo exchangeCodeForSession no client) — não expulsar para o dashboard
+  const isRedefinirSenha = request.nextUrl.pathname.startsWith('/redefinir-senha')
+
+  if (isAuthRoute && user && !isRedefinirSenha) {
     return NextResponse.redirect(new URL('/batalha', request.url))
   }
 

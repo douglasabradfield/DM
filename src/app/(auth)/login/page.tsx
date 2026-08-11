@@ -69,6 +69,11 @@ export default function LoginPage() {
                 placeholder="••••••••"
                 required
               />
+              <div className="text-right mt-1">
+                <Link href="/recuperar-senha" className="text-[#8870a8] text-xs hover:text-[#d4a843] transition-colors">
+                  Esqueci minha senha
+                </Link>
+              </div>
             </div>
             <BotaoRunico type="submit" variante="ouro" tamanho="lg" className="w-full" carregando={carregando}>
               ✦ Entrar
