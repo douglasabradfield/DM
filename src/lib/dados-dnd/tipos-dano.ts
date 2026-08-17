@@ -27,6 +27,17 @@ export function getTipoDano(id: TipoDano): InfoTipoDano {
   return TIPOS_DANO.find(t => t.id === id) ?? TIPOS_DANO[0]
 }
 
+// Dados legados gravam tipo_dano capitalizado (ex. "Cortante"), diferente do
+// id em minúsculo que aplicarResistencias() espera. Para os 13 tipos, o
+// `nome` normalizado (minúsculo, sem acento) é idêntico ao `id` — então essa
+// normalização cobre tanto ids já corretos quanto valores legados, sempre
+// validando contra TIPOS_DANO (nunca aceita string solta).
+export function normalizarTipoDano(raw: string | null | undefined): TipoDano | null {
+  if (!raw) return null
+  const norm = raw.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim()
+  return TIPOS_DANO.find(t => t.id === norm)?.id ?? null
+}
+
 export const MODIFICADOR_IMUNIDADE = 'Imunidade'
 export const MODIFICADOR_RESISTENCIA = 'Resistência'
 export const MODIFICADOR_VULNERABILIDADE = 'Vulnerabilidade'

@@ -22,7 +22,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getNivelPorXP } from '@/lib/dados-dnd/xp-niveis'
 import { TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
 import { calcularDificuldade, xpParaCR, type NivelDificuldade } from '@/lib/dados-dnd/xp-encontro'
-import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
+import { TIPOS_DANO, normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
 import type { Personagem, TipoDano } from '@/types/dnd'
 import { cn } from '@/lib/utils'
 import {
@@ -1048,7 +1048,7 @@ function ModalCarregarPersonagens({ campanhaId, onFechar }: { campanhaId: string
             nome: a.nome,
             bonus: a.bonus_ataque,
             dano: a.dano,
-            tipo_dano: a.tipo_dano || undefined,
+            tipo_dano: normalizarTipoDano(a.tipo_dano) ?? undefined,
           })),
         },
         ordem: 999,

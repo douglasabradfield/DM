@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 import { pvVisivelParaJogador, ESTADO_VAGO_INFO, type ModoRevelacao } from '@/lib/batalha/visibilidade-pv'
 import { vantagemDerivada } from '@/lib/batalha/vantagem-por-condicao'
 import { getCondicao, TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
-import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
+import { TIPOS_DANO, normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
 import { BarraVida } from '@/components/batalha/BarraVida'
 import type { ArmaEmpunhada, Combatente, EntradaLog, TipoCondicao, EspacosMagiaBatalha, TipoEntradaLog } from '@/types/batalha'
 import type { InventarioItemDb, Personagem, Spell, TipoDano } from '@/types/dnd'
@@ -1265,6 +1265,103 @@ function ModalMagias({
   )
 }
 
+interface MagiaPreparavel {
+  id: string
+  nome: string
+  nivel: number
+  preparada: boolean
+}
+
+// 📖 Preparar magias — fora de combate, antes da sessão. Mesma tabela que a
+// Ficha edita (magias_personagem.preparada), escrita direta (não é estado
+// de jogo/PV, é gerenciamento de ficha — mesmo padrão de adicionar/remover
+// magia na Ficha). Truques (nível 0) não têm preparação em D&D 5e — não
+// entram na lista.
+function ModalPrepararMagias({
+  personagemId, personagemNome, onFechar,
+}: {
+  personagemId: string
+  personagemNome: string
+  onFechar: () => void
+}) {
+  const [carregando, setCarregando] = useState(true)
+  const [magias, setMagias] = useState<MagiaPreparavel[]>([])
+
+  const carregar = useCallback(() => {
+    createClient()
+      .from('magias_personagem')
+      .select('id, preparada, nivel, spell:spells!spell_id(name_pt)')
+      .eq('personagem_id', personagemId)
+      .gt('nivel', 0)
+      .order('nivel')
+      .then(({ data }) => {
+        type Linha = { id: string; preparada: boolean; nivel: number; spell: Pick<Spell, 'name_pt'> | null }
+        const linhas = (data ?? []) as unknown as Linha[]
+        setMagias(linhas.map(m => ({ id: m.id, nome: m.spell?.name_pt ?? '(sem nome)', nivel: m.nivel, preparada: m.preparada })))
+        setCarregando(false)
+      })
+  }, [personagemId])
+
+  useEffect(() => { carregar() }, [carregar])
+
+  async function toggle(m: MagiaPreparavel) {
+    const novoValor = !m.preparada
+    setMagias(prev => prev.map(x => x.id === m.id ? { ...x, preparada: novoValor } : x))
+    const { error } = await createClient().from('magias_personagem').update({ preparada: novoValor }).eq('id', m.id)
+    if (error) {
+      toast.error('Erro ao atualizar magia preparada')
+      setMagias(prev => prev.map(x => x.id === m.id ? { ...x, preparada: m.preparada } : x))
+    }
+  }
+
+  const totalPreparadas = magias.filter(m => m.preparada).length
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/60 p-3" onClick={onFechar}>
+      <div
+        className="bg-[var(--bg3)] border border-[var(--border2)] rounded-xl shadow-2xl w-full max-w-xs p-4 max-h-[70vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-cinzel text-[var(--gold)] font-bold text-sm truncate">📖 Preparar — {personagemNome}</h3>
+          <button onClick={onFechar} className="text-[var(--border)] hover:text-[var(--red2)] p-1 -m-1 flex-shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {!carregando && magias.length > 0 && (
+          <p className="text-[var(--text3)] text-[11px] font-crimson mb-2">{totalPreparadas} preparada(s)</p>
+        )}
+
+        {carregando ? (
+          <p className="text-[var(--text3)] text-xs font-crimson text-center py-4">Carregando...</p>
+        ) : magias.length === 0 ? (
+          <p className="text-[var(--text3)] text-xs font-crimson text-center py-4">Nenhuma magia de nível 1+ na ficha</p>
+        ) : (
+          <div className="space-y-1">
+            {magias.map(m => (
+              <label
+                key={m.id}
+                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] cursor-pointer min-h-[44px]"
+              >
+                <input
+                  type="checkbox"
+                  checked={m.preparada}
+                  onChange={() => toggle(m)}
+                  className="w-4 h-4 accent-[var(--gold)] flex-shrink-0"
+                />
+                <span className="text-[var(--text)] text-sm font-crimson truncate flex-1">{m.nome}</span>
+                <span className="text-[var(--text3)] text-xs font-cinzel flex-shrink-0">N{m.nivel}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 // 🎒 Item — lista do inventário. Fase 3: só registra o uso no log e aplica
 // cura se o jogador informar um valor (poção). Sem decremento de
 // quantidade nem transferência — isso é Fase 4.
@@ -1794,8 +1891,21 @@ function CartaoPersonagemSessao({
 }) {
   const [condicaoAberta, setCondicaoAberta] = useState<TipoCondicao | null>(null)
   const [escolhendoCondicao, setEscolhendoCondicao] = useState(false)
+  const [valorPV, setValorPV] = useState('')
   const subtitulo = [personagem.classe, personagem.nivel ? `Nv${personagem.nivel}` : null].filter(Boolean).join(' · ')
   const condicoesAtuais = (personagem.condicoes ?? []) as TipoCondicao[]
+  const valorPVNumerico = parseInt(valorPV) || 0
+
+  // Temporário faz *set* absoluto (não soma) — coerente com a regra 5e de
+  // PV temporário não empilhar (onDefinirPVTemp já é usado assim em outros
+  // lugares da tela de sessão).
+  function aplicarValorPV(acao: 'dano' | 'cura' | 'temp') {
+    if (valorPVNumerico <= 0) return
+    if (acao === 'dano') onAjustarPV(-valorPVNumerico)
+    else if (acao === 'cura') onAjustarPV(valorPVNumerico)
+    else onDefinirPVTemp(valorPVNumerico)
+    setValorPV('')
+  }
 
   return (
     <div className="h-full flex flex-col gap-1.5 overflow-hidden rounded-xl bg-[var(--bg2)] border border-[var(--gold)]/40 shadow-lg p-3">
@@ -1829,38 +1939,64 @@ function CartaoPersonagemSessao({
       <BarraVida atual={personagem.pv_atual} maximo={personagem.pv_maximo} temporarios={personagem.pv_temporarios} className="flex-shrink-0" />
 
       {podeEditar && (
-        <div className="flex-shrink-0 flex items-center gap-1">
-          {[-5, -1, 1, 5].map(delta => (
-            <button
-              key={delta}
+        <div className="flex-shrink-0 space-y-1">
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              inputMode="numeric"
+              value={valorPV}
+              onChange={e => setValorPV(e.target.value)}
+              placeholder="0"
               disabled={enviando}
-              onClick={() => onAjustarPV(delta)}
-              className={cn(
-                'flex-1 py-1.5 rounded border text-xs font-cinzel font-bold min-h-[30px] disabled:opacity-40',
-                delta < 0 ? 'border-[var(--red2)]/50 text-[var(--red2)]' : 'border-[var(--green2)]/50 text-[var(--green2)]'
-              )}
-            >
-              {delta > 0 ? `+${delta}` : delta}
-            </button>
-          ))}
-          <button
-            disabled={enviando}
-            onClick={() => onDefinirPVTemp(personagem.pv_temporarios + 1)}
-            title="+1 PV temporário"
-            className="flex-1 py-1.5 rounded border border-[var(--accent2)]/50 text-[var(--accent2)] text-xs font-cinzel font-bold min-h-[30px] disabled:opacity-40"
-          >
-            +1 temp
-          </button>
-          {personagem.pv_temporarios > 0 && (
+              className="w-14 input-dd text-center text-sm py-1.5 disabled:opacity-40"
+            />
             <button
-              disabled={enviando}
-              onClick={() => onDefinirPVTemp(0)}
-              title="Zerar PV temporários"
-              className="flex-1 py-1.5 rounded border border-[var(--border)] text-[var(--text3)] text-xs font-cinzel min-h-[30px] disabled:opacity-40"
+              disabled={enviando || valorPVNumerico <= 0}
+              onClick={() => aplicarValorPV('dano')}
+              className="flex-1 py-1.5 rounded border border-[var(--red2)]/50 text-[var(--red2)] text-xs font-cinzel font-bold min-h-[30px] disabled:opacity-40"
             >
-              0 temp
+              💔 Dano
             </button>
-          )}
+            <button
+              disabled={enviando || valorPVNumerico <= 0}
+              onClick={() => aplicarValorPV('cura')}
+              className="flex-1 py-1.5 rounded border border-[var(--green2)]/50 text-[var(--green2)] text-xs font-cinzel font-bold min-h-[30px] disabled:opacity-40"
+            >
+              💚 Cura
+            </button>
+            <button
+              disabled={enviando || valorPVNumerico <= 0}
+              onClick={() => aplicarValorPV('temp')}
+              className="flex-1 py-1.5 rounded border border-[var(--accent2)]/50 text-[var(--accent2)] text-xs font-cinzel font-bold min-h-[30px] disabled:opacity-40"
+            >
+              🛡️ Temp
+            </button>
+          </div>
+          <div className="flex items-center gap-1">
+            {[-5, -1, 1, 5].map(delta => (
+              <button
+                key={delta}
+                disabled={enviando}
+                onClick={() => onAjustarPV(delta)}
+                className={cn(
+                  'flex-1 py-1 rounded border text-[10px] font-cinzel font-bold min-h-[24px] disabled:opacity-40',
+                  delta < 0 ? 'border-[var(--red2)]/50 text-[var(--red2)]' : 'border-[var(--green2)]/50 text-[var(--green2)]'
+                )}
+              >
+                {delta > 0 ? `+${delta}` : delta}
+              </button>
+            ))}
+            {personagem.pv_temporarios > 0 && (
+              <button
+                disabled={enviando}
+                onClick={() => onDefinirPVTemp(0)}
+                title="Zerar PV temporários"
+                className="flex-1 py-1 rounded border border-[var(--border)] text-[var(--text3)] text-[10px] font-cinzel min-h-[24px] disabled:opacity-40"
+              >
+                Zerar temp
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1939,17 +2075,19 @@ function CartaoPersonagemSessao({
 }
 
 function BarraAcoesSessao({
-  podeAgir, onAbrirMagia, onAbrirItem, onAbrirOuro, onAbrirDescanso, botoesDM,
+  podeAgir, onAbrirMagia, onAbrirItem, onAbrirOuro, onAbrirDescanso, onAbrirPreparar, botoesDM,
 }: {
   podeAgir: boolean
   onAbrirMagia: () => void
   onAbrirItem: () => void
   onAbrirOuro: () => void
   onAbrirDescanso: () => void
+  onAbrirPreparar: () => void
   botoesDM?: { label: string; onClick: () => void }[]
 }) {
   const botoes = [
     { label: '✨ Magia', onClick: onAbrirMagia },
+    { label: '📖 Preparar', onClick: onAbrirPreparar },
     { label: '🎒 Item', onClick: onAbrirItem },
     { label: '💰 Ouro', onClick: onAbrirOuro },
     { label: '🛏️ Descanso', onClick: onAbrirDescanso },
@@ -2511,6 +2649,7 @@ export function MesaCliente() {
   const [personagemOperadoIdSessao, setPersonagemOperadoIdSessao] = useState<string | null>(null)
   const [enviandoSessao, setEnviandoSessao] = useState(false)
   const [modalMagiaSessaoAberto, setModalMagiaSessaoAberto] = useState(false)
+  const [modalPrepararSessaoAberto, setModalPrepararSessaoAberto] = useState(false)
   const [modalItemSessaoAberto, setModalItemSessaoAberto] = useState(false)
   const [modalOuroAberto, setModalOuroAberto] = useState(false)
   const [modalDescansoAberto, setModalDescansoAberto] = useState(false)
@@ -2683,6 +2822,15 @@ export function MesaCliente() {
     () => userId ? personagensSessao.filter(p => p.user_id === userId) : [],
     [personagensSessao, userId]
   )
+
+  // Presença — sessoes.personagens_presentes (null = todos presentes,
+  // compatível com sessões antigas e o estado inicial). Usada só para as
+  // superfícies sociais (barra de participantes, alvos de transferência) —
+  // o seletor "🎭 Operando" do DM continua com a lista completa.
+  const personagensPresentes = useMemo(() => {
+    const presentes = sessaoAtiva?.personagens_presentes
+    return presentes ? personagensSessao.filter(p => presentes.includes(p.id)) : personagensSessao
+  }, [personagensSessao, sessaoAtiva?.personagens_presentes])
 
   // Toast de "recebi algo" — via Realtime em `transferencias`, não pela
   // resposta síncrona da própria chamada (essa já mostra o toast de quem
@@ -2901,7 +3049,7 @@ export function MesaCliente() {
       efeito: 'dano',
       precisaAlvo: true,
       precisaValor: true,
-      tipoDanoPadrao: (arma.tipo_dano as TipoDano | undefined) ?? null,
+      tipoDanoPadrao: normalizarTipoDano(arma.tipo_dano),
     })
   }
 
@@ -2913,7 +3061,7 @@ export function MesaCliente() {
       efeito: 'dano',
       precisaAlvo: true,
       precisaValor: true,
-      tipoDanoPadrao: (a.tipo_dano as TipoDano | undefined) ?? null,
+      tipoDanoPadrao: normalizarTipoDano(a.tipo_dano),
     })
   }
 
@@ -3077,7 +3225,7 @@ export function MesaCliente() {
     return (
       <div className="flex flex-col h-full overflow-hidden">
         <BarraParticipantesSessao
-          personagens={personagensSessao}
+          personagens={personagensPresentes}
           meuPersonagemIds={meusPersonagemIdsSessao}
           personagemOperadoId={personagemOperadoIdSessao}
         />
@@ -3120,6 +3268,7 @@ export function MesaCliente() {
           <BarraAcoesSessao
             podeAgir={!enviandoSessao && online}
             onAbrirMagia={() => setModalMagiaSessaoAberto(true)}
+            onAbrirPreparar={() => setModalPrepararSessaoAberto(true)}
             onAbrirItem={() => setModalItemSessaoAberto(true)}
             onAbrirOuro={() => setModalOuroAberto(true)}
             onAbrirDescanso={() => setModalDescansoAberto(true)}
@@ -3140,11 +3289,19 @@ export function MesaCliente() {
           />
         )}
 
+        {modalPrepararSessaoAberto && personagemOperadoSessao && (
+          <ModalPrepararMagias
+            personagemId={personagemOperadoSessao.id}
+            personagemNome={personagemOperadoSessao.nome}
+            onFechar={() => setModalPrepararSessaoAberto(false)}
+          />
+        )}
+
         {modalItemSessaoAberto && personagemOperadoSessao && sessaoAtiva && (
           <ModalItem
             personagemId={personagemOperadoSessao.id}
             contexto={{ sessaoId: sessaoAtiva.id }}
-            destinatarios={personagensSessao
+            destinatarios={personagensPresentes
               .filter(p => p.id !== personagemOperadoSessao.id)
               .map(p => ({ id: p.id, nome: p.nome, imagemUrl: p.imagem_url }))}
             onFechar={() => setModalItemSessaoAberto(false)}
@@ -3155,7 +3312,7 @@ export function MesaCliente() {
           <ModalOuro
             personagem={personagemOperadoSessao}
             sessaoId={sessaoAtiva.id}
-            destinatarios={personagensSessao
+            destinatarios={personagensPresentes
               .filter(p => p.id !== personagemOperadoSessao.id)
               .map(p => ({ id: p.id, nome: p.nome, imagemUrl: p.imagem_url }))}
             onFechar={() => setModalOuroAberto(false)}
@@ -3175,7 +3332,7 @@ export function MesaCliente() {
           <ModalDistribuirTesouro
             sessaoId={sessaoAtiva.id}
             campanhaId={campanhaAtiva.id}
-            personagens={personagensSessao}
+            personagens={personagensPresentes}
             onFechar={() => setModalDistribuirAberto(false)}
           />
         )}

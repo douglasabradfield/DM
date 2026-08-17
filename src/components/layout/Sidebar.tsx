@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useCampanha } from '@/store/campanha'
 import { createClient } from '@/lib/supabase/client'
-import type { Campanha } from '@/types/database'
+import type { Campanha, Sessao } from '@/types/database'
+import type { Personagem } from '@/types/dnd'
 import {
   Swords, Users, Wand2, Package,
   Map, BookMarked, Bot, Shield, Dices,
@@ -46,6 +47,7 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
   } = useCampanha()
   const [dropdownAberto, setDropdownAberto] = useState(false)
   const [modalNova, setModalNova] = useState(false)
+  const [modalPresencaAberto, setModalPresencaAberto] = useState(false)
   const [nomeCampanha, setNomeCampanha] = useState('')
   const [criando, setCriando] = useState(false)
   const [minimizada, setMinimizada] = useState(false)
@@ -225,6 +227,12 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
                     ? new Date(sessaoAtiva.iniciada_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
                     : '—'}
                 </p>
+                <button
+                  onClick={() => setModalPresencaAberto(true)}
+                  className="w-full text-[10px] font-cinzel py-1 rounded border border-[var(--border)] text-[var(--text3)] hover:border-[var(--border2)] hover:text-[var(--text2)] transition-colors"
+                >
+                  👥 Presença
+                </button>
                 <button
                   onClick={handleEncerrarSessao}
                   disabled={encerrando}
@@ -418,7 +426,130 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
       {modalIniciarAberto && (
         <ModalIniciarSessao onConfirmar={confirmarIniciarSessao} onCancelar={fecharModalIniciar} />
       )}
+
+      {modalPresencaAberto && campanhaAtiva && sessaoAtiva && (
+        <ModalPresenca
+          campanhaId={campanhaAtiva.id}
+          sessao={sessaoAtiva}
+          onFechar={() => setModalPresencaAberto(false)}
+        />
+      )}
     </>
+  )
+}
+
+// 👥 Presença — quem do grupo está na mesa hoje. Guardado direto em
+// sessoes.personagens_presentes (array de ids; null = todos presentes,
+// estado inicial e compatível com sessões antigas) em vez de reaproveitar o
+// fluxo "Carregar Personagens" da batalha: aquele cria linhas em
+// batalha_combatentes (PV snapshot, iniciativa etc.) para uma tabela de
+// instância que a sessão não tem nem precisa — presença fora de combate é
+// só uma lista de ids, sem estado adicional por personagem.
+function ModalPresenca({
+  campanhaId, sessao, onFechar,
+}: {
+  campanhaId: string
+  sessao: Sessao
+  onFechar: () => void
+}) {
+  const setSessaoAtiva = useCampanha(s => s.setSessaoAtiva)
+  const [personagens, setPersonagens] = useState<Personagem[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
+  const [salvando, setSalvando] = useState(false)
+
+  useEffect(() => {
+    let cancelado = false
+    createClient()
+      .from('personagens')
+      .select('*')
+      .eq('campanha_id', campanhaId)
+      .eq('tipo_personagem', 'jogador')
+      .eq('ativo', true)
+      .then(({ data }) => {
+        if (cancelado) return
+        const lista = (data as Personagem[]) ?? []
+        setPersonagens(lista)
+        setSelecionados(new Set(
+          sessao.personagens_presentes ?? lista.map(p => p.id)
+        ))
+        setCarregando(false)
+      })
+    return () => { cancelado = true }
+  }, [campanhaId, sessao.personagens_presentes])
+
+  function toggle(id: string) {
+    setSelecionados(prev => {
+      const novo = new Set(prev)
+      if (novo.has(id)) novo.delete(id); else novo.add(id)
+      return novo
+    })
+  }
+
+  async function salvar() {
+    setSalvando(true)
+    const lista = Array.from(selecionados)
+    const { error } = await createClient()
+      .from('sessoes')
+      .update({ personagens_presentes: lista })
+      .eq('id', sessao.id)
+    setSalvando(false)
+    if (error) {
+      toast.error('Erro ao salvar presença')
+      return
+    }
+    setSessaoAtiva({ ...sessao, personagens_presentes: lista })
+    toast.success('Presença atualizada!')
+    onFechar()
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onFechar}>
+      <div className="bg-[var(--bg3)] border border-[var(--border2)] rounded-lg p-4 w-80 max-h-[70vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-cinzel text-[var(--gold)] font-bold text-sm">👥 Presença na sessão</h2>
+          <button onClick={onFechar} className="text-[var(--border)] hover:text-[var(--red2)]">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {carregando ? (
+          <p className="text-[var(--text3)] text-xs font-crimson text-center py-6">Carregando...</p>
+        ) : personagens.length === 0 ? (
+          <p className="text-[var(--text3)] text-xs font-crimson text-center py-6">Nenhum jogador na campanha</p>
+        ) : (
+          <div className="flex-1 overflow-y-auto space-y-1">
+            {personagens.map(p => (
+              <label key={p.id} className="flex items-center gap-2 cursor-pointer px-2 py-1.5 rounded hover:bg-[var(--surface)] transition-colors">
+                <input
+                  type="checkbox"
+                  checked={selecionados.has(p.id)}
+                  onChange={() => toggle(p.id)}
+                  className="w-4 h-4 accent-[var(--gold)]"
+                />
+                <span className="text-[var(--text2)] text-sm font-crimson truncate">{p.nome}</span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 justify-end mt-4 pt-3 border-t border-[var(--border)]">
+          <button
+            onClick={onFechar}
+            className="px-3 py-1.5 text-xs font-cinzel text-[var(--text3)] border border-[var(--border)] rounded hover:border-[var(--border2)] transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={salvar}
+            disabled={carregando || salvando}
+            className="px-3 py-1.5 text-xs font-cinzel text-[var(--gold)] bg-[var(--surface)] border border-[#d4a843]/50 rounded hover:bg-[#d4a843]/10 transition-colors disabled:opacity-50"
+          >
+            {salvando ? 'Salvando...' : 'Salvar presença'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

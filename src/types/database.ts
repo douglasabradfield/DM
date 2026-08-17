@@ -113,6 +113,7 @@ export interface Sessao {
   pausada_em: string | null
   concluida_em: string | null
   total_rodadas: number | null
+  personagens_presentes: string[] | null
 }
 
 export interface CampaignMember {

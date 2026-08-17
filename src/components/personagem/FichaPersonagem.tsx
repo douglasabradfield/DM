@@ -13,7 +13,7 @@ import { ModalLevelUp } from '@/components/personagem/ModalLevelUp'
 import { createClient } from '@/lib/supabase/client'
 import { useBatalha } from '@/store/batalha'
 import { useOnline } from '@/hooks/useOnline'
-import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
+import { TIPOS_DANO, normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
 import { getEspacosMagiaPorClasse, ehPactoArcano } from '@/lib/dados-dnd/espacos-magia'
 import { getNivelPorXP, getProgressoXP } from '@/lib/dados-dnd/xp-niveis'
 import type { TipoDano } from '@/types/dnd'
@@ -57,6 +57,7 @@ interface MagiaPersonagem {
   personagem_id: string
   spell_id: number | null
   magia_id: string | null
+  preparada: boolean
   spell: Spell
 }
 
@@ -92,6 +93,12 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   }, [])
 
   const [pagina, setPagina] = useState(1)
+  // Ataques criados antes de abrir a ficha (índice < qtdAtaquesIniciais) são
+  // "legados" — podem ficar sem tipo de dano sem bloquear o salvamento
+  // (dados antigos do grupo). Ataques adicionados nesta sessão de edição
+  // (índice >= qtdAtaquesIniciais, sempre appendados via push) exigem tipo
+  // antes de salvar. Ver validação em salvar().
+  const [qtdAtaquesIniciais] = useState(() => (p.ataques ?? []).length)
   const [dados, setDados] = useState({
     ...p,
     pontos_experiencia: p.pontos_experiencia ?? 0,
@@ -343,6 +350,12 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   }
 
   async function salvar() {
+    const ataquesNovosSemTipo = (dados.ataques ?? [])
+      .filter((a, i) => i >= qtdAtaquesIniciais && (a.nome?.trim() || a.dano?.trim()) && !normalizarTipoDano(a.tipo_dano))
+    if (ataquesNovosSemTipo.length > 0) {
+      toast.error(`Selecione o tipo de dano do(s) ataque(s): ${ataquesNovosSemTipo.map(a => a.nome || '(sem nome)').join(', ')}`)
+      return
+    }
     setSalvando(true)
     try {
       const supabase = createClient()
@@ -606,6 +619,18 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     const supabase = createClient()
     await supabase.from('magias_personagem').delete().eq('id', id)
     setMagiasPersonagem(prev => prev.filter(m => m.id !== id))
+  }
+
+  async function togglePreparada(m: MagiaPersonagem) {
+    const novoValor = !m.preparada
+    setMagiasPersonagem(prev => prev.map(x => x.id === m.id ? { ...x, preparada: novoValor } : x))
+    const supabase = createClient()
+    const { error } = await supabase.from('magias_personagem').update({ preparada: novoValor }).eq('id', m.id)
+    if (error) {
+      console.error('Erro ao atualizar preparada:', error)
+      toast.error('Erro ao atualizar magia preparada')
+      setMagiasPersonagem(prev => prev.map(x => x.id === m.id ? { ...x, preparada: m.preparada } : x))
+    }
   }
 
   const [percepcaoPassivaOverride, setPercepcaoPassivaOverride] = useState<number | null>(null)
@@ -1096,13 +1121,35 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               {/* Ataques */}
               <PainelGrimorio titulo="Ataques" compacto>
                 <div className="space-y-1">
-                  {(dados.ataques ?? []).map((atq, i) => (
-                    <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-1 text-xs">
-                      <input value={atq.nome} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], nome: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="Nome" />
-                      <input value={atq.bonus_ataque} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], bonus_ataque: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="+5" />
-                      <input value={atq.dano} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], dano: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="1d8+3" />
-                    </div>
-                  ))}
+                  {(() => {
+                    const semTipo = (dados.ataques ?? []).filter(a => (a.nome?.trim() || a.dano?.trim()) && !normalizarTipoDano(a.tipo_dano)).length
+                    return semTipo > 0 ? (
+                      <p className="text-[var(--gold)] text-[10px] font-crimson italic mb-1">
+                        ⚠️ {semTipo} ataque(s) sem tipo de dano — resistências não serão aplicadas
+                      </p>
+                    ) : null
+                  })()}
+                  {(dados.ataques ?? []).map((atq, i) => {
+                    const tipoValido = normalizarTipoDano(atq.tipo_dano)
+                    const semTipo = (atq.nome?.trim() || atq.dano?.trim()) && !tipoValido
+                    return (
+                      <div key={i} className="grid grid-cols-2 md:grid-cols-4 gap-1 text-xs">
+                        <input value={atq.nome} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], nome: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="Nome" />
+                        <input value={atq.bonus_ataque} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], bonus_ataque: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="+5" />
+                        <input value={atq.dano} onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], dano: e.target.value }; atualizar('ataques', a) }} className="input-dd" placeholder="1d8+3" />
+                        <select
+                          value={tipoValido ?? ''}
+                          onChange={e => { const a = [...dados.ataques]; a[i] = { ...a[i], tipo_dano: e.target.value }; atualizar('ataques', a) }}
+                          className={`input-dd ${semTipo ? 'border-[var(--gold)]' : ''}`}
+                        >
+                          <option value="">Selecione</option>
+                          {TIPOS_DANO.map(t => (
+                            <option key={t.id} value={t.id}>{t.icone} {t.nome}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )
+                  })}
                   <button onClick={() => atualizar('ataques', [...dados.ataques, { nome: '', bonus_ataque: '', dano: '', tipo_dano: '', notas: '' }])} className="text-xs text-[var(--accent)] hover:text-[var(--accent2)] transition-colors mt-1">+ Adicionar ataque</button>
                 </div>
               </PainelGrimorio>
@@ -1418,7 +1465,11 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           </PainelGrimorio>
 
           {/* Magias conhecidas */}
-          <PainelGrimorio titulo="Magias Conhecidas" compacto>
+          <PainelGrimorio
+            titulo="Magias Conhecidas"
+            subtitulo={magiasPersonagem.some(m => m.spell.level > 0) ? `${magiasPersonagem.filter(m => m.spell.level > 0 && m.preparada).length} preparada(s)` : undefined}
+            compacto
+          >
             {/* Busca */}
             <div className="relative mb-3">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
@@ -1465,6 +1516,15 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                       <div className="space-y-0.5">
                         {magias.map(m => (
                           <div key={m.id} className="flex items-center justify-between px-2 py-1 bg-[var(--bg3)] rounded hover:bg-[var(--surface)] transition-colors group">
+                            {m.spell.level > 0 && (
+                              <input
+                                type="checkbox"
+                                checked={m.preparada}
+                                onChange={() => togglePreparada(m)}
+                                title="Preparada"
+                                className="w-3.5 h-3.5 accent-[var(--accent)] flex-shrink-0 mr-1.5"
+                              />
+                            )}
                             <button
                               onClick={() => setMagiaPopup(m.spell)}
                               className="flex-1 text-left min-w-0"

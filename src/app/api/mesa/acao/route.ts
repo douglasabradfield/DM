@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { calcularDano, aplicarCura } from '@/lib/batalha/motor'
+import { normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
 import { ehPactoArcano } from '@/lib/dados-dnd/espacos-magia'
 import type { TipoDano } from '@/types/dnd'
 import type { TipoCondicao, TipoEntradaLog } from '@/types/batalha'
@@ -306,7 +307,7 @@ async function tratarAcaoBatalha(
       })
       resultados.push({ id: alvo.id as string, nome: alvo.nome as string, valor: alvoPayload.valor, morreu: false, tipoDano: null })
     } else {
-      const tipoDano = (alvoPayload.tipoDano ?? 'cortante') as TipoDano
+      const tipoDano = normalizarTipoDano(alvoPayload.tipoDano) ?? 'cortante'
       const { danoFinal, absorvidoTemporario } = calcularDano(alvoPayload.valor, tipoDano, alvo as {
         pv_temporarios: number; resistencias: TipoDano[]; imunidades: TipoDano[]; vulnerabilidades: TipoDano[]
       })
