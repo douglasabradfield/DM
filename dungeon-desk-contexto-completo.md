@@ -1,403 +1,405 @@
 # DUNGEON DESK — Documento de Contexto Completo
-# Atualizado em 06/08/2026 — consolidado a partir do repositório real (75 commits), dos chats anteriores e da revisão de código
-# Substitui a versão de 02/06/2026
+# Atualizado em 10/08/2026 — após as Fases 0, 0.5, 1, 2, 3 e 3.5
+# Substitui a versão de 06/08/2026
 
 ---
 
-## 0. O QUE MUDOU NESTA REVISÃO (leia primeiro)
+## 0. O QUE É O DUNGEON DESK HOJE
 
-| Item | Estava documentado | Realidade no repositório |
-|------|-------------------|--------------------------|
-| Framework | Next.js 14 | **Next.js 16.2.6 + React 19.2.4 + Tailwind v4** |
-| Middleware | `middleware.ts` | **`src/proxy.ts`** (Next 16 renomeou middleware → proxy) |
-| Sidebar minimizável | pendente | **implementado** (17/06) |
-| Espaços de magia | tabela fixa full caster | **`spell_slots_db.json` por classe** (PR do colaborador, 15/07) |
-| Tradução de aventura | não existia | **`/api/aventura/traduzir` + botão por capítulo** (05/08) |
-| Colaborador | não documentado | **gustavodsantana23** — 1 PR mergeado |
-| `src/store/auth.ts` | listado | **não existe** |
-| Arquivos de agente | não documentado | **`CLAUDE.md` e `AGENTS.md` na raiz do repo** |
+Aplicação web para mesas de D&D 5e em português. **Não é mais um app de mestre
+com anexo para jogadores** — é um app de mesa, onde cada jogador opera o próprio
+personagem em tempo real e o DM controla monstros, NPCs e a narrativa.
 
----
+A mudança de direção aconteceu entre 06 e 10/08/2026, motivada pelo conceito que
+a Wizards apresentou para o app oficial: o personagem fica no controle do
+jogador o tempo todo, não apenas em combate.
 
-## 1. OBJETIVO DO APP
-
-Dungeon Desk é uma plataforma SaaS para Dungeon Masters de D&D 5e brasileiros. Todo o texto é em PT-BR.
-
-- Batalha em tempo real (iniciativa, PV, condições, log, XP)
-- Fichas de personagem integradas à batalha
-- Bestiário, magias e itens do SRD 5.2.1 em português
-- Diário de campanha com visibilidade por papel
-- Aventuras estruturadas por capítulo/local, com processamento e tradução por IA
-- Assistente IA (NPCs, encontros, resumos)
-- Módulo de jogadores com acesso por campanha e plano herdado
+Uso atual: **ferramenta pessoal** da mesa do Douglas (quartas-feiras, campanha
+Vecna: Eve of Ruin). Comercialização está desativada por flag, não removida.
 
 ---
 
-## 2. STACK TÉCNICA (verificada em package.json)
+## 1. ARQUITETURA EM TRÊS CAMADAS
 
-- **Framework:** Next.js **16.2.6** (App Router)
-- **React:** 19.2.4 · **TypeScript** 5 · **Tailwind CSS v4** (`@tailwindcss/postcss`)
-- **Banco:** Supabase (PostgreSQL + Auth + Storage) — `@supabase/ssr` 0.10.3, `supabase-js` 2.105.4
-- **Estado:** Zustand 5 + **Immer**
-- **UI:** Radix UI (dialog, popover, progress, select, tabs, tooltip), lucide-react, framer-motion, react-hot-toast
-- **Forms:** react-hook-form + zod + @hookform/resolvers
-- **Drag and drop:** @dnd-kit
-- **Pagamentos:** Stripe 22 + @stripe/stripe-js
-- **IA:** `@anthropic-ai/sdk` 0.96 — modelo `claude-sonnet-4-5`
-- **PDF:** pdf-parse 2.4
-- **Deploy:** Vercel (Hobby — timeout 60s), auto-deploy na `main`
-- **Repositório:** https://github.com/douglasabradfield/DM (público, 75 commits)
-- **Produção:** https://dm-gules-one.vercel.app
-- **Supabase:** https://fjikjxoqeljzvvfyrfey.supabase.co
+```
+CAMPANHA  (permanente)
+   └── SESSÃO  (uma noite de jogo — o DM abre e fecha)
+          ├── modo livre: gasta slot, usa item, descansa, movimenta ouro
+          └── BATALHA  (zero ou mais por sessão)
+                 └── turnos, alvos, iniciativa
+```
+
+Antes das fases: a batalha vivia na memória do navegador do DM, e "sessão" era
+efeito colateral (uma sessão por batalha). Hoje **tudo vive no servidor** com
+Supabase Realtime, e cada dispositivo é uma janela para o mesmo estado.
+
+### Princípio de escrita
+**O cliente pede, o servidor decide.** Toda ação de jogo passa por
+`/api/mesa/acao` (service role), que valida antes de escrever:
+identidade → sessão/batalha ativa → controla o combatente → é a vez dele
+(exceto reação e DM) → alvos válidos → tem espaço de magia.
+
+O jogador nunca escreve direto em `batalha_combatentes`. A única exceção é a
+arma empunhada, protegida por trigger que rejeita alteração de qualquer outra
+coluna quando o autor não é o DM.
+
+### Propriedade de campo durante batalha
+| Campo | Dono | Na ficha |
+|---|---|---|
+| pv_atual, pv_temporarios, condições, slots, inspiração | Batalha | leitura, com aviso |
+| nome, atributos, equipamento, magias conhecidas | Ficha | editável |
+
+Ao encerrar a batalha, os valores voláteis são gravados na ficha.
+
+---
+
+## 2. STACK
+
+- **Next.js 16.2.6** (App Router) · React 19.2.4 · TypeScript 5 · Tailwind v4
+- Supabase (Postgres 17.6 + Auth + Storage + **Realtime**) — `sa-east-1`
+- Zustand 5 + Immer · Radix UI · lucide-react · framer-motion · react-hot-toast
+- react-hook-form + zod · @dnd-kit · Stripe 22 · `@anthropic-ai/sdk` (claude-sonnet-4-5)
+- Deploy: Vercel (Hobby, timeout 60s), auto-deploy da `main`
+- Repo: github.com/douglasabradfield/DM · Produção: dm-gules-one.vercel.app
+- Supabase project: `fjikjxoqeljzvvfyrfey`
 
 ### ⚠️ Next.js 16 — regra de ouro
-O `AGENTS.md` do repo avisa: *"This is NOT the Next.js you know"*. Há breaking changes em relação ao Next 14/15 que os modelos conhecem de treino. **Antes de escrever código que toque em roteamento, params, cache, middleware ou APIs de servidor, ler `node_modules/next/dist/docs/`.**
-Consequência prática já visível: `middleware.ts` virou **`src/proxy.ts`**, exportando `proxy(request)` + `config.matcher`.
+O `AGENTS.md` do repo avisa: *"This is NOT the Next.js you know"*. Antes de
+tocar em roteamento, params, cache ou middleware, **ler
+`node_modules/next/dist/docs/`**. Modelos conhecem Next 14/15 de treino e erram
+aqui. Exemplo concreto: `middleware.ts` virou **`src/proxy.ts`**.
 
 ### Scripts
 ```bash
-npm run dev      # localhost:3000
-npm run build    # sempre antes de commitar
-npm run start
+npm run dev · npm run build (sempre antes de commitar) · npm run start
 ```
 Não há lint nem testes configurados.
 
-### Variáveis de ambiente (.env.local)
-`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PRICE_HEROI`, `NEXT_PUBLIC_STRIPE_PRICE_SOLO`, `NEXT_PUBLIC_STRIPE_PRICE_MESA_PRO`, `NEXT_PUBLIC_STRIPE_PRICE_GUILD_MASTER`
-
 ---
 
-## 3. ARQUITETURA REAL (árvore extraída do repo)
+## 3. BANCO DE DADOS — 41 tabelas
 
+### Núcleo da mesa (fases 1–3.5)
 ```
-raiz/
-├── AGENTS.md                     # regras Next 16 para agentes
-├── CLAUDE.md                     # memória do Claude Code (importa @AGENTS.md)
-├── dungeon-desk-contexto-completo.md
-├── next.config.ts · tsconfig.json · postcss.config.mjs
-├── supabase/migrations/          # 4 migrations versionadas
-└── src/
-    ├── proxy.ts                  # auth guard (ex-middleware)
-    ├── app/
-    │   ├── (auth)/login · cadastro
-    │   ├── (dashboard)/
-    │   │   ├── page.tsx (home) · layout.tsx
-    │   │   ├── batalha · personagens · personagens/[id] · personagens/criar
-    │   │   ├── bestiario (BestiarioCliente.tsx) · magias (MagiasCliente.tsx) · itens (ItensCliente.tsx)
-    │   │   ├── aventura · diario · imagens · mapas · ia
-    │   │   ├── campanhas · conta · configuracoes
-    │   │   ├── ajuda · legal · feedback
-    │   │   └── admin · admin/feedbacks
-    │   ├── api/
-    │   │   ├── aventura/processar · aventura/traduzir
-    │   │   ├── campanhas/minhas · campanhas/[id]/membros · [id]/convidar · [id]/link-entrada
-    │   │   ├── campanha/convidar · campanha/link-convite
-    │   │   ├── convites/aceitar · convites/entrar
-    │   │   ├── usuarios/buscar
-    │   │   ├── personagem/importar-ficha
-    │   │   ├── ia/chat · ia/resumo-batalha · ia/resumo-campanha
-    │   │   ├── admin/usuarios · admin/usuarios/[id]/plano · [id]/admin
-    │   │   ├── stripe/criar-checkout · stripe/webhook
-    │   │   └── feedback/notificar
-    │   ├── convite/[token] · convite · entrar
-    │   └── layout.tsx · page.tsx · globals.css
-    ├── components/
-    │   ├── layout/ Sidebar · Header · ProvedorSessao
-    │   ├── batalha/ TabelaCombate · LinhaCombatente · LogBatalha · BarraVida ·
-    │   │            DadosVirtuais · EspacosMagia · PopupCondicao · SeletorTipoDano ·
-    │   │            SidebarMonstros · TooltipCombatente
-    │   ├── personagem/ FichaPersonagem · MiniCard · ModalLevelUp ·
-    │   │               BotaoCopiarPersonagem · BotaoImportarFicha
-    │   ├── diario/ EditorComMencoes · TextoComMencoes
-    │   ├── galeria/ GaleriaImagens
-    │   ├── convite/ AceitarConvite · AceitarConviteEfetivo · EntrarCampanha
-    │   ├── admin/ PainelAdmin · PainelFeedbacks
-    │   └── ui/ Badge · BloqueioPlano · BotaoAdicionarPersonagem · BotaoReportar ·
-    │           BotaoRunico · DivisorOrnamentado · PainelGrimorio
-    ├── hooks/ usePermissao · usePlanoEfetivo
-    ├── lib/
-    │   ├── supabase/client.ts (anon) · server.ts (server + createAdminClient service role)
-    │   ├── admin/verificar-admin.ts        # checa profiles.is_admin
-    │   ├── claude/client.ts · prompts.ts
-    │   ├── dados-dnd/ espacos-magia.ts · spell_slots_db.json · condicoes.ts ·
-    │   │              tipos-dano.ts · xp-encontro.ts · xp-niveis.ts
-    │   ├── ia/limites.ts · planos.ts · tema.ts · utils.ts
-    │   └── stripe/client.ts · produtos.ts
-    ├── store/ batalha.ts · campanha.ts        # NÃO existe auth.ts
-    └── types/ database.ts · batalha.ts · dnd.ts
+sessoes (16 col, 4 policies)
+  campanha_id, numero, titulo, status ('ativa'|'pausada'|'encerrada'),
+  iniciada_em, concluida_em, batalha_estado (LEGADO, não usar)
+  Índice único parcial: uma sessão não encerrada por campanha
+
+batalhas (13 col, 4 policies)
+  campanha_id, sessao_id, nome,
+  status ('preparacao'|'ativa'|'pausada'|'encerrada'),
+  rodada_atual, turno_combatente_id, iniciativa_confirmada, xp_distribuido,
+  revelacao_pv ('padrao'|'exato')
+  Índice único parcial: uma batalha não encerrada por campanha
+
+batalha_combatentes (36 col, 5 policies)
+  batalha_id, personagem_id (SET NULL), monster_id (SET NULL), controlado_por,
+  nome, tipo ('jogador'|'monstro'|'npc'|'aliado'), ordem, iniciativa,
+  ca, pv_maximo/atual/temporarios, condicoes[], espacos_magia, slots_monstro,
+  ataques_estruturados, dados_monstro, dados_personagem, nivel, notas,
+  resistencias/imunidades/vulnerabilidades, morto, ausente, vantagem,
+  inspiracao, dano_total, cura_total,
+  pv_revelado, arma_esquerda, arma_direita, reacao_usada, efeitos_ativos
+
+batalha_log (14 col, 4 policies)
+  batalha_id, rodada, turno, tipo (CHECK com 30 valores de TipoEntradaLog),
+  autor_id + autor_nome, alvo_id + alvo_nome, valor, tipo_dano, descricao,
+  resumo (bool)
+
+sessao_log (10 col, 2 policies)
+  sessao_id, tipo, autor_id + autor_nome, personagem_id, valor, tipo_dano,
+  descricao — ações fora de combate
 ```
 
-### Migrations versionadas (`supabase/migrations/`)
-```
-20260518_add_aventura_bloqueada_ate.sql
-20260601_add_resposta_feedbacks.sql
-20260601_add_slots_magia_personagens.sql
-20260601_add_titulo_imagens.sql      ⚠️ ver seção 9, item 3
-```
-A maior parte do schema foi aplicada direto no SQL Editor do Supabase, **não** está versionada aqui.
+**Realtime habilitado** (publication `supabase_realtime`): `batalhas`,
+`batalha_combatentes`, `batalha_log`, `sessoes`, `sessao_log`, `personagens`.
+Todas com `REPLICA IDENTITY FULL`.
 
----
+**`batalha_log.resumo`**: entradas contábeis (uma por alvo, tipo `dano`/`cura`,
+valor já com resistência aplicada) marcadas `true`; a UI as esconde, a agregação
+as usa. A entrada narrativa fica `false`.
 
-## 4. BANCO DE DADOS
+### Personagens (68 colunas)
+Adicionados nas fases: `classe_conjuradora`, `atributo_conjuracao`, `cd_magia`,
+`slots_magia` (jsonb `{"1":{total,usados}}`), `condicoes[]`,
+`dados_vida_total`, `dados_vida_usados`.
 
-### Tabelas da aplicação
+Visibilidade: **DEFAULT `'privado'`** (era `'grupo'` — toda ficha nascia
+pública). Policy de SELECT: DM vê tudo · dono vê o seu · jogador ativo vê
+`'grupo'` · alvo vê `'jogador_especifico'`.
+
+### Monstros (46 colunas, 4 policies)
+`criado_por`, `campanha_id`, `visivel_jogadores` permitem **homebrew na mesma
+tabela do SRD** — auxiliares e batalha funcionam sem alteração. SRD tem
+`criado_por IS NULL`.
+
+**As policies de escrita em `monsters` e nas 5 auxiliares não existiam** até a
+Fase 0.5 — o modal admin de edição nunca gravou nada desde junho.
+
+### Outras
 ```
-profiles          — id, email, nome, username, plano, is_admin (boolean),
-                    stripe_customer_id, avatar_url, telefone, criado_em
-campanhas         — id, dm_id, nome, status, sistema, moeda_custom_nome,
-                    sessao_data, sessao_formato, sessao_local, deletada
-campanha_membros  — id, campanha_id, user_id, email, papel, plano_efetivo,
-                    status ('ativo'|'convidado'|'removido'), token_convite,
-                    criado_em, aceito_em
-                    UNIQUE (campanha_id, user_id)
-personagens       — id, campanha_id, user_id, nome, classe, nivel, raca, antecedente,
-                    atributos, ca, iniciativa, deslocamento, pv_maximo/atual/temporarios,
-                    bonus_proficiencia, inspiracao, salvaguardas, pericias,
-                    ataques jsonb, equipamento, outras_proficiencias,
-                    tracos_personalidade, ideais, vinculos, fraquezas,
-                    caracteristicas_talentos, imagem_url, moedas jsonb,
-                    inventario jsonb, percepcao_passiva,
-                    resistencias/imunidades/vulnerabilidades jsonb,
-                    tipo_personagem, ativo, visibilidade, visibilidade_jogador_id,
-                    slots_magia jsonb { "1": { total: 4, usados: 2 } }, criado_em
-magias_personagem — id, personagem_id, spell_id (bigint, ATUAL),
-                    magia_id (uuid, LEGADO), nome, nivel, preparada,
-                    classe_conjuradora, criado_em
-sessoes           — batalha_estado jsonb (combatentes, log, rodadaAtual, turnoAtual)
-aventuras         — campanha_id, conteudo_json (capítulos → locais), bloqueada_ate
-diario_entradas   — id, campanha_id, sessao_id, tipo, titulo, conteudo,
-                    visibilidade ('dm'|'grupo'|'privado'|'jogador_especifico'),
-                    visibilidade_jogador_id, criado_por, criado_em
-notificacoes      — id, user_id, tipo, titulo, mensagem, lida, link, criado_em
-imagens           — id, campanha_id, nome, url, storage_path, tipo,
-                    visivel_jogadores, compartilhado, criado_em (+ titulo órfão)
-feedbacks         — id, user_id, tipo, mensagem, resposta, respondido_em,
-                    respondido_por, criado_em
-condicoes         — 16 condições D&D 5e
+campanhas · campanha_membros · profiles (is_admin) ·
+magias_personagem (spell_id bigint = atual; magia_id uuid = legado) ·
+diario_entradas (autor = criado_por; + batalha_id) · aventuras ·
+imagens (coluna nome) · notificacoes · feedbacks · condicoes ·
+conteudo_personalizado · uso_ia ·
+SRD: spells(259) · monsters(283) · monster_actions/saves/skills/
+damage_modifiers/condition_immunities · equipment_* · magic_items ·
+racas · subracas · classes · antecedentes · tipos_dano
 ```
 
-### Forma REAL de `aventuras.conteudo_json` (verificada na linha do Vecna)
-```
-capitulos[] → { numero, titulo, traduzido?, locais[] }
-locais[]    → { nome, codigo, notas_dm, texto_narrativo,
-                tesouros: string[], armadilhas: string[], criaturas: string[] }
-```
-**Não existem** por local: `npcs[]`, `encontros[]`, `detalhes_ocultos`, `id`, `ordem`.
-`src/types/database.ts` e `api/aventura/processar/route.ts` ainda assumem a forma antiga → seção 9, item 2.
-
-### Tabelas SRD
-```
-spells   — ~319 magias PT-BR + damage_dice, damage_type_en/pt, damage2_*,
-           save_ability, save_effect, attack_type, roller, upcast_dice,
-           conditions_applied_pt, heal_dice, aoe_type, aoe_size_ft
-monsters — ~291 monstros PT-BR + hit_dice, passive_perception,
-           darkvision_ft, blindsight_ft, tremorsense_ft, truesight_ft
-monster_saves · monster_skills · monster_damage_modifiers ·
-monster_condition_immunities · monster_actions
-equipment_weapons/armor/tools/gear · magic_items · magic_item_spells
-racas · subracas · classes · antecedentes
-conteudo_personalizado (plano DM Supremo)
-```
-
-**Monstros com `monster_actions` preenchido (12):** adult-black-dragon, assassin, clay-golem, ghoul, goblin, skeleton, treant, troll, vampire-spawn, veteran, werewolf, zombie.
-**Magias estruturadas:** acid-splash, fire-bolt, chill-touch, eldritch-blast, burning-hands, cure-wounds, healing-word, thunderwave, fireball, lightning-bolt, hold-person, hold-monster, mass-cure-wounds.
-
-> Números de cobertura não foram reconferidos no banco nesta revisão — o conector Supabase está sem permissão de leitura no momento (`list_projects` retorna vazio). Revalidar antes de decisões que dependam da contagem.
+**Tabelas mortas** (0 linhas, sem código): `assinaturas`, `campaign_invites`,
+`campaign_members`, `espacos_magia`, `locais`.
 
 ### Storage
-- `dungeon-desk-imagens` — público, 5MB, jpeg/png/gif/webp
-- `aventuras` — pdf/text/markdown/octet-stream
+`dungeon-desk-imagens` (público, 5MB) · `aventuras` (pdf/text/markdown)
 
 ---
 
-## 5. PLANOS
+## 4. ESTRUTURA DO CÓDIGO
 
-| Plano ID | Nome | Preço | Personagens | Campanhas | IA msgs | Aventura |
-|----------|------|-------|-------------|-----------|---------|---------|
-| free | Aventureiro | Grátis | 6 | 1 | 0 | ❌ |
-| solo | Herói | R$14,90 | ∞ | 1 (3 meses) | 30 | limitada |
-| mesa_pro | Mestre | R$29,90 | ∞ | 3 | 100 | ∞ |
-| guild_master | Guilda | R$59,90 | ∞ | ∞ | ∞ | ∞ |
-| dm_supremo | DM Supremo | R$99,90 | ∞ | ∞ | ∞ | ∞ + personalizado |
+```
+src/
+├── proxy.ts                        # auth guard (ex-middleware, Next 16)
+├── app/
+│   ├── (auth)/login · cadastro
+│   ├── (dashboard)/
+│   │   ├── mesa/                   # ⭐ tela do jogador (e controle remoto do DM)
+│   │   ├── batalha/                # cockpit do DM
+│   │   ├── personagens · bestiario · magias · itens
+│   │   ├── aventura · diario · imagens · mapas · ia
+│   │   ├── campanhas · conta · configuracoes · ajuda · legal · feedback
+│   │   └── admin · admin/feedbacks
+│   └── api/
+│       ├── mesa/acao               # ⭐ árbitro de TODA ação de jogo
+│       ├── aventura/processar · traduzir
+│       ├── campanhas/* · convites/* · usuarios/buscar
+│       ├── ia/chat · personagem/importar-ficha
+│       └── admin/* · stripe/* · feedback/notificar
+├── components/
+│   ├── mesa/MesaCliente.tsx        # ⭐ dois modos: sessão e combate
+│   ├── batalha/ TabelaCombate · LinhaCombatente · LogBatalha · BarraVida ·
+│   │            DadosVirtuais · EspacosMagia · PopupCondicao · SeletorTipoDano ·
+│   │            SidebarMonstros · TooltipCombatente · BannerBatalhaAtiva
+│   ├── personagem/ FichaPersonagem · MiniCard · ModalLevelUp · Botao*
+│   └── diario · galeria · convite · admin · layout · ui
+├── lib/
+│   ├── batalha/ motor.ts ⭐ · visibilidade-pv.ts · vantagem-por-condicao.ts
+│   ├── dados-dnd/ espacos-magia · spell_slots_db.json · condicoes ·
+│   │              tipos-dano · xp-encontro · xp-niveis
+│   ├── supabase/client · server (createAdminClient) · admin/verificar-admin
+│   └── claude · ia/limites · planos · stripe · tema · utils
+├── store/ batalha.ts (~900 linhas) · campanha.ts (campanha + sessão + realtime)
+├── hooks/ usePermissao · usePlanoEfetivo
+└── types/ database.ts · batalha.ts · dnd.ts
+```
 
-Hierarquia de acesso: **plano → campanha → DM ou jogador**. O jogador herda o plano do DM naquela campanha via `campanha_membros.plano_efetivo`, exposto em `campanhaAtiva.plano_efetivo` e consumido pelo hook `usePlanoEfetivo()`.
+### Libs puras (sem React, sem Supabase)
+- **`motor.ts`** — `calcularDano`, `aplicarCura`, `consumirEspaco`. Usado pelo
+  cliente E pelo servidor. Uma função, dois consumidores.
+- **`visibilidade-pv.ts`** — o que o jogador vê do PV
+- **`vantagem-por-condicao.ts`** — vantagem/desvantagem derivada das condições
+- **`espacos-magia.ts`** — tabela por classe (semente, não lei)
+
+### Carga de estado compartilhado
+`carregarSessaoAtiva` é chamado **na Sidebar** (envolve todas as telas), não em
+telas individuais. Motivo: o store é global, e carregar só na tela do DM fazia o
+jogador nunca receber a sessão. Qualquer estado global novo deve seguir isso.
 
 ---
 
-## 6. FUNCIONALIDADES IMPLEMENTADAS
+## 5. FUNCIONALIDADES
 
-### Batalha
-- Tracker completo: iniciativa, CA, PV, condições, log com ícones
-- **Fluxo principal:** botão "⚔️ Registrar Ação" — tipo de ação, autor, alvos múltiplos com valor por alvo, aplica dano/cura automaticamente
-- 25 tipos de ação; resistências/imunidades/vulnerabilidades aplicadas no cálculo
-- Slots de magia descontados automaticamente (jogador → banco; monstro/NPC → painel de conjuração na linha, ícone varinha)
-- Numeração automática (Goblin → Goblin 2), renomear inline, ajuste manual de PV, "💚 Aplicar Cura" em massa
-- Sincronização batalha → ficha (PV grava no banco quando há `personagem_id`)
-- Ataques estruturados vindos de `monster_actions` ao adicionar combatente
-- Resumo de batalha com ações agrupadas, XP automático e badge de dificuldade
-- Componentes de apoio: `DadosVirtuais`, `SeletorTipoDano`, `PopupCondicao`, `SidebarMonstros`, `TooltipCombatente`, `BarraVida`, `EspacosMagia`
+### Tela do jogador (`/mesa`) — mobile-first, sem scroll vertical
+Anatomia em altura fixa (`dvh`): barra de participantes → indicador de vez →
+cartão do personagem → faixa de vantagem → barra de ações com **armas
+empunhadas nos cantos inferiores** (zona do polegar).
 
-### Personagens
-- Ficha 5e em 3 folhas, criação guiada em 10 passos, importar PDF/JSON, copiar, transferir para jogador
-- Círculos de magia clicáveis (toggle usado/disponível), sincronizados com a batalha
-- **Espaços de magia por classe** via `getEspacosMagiaPorClasse(classe, nivel)` lendo `spell_slots_db.json` (contribuição do colaborador)
-- `ModalLevelUp` — animação de confete em canvas ao subir de nível
-- Visibilidade filtrada no banco, dropdown com nomes reais dos jogadores
+**Modo sessão** (sem batalha): ajusta PV, condições, gasta slots, usa item,
+movimenta ouro, descansa.
+**Modo combate**: ataca, conjura, usa item, reage; alvo escolhido tocando no
+avatar. Fora do turno, só reação.
+
+Ergonomia validada na mesa: nada de scroll, toque mínimo 44px (ações 56px),
+`dvh` em vez de `vh` (barra de endereço do mobile esconde o rodapé com `vh`).
+
+### Segredo da ordem de iniciativa
+A mesa sorteia a ordem **em cartas físicas** a cada rodada. A `/mesa` nunca
+mostra a fila — só quem age agora. A barra do jogador lista PJs em ordem
+alfabética; ao selecionar alvo, os inimigos aparecem, também alfabéticos.
+**Qualquer ordenação por `ordem`/iniciativa na tela do jogador é vazamento.**
+
+O turno é definido pelo DM: seta de próximo turno ou clique direto no
+combatente. `confirmarIniciativa` existe mas não é pré-requisito de nada.
+
+### Revelação de PV
+Modo global por batalha: `padrao` (jogador vê só o nome) ou `exato` (números).
+O olho por combatente revela o **estado vago** de um monstro específico:
+Ileso · Ferido · Muito ferido · Quase morrendo. PJs sempre se veem exatos.
+
+### Descanso
+**Curto**: o jogador escolhe quantos Dados de Vida gastar e **informa o valor
+rolado** (a mesa rola dado físico); Bruxo recupera todos os slots (Pacto Arcano).
+**Longo**: PV cheio, todos os slots, metade dos Dados de Vida (mín. 1).
+
+### Reações e efeitos persistentes
+Reação sempre disponível, uma por rodada, resetada ao virar a rodada.
+Efeitos persistentes (ex.: Guardiões Espirituais) são **lembrete, não
+automação** — sem grid posicional o app não sabe quem entrou no raio. Chip no
+conjurador e banner na tela do DM ao passar o turno.
 
 ### Bestiário
-- Badge "✓ Dados completos" para monstros com `monster_actions`
-- Detalhe estruturado: cabeçalho, atributos, **6 saves sempre visíveis** (proficiência destacada), perícias, sentidos, resistências/imunidades em chips, ações agrupadas por tipo com bônus/alcance/dano/save/recarga/custo lendário
-- Fallback em texto corrido para monstros sem dados estruturados
-- **Modal admin de edição** (`is_admin`): abas Básico · Saves · Perícias · Resistências · Condições · Ações · Legado. Salva com UPDATE em `monsters` + DELETE/INSERT nas auxiliares. Abas de magias/itens foram removidas — cada um edita no seu próprio módulo
+Badge "✓ Dados completos" para monstros com `monster_actions`. Modal admin com
+7 abas cria e edita, validando NOT NULLs e CHECKs, espelhando campos `_en` do
+PT, saves em minúsculo, e alcance **em metros na UI, pés no banco** (1,5 m =
+5 ft, conversão do livro PT-BR, não 0,3048). Badge "✦ Criado por".
 
 ### Aventura
-- Processamento de PDF/MD/TXT por IA → capítulos e locais
-- **Tradução incremental por capítulo** (`/api/aventura/traduzir`, service role): 6 locais por chamada, preserva `codigo` e slugs de `criaturas[]` verbatim, marca `capitulo.traduzido = true`, devolve offset intacto em falha de parse para retomar, botão DM-only "🌐 Traduzir capítulo" / "Retraduzir" com progresso `X/Y` e ✓ na lista lateral
-- Vecna carregado: 11 capítulos, 233 locais, campanha `2ac7dc83-3013-4bb4-9e7f-8b809d47e2fc`
-
-### Diário
-- @ menções clicáveis `@[Nome](personagem:id)` com popup via `createPortal`
-- Autor visível (join com `profiles` por `criado_por`)
-- Entradas privadas do jogador invisíveis ao DM; jogador não pode escolher visibilidade `dm`
+Processamento de PDF/MD/TXT por IA no schema canônico, tradução incremental por
+capítulo (6 locais por chamada, preservando slugs), validação de slugs contra o
+bestiário. Vecna: 11 capítulos, 233 locais.
 
 ### Outros
-- Sidebar **minimizável** (14px ↔ 220px, estado em `localStorage` chave `sidebar-minimizada`)
-- Imagens/mapas com upload, bucket público, toggle de visibilidade para jogadores
-- Notificações persistentes, "marcar todas como lidas", não lidas primeiro
-- Feedbacks com resposta do admin e status para o usuário
-- Convites por username, link de entrada multi-uso, aceitar convite
-- Admin: painel de usuários, alterar plano, alternar `is_admin`, painel de feedbacks
-- Stripe: checkout + webhook
-- Páginas de ajuda, legal e conta
+Diário com @menções · imagens e mapas com visibilidade · notificações ·
+convites por username e link · admin (usuários, planos, feedbacks) · sidebar
+minimizável · 4 temas · assistente IA (chat)
+
+### Removido de propósito
+**Narrativa de batalha por IA e resumo de campanha por IA.** Inventavam fatos
+para preencher lacunas do log. O diário agora é montado do log numérico: dano
+por combatente, cura, baixas, XP, registro cronológico.
 
 ---
 
-## 7. COLABORAÇÃO — DOIS DEVS NO MESMO REPO
+## 6. DECISÕES TÉCNICAS
 
-### Quem é quem
-| Pessoa | GitHub | Como trabalha |
-|--------|--------|---------------|
-| Douglas (dono, admin/DM) | `douglasabradfield` | Claude Code no VS Code, commit direto na `main` |
-| Gustavo (eng. de software, amigo) | `gustavodsantana23` | Branch + Pull Request |
-
-### Histórico de contribuição do Gustavo
-- **PR #2** — `bug/espacos-de-magia-por-classe` → `main`, mergeado em **15/07/2026**
-  - `src/lib/dados-dnd/spell_slots_db.json` (novo, 1228 linhas) — progressão por classe: Bard, Cleric, Druid, Sorcerer, Wizard, Paladin, Ranger, Warlock, Eldritch_Knight, Arcane_Trickster
-  - `src/lib/dados-dnd/espacos-magia.ts` (+38) — `getEspacosMagiaPorClasse()`
-  - `src/components/personagem/FichaPersonagem.tsx` (+3/-3) — passa a usar a função por classe
-- Branch `bug/espacos-de-magia-por-classe` **continua aberta** no remoto (merged, pode ser deletada)
-- Único commit dele desde então: nenhum. Último commit do repo é do Douglas (05/08).
-
-### Regras de convivência (adotar)
-1. **Antes de qualquer sessão de dev:** `git fetch origin && git log HEAD..origin/main --oneline`. Se tiver commit, `git pull --rebase origin main`.
-2. **Nunca** `git push --force` nesta `main`.
-3. Push rejeitado por non-fast-forward = proteção do git, não erro. Puxar e repetir.
-4. Gustavo trabalha em branch `feat/*` ou `bug/*` e abre PR; Douglas revisa e mergeia.
-5. Avisar o outro após qualquer push na `main` — a Vercel deploya automaticamente em produção.
-6. Arquivo de maior risco de conflito: `src/components/personagem/FichaPersonagem.tsx` e `src/app/(dashboard)/aventura/page.tsx`.
-7. `CLAUDE.md` e `AGENTS.md` são compartilhados: mudança de convenção entra ali, não só neste documento.
+1. **Service role API é o padrão** para cross-user e para toda ação de jogo.
+   RLS é a causa raiz mais comum de "dado não aparece".
+2. **Turno por ID, não por índice** — a mesa reordena a cada rodada.
+3. **Escrita otimista**: UI aplica na hora, persiste depois, reverte em erro.
+4. **Log com nome desnormalizado** — o histórico sobrevive à remoção do combatente.
+5. **`sessao_log` separado de `diario_entradas`** — "gastou slot N2" não é crônica.
+6. **Homebrew na mesma tabela do SRD** — auxiliares e batalha sem adaptação.
+7. **`MODO_MESA_LIVRE = true`** em `lib/planos.ts` desliga todas as travas de
+   plano sem apagar código. Voltar a comercializar = mudar para `false`.
+8. `magias_personagem`: sempre `spell_id`. `diario_entradas`: autor é
+   `criado_por`. `imagens`: coluna `nome`. Admin: `profiles.is_admin`.
+9. Monstros ausentes no SRD: usar `clay-golem` e `vampire-spawn`.
+10. `.select()` sem argumentos gera `?select=*` e quebra com 400 se houver
+    coluna inexistente — sempre listar colunas.
 
 ---
 
-## 8. DECISÕES TÉCNICAS
+## 7. BUGS SILENCIOSOS ENCONTRADOS (todos corrigidos)
 
-1. **Service role API route é o padrão** para qualquer leitura/escrita cross-user. RLS é a causa raiz mais comum de "dado não aparece". Exemplos canônicos: `/api/campanhas/minhas`, `/api/usuarios/buscar`, `/api/aventura/traduzir`.
-2. **RLS campanhas:** SELECT usa `dm_id = auth.uid() OR id IN (campanha_membros)`.
-3. `magias_personagem`: sempre `spell_id` (bigint). `magia_id` (uuid) é legado.
-4. `diario_entradas`: autor é **`criado_por`**, não `user_id`.
-5. `imagens`: coluna é **`nome`**, não `titulo`. Bucket público → `getPublicUrl`.
-6. **Zustand batalha:** em memória, com Immer, não persiste. Pausar grava JSON em `sessoes.batalha_estado`. Fim de batalha grava em `diario_entradas` e atualiza `sessoes`.
-7. **Zustand campanha:** campanha ativa persistida por ID em `localStorage` (`dungeon-desk-campanha`); lista sempre recarregada de `/api/campanhas/minhas`.
-8. Slots de magia: jsonb em `personagens.slots_magia` `{ "1": { total, usados } }`.
-9. Admin: `profiles.is_admin = true` (não há coluna `role`); rotas usam `verificarAdmin(userId)`.
-10. Bestiário: sem `monster_actions` → fallback em texto corrido.
-11. Monstros ausentes no banco: `stone-golem` e `vampire` (usar `clay-golem` e `vampire-spawn`).
-12. Jogador adicionado por `@username`, entra direto como `status = 'ativo'` e recebe notificação interna.
-13. `.select()` sem argumentos gera `?select=*` e quebra com 400 quando há coluna inexistente — sempre listar colunas.
+Registrados porque revelam os padrões de falha deste projeto:
+
+| Bug | Tempo em produção | Sintoma |
+|---|---|---|
+| `monsters` sem policy de escrita | ~2 meses | Modal admin nunca gravou nada |
+| `personagens.visibilidade` DEFAULT `'grupo'` | desde sempre | Toda ficha nascia pública |
+| `LIMITE_POR_PLANO` duplicado em rotas de convite | — | Trava fora do `planos.ts` |
+| Slots gastos em batalha não voltavam à ficha | desde sempre | Jogador terminava com slots intactos |
+| Trigger de armas vs. service role (`auth.uid()` NULL) | horas | API do árbitro rejeitaria tudo |
+| `tipo: 'magia'` em cura curando ao contrário | horas | Cura tirava PV |
+| Modal do DM sem tipo de dano | desde sempre | Resistência/imunidade nunca aplicava |
+| `'resistencia'` vs `'Resistência'` (string solta) | desde sempre | Rótulo nunca aparecia no log |
+| Aventura importada em schema incompatível | desde sempre | Toda importação renderizava quebrada |
+| Bruxo com zero espaços de magia | desde julho | Pacto Arcano lido como tabela normal |
+| Classe não conjuradora com slots de full caster | desde julho | Bárbaro 13 com 4/3/3/3/2/1/1 |
+| `carregarSessaoAtiva` só na tela do DM | horas | Jogador nunca via a sessão |
+
+**Padrão**: RLS ausente · string literal comparada solta · schema divergente
+entre quem escreve e quem lê · estado global carregado em uma tela só.
+Verificar os quatro em qualquer bug de "não salva" ou "não aparece".
 
 ---
 
-## 9. INCONSISTÊNCIAS E BUGS CONHECIDOS (não corrigidos)
+## 8. COLABORAÇÃO
 
-**1. 🔴 Bruxo fica com ZERO espaços de magia.**
-No `spell_slots_db.json`, Warlock usa a forma `{ slots: 3, slot_level: 5 }` (Pact Magic), mas `getEspacosMagiaPorClasse()` lê as chaves `'1st'..'9th'`. Para Bruxo todas retornam `undefined → 0`. Afeta o Plut do Prado na mesa do Vecna.
+| Pessoa | GitHub | Fluxo |
+|---|---|---|
+| Douglas (dono, DM, admin) | `douglasabradfield` | Claude Code, branch por fase |
+| Gustavo "Dino" (eng. de software) | `gustavodsantana23` | Branch `feat/*` ou `bug/*` + PR |
 
-**2. 🔴 Classe não conjuradora recebe slots de full caster.**
-`CLASSE_CONJURADORA_MAP` não mapeia guerreiro, ladino, bárbaro, monge, artífice nem Eldritch Knight / Arcane Trickster. Sem match, a função cai no fallback `getEspacosMagia(nivel)` — que é a tabela de **full caster**. Resultado: um Bárbaro nível 13 aparece com 4/3/3/3/2/1/1 espaços.
+Contribuição do Dino: PR #2 (15/07) — `spell_slots_db.json` com progressão por
+classe. Continua sendo a **semente** dos espaços de magia; os totais hoje são
+editáveis pelo jogador, o que cobre multiclasse, Pacto Arcano e itens.
 
-**3. 🟠 Schema de aventura desalinhado.**
-`src/types/database.ts` (linhas ~63–81) e `api/aventura/processar/route.ts` declaram `npcs[]`, `encontros[]`, `detalhes_ocultos` por local — campos que **não existem** no `conteudo_json`. A IA gera esse conteúdo, você paga o token e o dado é descartado no INSERT. `aventura/page.tsx` e `aventura/traduzir/route.ts` já usam a forma correta.
+### Regras
+1. `git fetch && git log HEAD..origin/main --oneline` antes de qualquer sessão
+2. Nunca `push --force` na `main`
+3. Divisão por **fase inteira**, nunca por arquivo — fases de batalha tocam os
+   mesmos arquivos
+4. `main` é produção: a mesa joga nela às quartas
+5. Convenções novas vão para `CLAUDE.md`/`AGENTS.md`, não só neste documento
 
-**4. 🟠 Coluna `titulo` órfã em `imagens`.**
-A migration `20260601_add_titulo_imagens.sql` adiciona `titulo text`, mas toda a doutrina e o código usam `nome`. Coluna morta — remover ou a migration, ou a coluna.
+---
 
-**5. 🟡 Migrations incompletas.**
-Só 4 arquivos em `supabase/migrations/`. O resto do schema (SRD, RLS, tabelas auxiliares de monstro) existe só no banco. Um `db pull` recuperaria a paridade e destravaria o Gustavo para rodar o projeto localmente.
+## 9. MÉTODO DE TRABALHO
 
-**6. 🟡 Branch merged não deletada:** `bug/espacos-de-magia-por-classe`.
-
-**7. 🟡 Conector Supabase sem permissão** nesta sessão (`list_projects` vazio, `execute_sql` bloqueado). Reautorizar se quiser diagnóstico direto no banco pelo chat.
+- **Planejamento e prompts** no chat do claude.ai; **implementação** no Claude
+  Code (VS Code)
+- **Uma branch por fase**, preview automático da Vercel, merge só após teste
+- **Prompt de diagnóstico antes do de correção** — achar a causa antes de operar
+- `git add/commit/push` só no último prompt do lote
+- **Backup antes de toda migration que altera dado existente.** Adicionar coluna
+  é seguro; `UPDATE`, `DROP POLICY` e índice único não são. Comando no
+  `CLAUDE.md`, destino fora do repo (contém diários privados dos jogadores).
+- **Conferir se o deploy testado é o commit certo, por SHA** — já se perdeu uma
+  tarde testando código antigo porque um commit não foi deployado.
+- Migrations versionadas em `supabase/migrations/`, aplicadas manualmente no
+  SQL Editor
 
 ---
 
 ## 10. PENDÊNCIAS
 
-### 🟡 Próximas features
-- [ ] Corrigir Bruxo e classes não conjuradoras nos espaços de magia (itens 1 e 2 acima)
-- [ ] Alinhar `database.ts` + `processar/route.ts` com o schema real de aventura
-- [ ] Seed das criaturas exclusivas do Vecna (Apêndices A e B) via SQL
-- [ ] Ampliar cobertura de `monster_actions` além dos 12 monstros
-- [ ] Edição admin de magias (damage_dice, save_ability, etc.)
-- [ ] Restrições de plano — Free ainda vê magias e itens
-- [ ] Aba "Personalizado" do DM Supremo em bestiário/magias/itens
-- [ ] Convite por e-mail/link (hoje só por username)
+### Fase 4 — inventário (próxima)
+- [ ] `inventario` jsonb → tabela normalizada
+- [ ] Transferir item e ouro entre jogadores
+- [ ] DM distribui tesouro, XP e inspiração
 
-### 🟢 Planejado
-- [ ] PWA mobile
-- [ ] Vercel Pro para aventuras grandes (timeout)
-- [ ] E-mails transacionais (Resend)
-- [ ] Gravação de sessão + transcrição
+### Acerto fino acumulado
+- [ ] Ficha completa otimizada para celular (fora de combate, pode ter scroll)
+- [ ] Auto-save do rascunho do modal de monstro (`localStorage`)
+- [ ] Nível de exaustão 1–6 (hoje binário; por isso ficou fora da vantagem derivada)
+- [ ] `cura_total` do combatente usa valor bruto; o log usa cura efetiva — reconciliar
+- [ ] NPC não tem flag de hostilidade — inimigo aparece com anel de aliado
+- [ ] Coluna `titulo` órfã em `imagens`
+- [ ] Dropar as 5 tabelas mortas
+- [ ] **Verificar se o XP salva na ficha ao distribuir** (bug antigo; pode ter se
+      resolvido com a migração para servidor — testar antes de investigar)
 
-### Criaturas do Vecna (uso pessoal, via SQL)
-Apêndice A — 40+ criaturas CR 1–21.
-Apêndice B — Strahd (CR15), Lord Soth (CR19), Tasha (CR19), Alustriel (CR21), Kas (CR23), Miska (CR24), Vecna (CR26).
-
----
-
-## 11. MESA DE TESTE E CAMPANHA REAL
-
-- Douglas (admin/DM): `e8ee7f2e-1ced-4706-b9d4-4373855fafc1` — douglasabradfield@gmail.com
-- Dara (jogadora de teste): `19014bc1-8a1e-4f81-a18a-8b7971af736d` — @dara
-
-### Campanhas
-- Vecna: `2ac7dc83-3013-4bb4-9e7f-8b809d47e2fc`
-- Teste: `20781895-ebfc-4cb5-a31f-95301b54b12c`
-- Dara: `016cd277-df72-431b-96e0-141846e4dc82`
-
-### Grupo real (Vecna: Eve of Ruin — nível 13, capítulo 4)
-Dino Luz do Leste (Paladino meio-orc, CA 20, 113 PV) · 7 Palmos (Clérigo aasimar, SAB 20, CA 19) · Alvarez Penteado (Clérigo, 131 PV, CA 18) · Pércules (Bardo meio-orc, CAR 18) · Brisa D. Vento (Druida élfica, CA 13) · Tobias Marvolo Riddle (Mago alto-elfo, INT 20, CA 13, 80 PV) · Plut do Prado (Bruxo). NPCs: Eldon Chaveiro, Salazar.
+### Backlog maior
+- [ ] Processar aventura por capítulo (hoje trunca em 8096 tokens numa chamada só)
+- [ ] Ampliar `monster_actions` além dos 12 monstros com dados completos
+- [ ] Criaturas do Vecna: Apêndice A (40+, CR 1–21) e B (Strahd, Lord Soth,
+      Tasha, Alustriel, Kas, Miska, Vecna) — cadastráveis pela UI desde a Fase 0.5
+- [ ] PWA instalável
+- [ ] Tela de estatísticas de campanha (o log já tem todos os dados)
+- [ ] Magias, armas e itens homebrew
 
 ---
 
-## 12. COMO CONTINUAR
+## 11. MESA REAL
 
-### Fluxo de trabalho
-Arquitetura, diagnóstico e redação de prompts acontecem no chat do claude.ai. A implementação vai para o **Claude Code no VS Code**. Prompts entregues como `.md` em `/mnt/user-data/outputs/`.
+**Douglas** (admin/DM): `e8ee7f2e-1ced-4706-b9d4-4373855fafc1`
+**Dara** (jogadora de teste): `19014bc1-8a1e-4f81-a18a-8b7971af736d`
 
-```bash
-cd C:\Users\dougl\dungeon-desk
-git fetch origin && git log HEAD..origin/main --oneline   # antes de começar
-git pull --rebase origin main                              # se houver commits
-# ... trabalho ...
-npm run build
-git add . && git commit -m "descrição" && git push
-```
+Campanhas: Vecna `2ac7dc83-3013-4bb4-9e7f-8b809d47e2fc` ·
+Teste `20781895-ebfc-4cb5-a31f-95301b54b12c` ·
+Dara `016cd277-df72-431b-96e0-141846e4dc82`
 
-### Regras para prompts no Claude Code
-1. Sempre ler os arquivos inteiros antes de alterar.
-2. Em qualquer coisa que toque roteamento/params/cache/proxy: consultar `node_modules/next/dist/docs/` (Next 16).
-3. Sempre `npm run build` ao final.
-4. `git add/commit/push` **só no último prompt do lote**.
-5. SQL antes do código — executar no SQL Editor do Supabase e, quando fizer sentido, salvar em `supabase/migrations/`.
-6. Esforço alto para features grandes (SRD, batalha, aventura).
-7. Manter `CLAUDE.md` atualizado quando uma convenção mudar.
+**Grupo (Vecna: Eve of Ruin, nível 13, capítulo 4)** — joga às quartas:
+Dino Luz do Leste (Paladino meio-orc, CA 20, 113 PV) · 7 Palmos (Clérigo
+aasimar) · Alvarez Penteado (Clérigo, 131 PV) · Pércules (Bardo meio-orc) ·
+Brisa D. Vento (Druida élfica) · Tobias Marvolo Riddle (Mago alto-elfo, 80 PV) ·
+Plut do Prado (**Bruxo** — o caso que valida Pacto Arcano no descanso curto).
+NPCs: Eldon Chaveiro, Salazar.
+
+⚠️ **Fichas incompletas**: nenhum personagem tem magia marcada como preparada.
+Tobias (Mago 13) não tem magias nem ataques cadastrados; Alvarez está sem
+classe. O botão de magia degrada com aviso, mas vale completar — agora que a
+`/mesa` usa esses dados, o incentivo para cadastrar finalmente existe.
