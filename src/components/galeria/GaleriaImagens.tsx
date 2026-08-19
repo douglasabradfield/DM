@@ -4,9 +4,14 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { useCampanha } from '@/store/campanha'
-import { X, Upload, Search, Trash2, ExternalLink, Eye, EyeOff } from 'lucide-react'
+import { X, Upload, Search, Trash2, ExternalLink, Eye, EyeOff, Maximize2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
+import {
+  percentualRevelado, ativarFogImagem, desativarFogImagem, revelarTudoImagem, ocultarTudoImagem,
+} from '@/lib/fog-of-war'
+import { useFogPincel } from '@/hooks/useFogPincel'
+import { FogToolbar } from './FogToolbar'
 
 interface ImagemGaleria {
   id: string
@@ -25,8 +30,9 @@ interface GaleriaImagensProps {
 }
 
 export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
-  const { campanhaAtiva, papelPorCampanha } = useCampanha()
+  const { campanhaAtiva, papelPorCampanha, fogPorImagem, definirFogImagem } = useCampanha()
   const [imagens, setImagens] = useState<ImagemGaleria[]>([])
+  const [processandoFog, setProcessandoFog] = useState<string | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [busca, setBusca] = useState('')
   const [selecionada, setSelecionada] = useState<ImagemGaleria | null>(null)
@@ -169,6 +175,26 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
     toast.success(novoValor ? 'Visível para jogadores' : 'Oculto para jogadores')
   }
 
+  async function alternarFog(img: ImagemGaleria) {
+    const fog = fogPorImagem[img.id]
+    setProcessandoFog(img.id)
+    try {
+      if (fog?.ativo) {
+        if (!confirm('Desativar a névoa de guerra? O mapa fica totalmente visível para os jogadores.')) return
+        await desativarFogImagem(img.id, definirFogImagem)
+        toast.success('Névoa de guerra desativada')
+      } else {
+        await ativarFogImagem(img.id, img.url, definirFogImagem)
+        toast.success('Névoa de guerra ativada — mapa oculto até você revelar')
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Erro ao atualizar a névoa de guerra')
+    } finally {
+      setProcessandoFog(null)
+    }
+  }
+
   const filtradas = imagens.filter(i =>
     !busca || i.nome.toLowerCase().includes(busca.toLowerCase())
   )
@@ -239,6 +265,18 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                       img.visivel_jogadores ? 'bg-[var(--green2)]/80 text-white' : 'bg-black/60 text-white/70'
                     )}>
                       {img.visivel_jogadores ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
+                    </span>
+                  )}
+                  {!ehJogador && tipo === 'mapa' && (
+                    <span
+                      onClick={e => { e.stopPropagation(); if (processandoFog !== img.id) alternarFog(img) }}
+                      className={cn(
+                        'absolute top-1 left-1 rounded-full px-1.5 py-0.5 text-[9px] font-cinzel flex items-center gap-0.5',
+                        fogPorImagem[img.id]?.ativo ? 'bg-[var(--accent)]/80 text-white' : 'bg-black/50 text-white/60'
+                      )}
+                      title={fogPorImagem[img.id]?.ativo ? 'Névoa de guerra ativa' : 'Ativar névoa de guerra'}
+                    >
+                      🌫️{fogPorImagem[img.id]?.ativo ? ` ${percentualRevelado(fogPorImagem[img.id])}%` : ''}
                     </span>
                   )}
                   <span className="absolute bottom-0 inset-x-0 bg-black/70 text-white text-[10px] px-1 py-0.5 truncate text-left">
@@ -317,6 +355,18 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                         {img.visivel_jogadores ? 'Visível' : 'Oculto'}
                       </span>
                     )}
+                    {!ehJogador && tipo === 'mapa' && (
+                      <span
+                        onClick={e => { e.stopPropagation(); if (processandoFog !== img.id) alternarFog(img) }}
+                        className={cn(
+                          'inline-flex items-center gap-0.5 text-[10px] mt-0.5 ml-2 hover:opacity-80',
+                          fogPorImagem[img.id]?.ativo ? 'text-[var(--accent)]' : 'text-[var(--border)]'
+                        )}
+                        title={fogPorImagem[img.id]?.ativo ? 'Clique para desativar a névoa' : 'Clique para ativar a névoa de guerra'}
+                      >
+                        🌫️ {fogPorImagem[img.id]?.ativo ? `${percentualRevelado(fogPorImagem[img.id])}% revelado` : 'Sem névoa'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </button>
@@ -364,6 +414,16 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                 >
                   <ExternalLink className="w-3 h-3" /> Abrir original
                 </a>
+                {!ehJogador && tipo === 'mapa' && (
+                  <button
+                    onClick={() => setVisualizando(selecionada)}
+                    className="flex items-center gap-1 px-3 py-1.5 border border-[var(--accent)] text-[var(--accent)] rounded text-xs hover:bg-[var(--accent)]/10 transition-colors"
+                    title="Abrir em tela cheia para pintar a névoa de guerra"
+                  >
+                    <Maximize2 className="w-3 h-3" /> Tela cheia / Névoa
+                    {fogPorImagem[selecionada.id]?.ativo ? ` (${percentualRevelado(fogPorImagem[selecionada.id])}%)` : ''}
+                  </button>
+                )}
                 {!ehJogador && (
                   <button
                     onClick={() => remover(selecionada.id)}
@@ -523,6 +583,17 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
   const startMid = useRef({ x: 0, y: 0 })
   const arrastandoUnico = useRef(false)
 
+  const mostraFog = !ehJogador && imagem.tipo === 'mapa'
+  const fog = useFogPincel({ imagemId: imagem.id })
+  const [processandoFog, setProcessandoFog] = useState(false)
+  // Um traço de pincel (1 ponteiro) só pinta quando o pincel está
+  // explicitamente ligado (modoPincel !== null) — enquanto ele está
+  // desligado, 1 dedo/mouse continua navegando (pan) como antes. Pinça de
+  // 2 dedos sempre dá zoom/pan, pincel ligado ou não — assim o DM nunca
+  // fica preso sem conseguir se reposicionar no mapa. Ver seção 2 do plano
+  // da Fase 7 para a justificativa completa dessa escolha.
+  const pincelAtivo = mostraFog && fog.fogAtivo && !fog.verComoJogador && !!fog.modoPincel
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKeyDown)
@@ -539,6 +610,13 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
   function onPointerDown(e: React.PointerEvent) {
     (e.target as Element).setPointerCapture(e.pointerId)
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+    if (pincelAtivo && pointers.current.size === 1) {
+      fog.iniciarTraco()
+      fog.pintarEm(e.clientX, e.clientY)
+      return
+    }
+
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()]
       startDist.current = distancia(a, b)
@@ -556,6 +634,12 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
   function onPointerMove(e: React.PointerEvent) {
     if (!pointers.current.has(e.pointerId)) return
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+    if (pincelAtivo && pointers.current.size === 1) {
+      fog.pintarEm(e.clientX, e.clientY)
+      return
+    }
+
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()]
       const novaDist = distancia(a, b)
@@ -578,6 +662,7 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
   function onPointerUp(e: React.PointerEvent) {
     pointers.current.delete(e.pointerId)
     if (pointers.current.size === 0) {
+      fog.finalizarTraco()
       arrastandoUnico.current = false
       if (scale <= 1.02) { setScale(1); setPos({ x: 0, y: 0 }) }
     } else if (pointers.current.size === 1) {
@@ -590,6 +675,59 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
 
   function alternarZoom() {
     if (scale > 1) { setScale(1); setPos({ x: 0, y: 0 }) } else { setScale(2) }
+  }
+
+  async function handleAtivarFog() {
+    setProcessandoFog(true)
+    try {
+      await ativarFogImagem(imagem.id, imagem.url, useCampanha.getState().definirFogImagem)
+      toast.success('Névoa de guerra ativada — mapa oculto até você revelar')
+    } catch (err) {
+      console.error(err)
+      toast.error('Erro ao ativar a névoa de guerra')
+    } finally {
+      setProcessandoFog(false)
+    }
+  }
+
+  async function handleDesativarFog() {
+    if (!confirm('Desativar a névoa de guerra? O mapa fica totalmente visível para os jogadores.')) return
+    setProcessandoFog(true)
+    try {
+      await desativarFogImagem(imagem.id, useCampanha.getState().definirFogImagem)
+      toast.success('Névoa de guerra desativada')
+    } catch (err) {
+      console.error(err)
+      toast.error('Erro ao desativar a névoa de guerra')
+    } finally {
+      setProcessandoFog(false)
+    }
+  }
+
+  async function handleRevelarTudo() {
+    if (!confirm('Revelar o mapa inteiro para os jogadores?')) return
+    setProcessandoFog(true)
+    try {
+      await revelarTudoImagem(imagem.id, useCampanha.getState().definirFogImagem)
+    } catch (err) {
+      console.error(err)
+      toast.error('Erro ao revelar o mapa')
+    } finally {
+      setProcessandoFog(false)
+    }
+  }
+
+  async function handleOcultarTudo() {
+    if (!confirm('Ocultar o mapa inteiro dos jogadores?')) return
+    setProcessandoFog(true)
+    try {
+      await ocultarTudoImagem(imagem.id, useCampanha.getState().definirFogImagem)
+    } catch (err) {
+      console.error(err)
+      toast.error('Erro ao ocultar o mapa')
+    } finally {
+      setProcessandoFog(false)
+    }
   }
 
   return createPortal(
@@ -616,18 +754,51 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
         onPointerCancel={onPointerUp}
         onDoubleClick={alternarZoom}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={imagem.url}
-          alt={imagem.nome}
-          className="max-w-full max-h-full"
+        {/* Wrapper compartilha o transform de zoom/pan com a imagem E o
+            canvas da névoa — se cada um tivesse seu próprio transform, a
+            máscara descolaria da imagem a cada gesto de zoom. */}
+        <div
+          className="relative inline-block max-w-full max-h-full"
           style={{
             transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
             transition: pointers.current.size > 0 ? 'none' : 'transform 0.15s ease-out',
           }}
-          draggable={false}
-        />
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imagem.url}
+            alt={imagem.nome}
+            className="block max-w-full max-h-full"
+            draggable={false}
+          />
+          {fog.fogAtivo && (
+            <canvas
+              ref={fog.canvasRef}
+              className="absolute inset-0 w-full h-full pointer-events-none"
+              style={{ filter: 'blur(5px)' }}
+            />
+          )}
+        </div>
       </div>
+
+      {mostraFog && (
+        <FogToolbar
+          fogAtivo={fog.fogAtivo}
+          percentual={fog.percentual}
+          processando={processandoFog}
+          salvando={fog.salvando}
+          modoPincel={fog.modoPincel}
+          onModoPincel={fog.setModoPincel}
+          tamanhoPincel={fog.tamanhoPincel}
+          onTamanhoPincel={fog.setTamanhoPincel}
+          verComoJogador={fog.verComoJogador}
+          onVerComoJogador={fog.setVerComoJogador}
+          onAtivar={handleAtivarFog}
+          onDesativar={handleDesativarFog}
+          onRevelarTudo={handleRevelarTudo}
+          onOcultarTudo={handleOcultarTudo}
+        />
+      )}
 
       {!ehJogador && (
         <div className="flex items-center justify-center gap-3 p-3 flex-shrink-0 bg-black/40">

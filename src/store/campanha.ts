@@ -4,7 +4,7 @@ import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/
 import type { Campanha, Sessao } from '@/types/database'
 import { createClient } from '@/lib/supabase/client'
 
-interface FogImagem {
+export interface FogImagem {
   ativo: boolean
   colunas: number
   linhas: number
@@ -42,6 +42,11 @@ interface EstadoCampanha {
   // exatamente esse o bug da sessão na Fase 3.5 (carga presa numa tela só).
   carregarFog: (campanhaId: string) => Promise<void>
   assinarFog: (campanhaId: string) => void
+  // Atualização otimista após um POST em /api/mapa/fog bem-sucedido — não
+  // espera o round-trip do Realtime para o próprio autor da mudança ver o
+  // resultado. O Realtime ainda cobre os demais clientes (outros jogadores/
+  // abas) e reconcilia esta mesma linha quando o evento chegar.
+  definirFogImagem: (imagemId: string, fog: FogImagem) => void
 }
 
 // Canal Realtime da sessão — vive fora do state reativo, mesmo padrão do
@@ -242,6 +247,10 @@ export const useCampanha = create<EstadoCampanha>()(
       },
 
       assinarFog: (campanhaId) => assinarRealtimeFog(campanhaId, set),
+
+      definirFogImagem: (imagemId, fog) => set(s => ({
+        fogPorImagem: { ...s.fogPorImagem, [imagemId]: fog },
+      })),
 
       carregarCampanhas: async () => {
         // Ler ID salvo ANTES de limpar o estado
