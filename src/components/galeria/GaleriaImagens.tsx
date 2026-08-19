@@ -12,6 +12,7 @@ import {
 } from '@/lib/fog-of-war'
 import { useFogPincel } from '@/hooks/useFogPincel'
 import { FogToolbar } from './FogToolbar'
+import { FogThumbOverlay } from './FogThumbOverlay'
 
 interface ImagemGaleria {
   id: string
@@ -55,6 +56,45 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
     carregar()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campanhaAtiva?.id, ehJogador])
+
+  // Realtime — upload/edição/remoção em outra aba (ou pelo DM, pro jogador)
+  // aparece sem precisar de reload. Escopo local ao componente (só existe
+  // enquanto a tela de Mapas/Imagens está montada), diferente do canal de
+  // sessão/fog em store/campanha.ts, que precisa sobreviver entre telas.
+  useEffect(() => {
+    if (!campanhaAtiva?.id) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`imagens:${campanhaAtiva.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'imagens', filter: `campanha_id=eq.${campanhaAtiva.id}` },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const antiga = payload.old as { id?: string }
+            if (!antiga.id) return
+            setImagens(prev => prev.filter(i => i.id !== antiga.id))
+            return
+          }
+          const linha = payload.new as ImagemGaleria
+          if (!linha?.id || linha.tipo !== tipo) return
+          // Jogador só enxerga imagens visivel_jogadores=true — se o DM
+          // acabou de ocultar, remove da lista local em vez de atualizar.
+          if (ehJogador && !linha.visivel_jogadores) {
+            setImagens(prev => prev.filter(i => i.id !== linha.id))
+            return
+          }
+          setImagens(prev => {
+            const existe = prev.some(i => i.id === linha.id)
+            const proxima = existe ? prev.map(i => i.id === linha.id ? linha : i) : [linha, ...prev]
+            return proxima.slice().sort((a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime())
+          })
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [campanhaAtiva?.id, tipo, ehJogador])
 
   async function carregar() {
     if (!campanhaAtiva?.id) return
@@ -259,6 +299,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                     className="w-full h-full object-cover"
                     onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
                   />
+                  {tipo === 'mapa' && <FogThumbOverlay imagemId={img.id} ehDM={!ehJogador} />}
                   {!ehJogador && (
                     <span className={cn(
                       'absolute top-1 right-1 rounded-full p-1',
@@ -335,7 +376,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                 className={`w-full text-left p-2 border-b border-[var(--bg3)] hover:bg-[var(--bg3)] transition-colors ${selecionada?.id === img.id ? 'bg-[var(--surface)]' : ''}`}
               >
                 <div className="flex gap-2 items-start">
-                  <div className="w-12 h-12 bg-[var(--bg3)] rounded overflow-hidden flex-shrink-0">
+                  <div className="relative w-12 h-12 bg-[var(--bg3)] rounded overflow-hidden flex-shrink-0">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={img.url}
@@ -343,6 +384,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                       className="w-full h-full object-cover"
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
                     />
+                    {tipo === 'mapa' && <FogThumbOverlay imagemId={img.id} ehDM={!ehJogador} />}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-[var(--text)] text-sm font-crimson truncate">{img.nome}</p>
@@ -434,13 +476,16 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                 )}
               </div>
             </div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={selecionada.url}
-              alt={selecionada.nome}
-              className="w-full rounded-lg border border-[var(--border)] shadow-xl object-contain max-h-[70vh]"
-              onError={e => { (e.target as HTMLImageElement).alt = 'Erro ao carregar imagem' }}
-            />
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={selecionada.url}
+                alt={selecionada.nome}
+                className="w-full rounded-lg border border-[var(--border)] shadow-xl object-contain max-h-[70vh]"
+                onError={e => { (e.target as HTMLImageElement).alt = 'Erro ao carregar imagem' }}
+              />
+              {tipo === 'mapa' && <FogThumbOverlay imagemId={selecionada.id} ehDM={!ehJogador} />}
+            </div>
           </div>
         )}
       </div>
@@ -870,10 +915,17 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
             também não desalinha com Ctrl+/- do navegador (getBoundingClientRect
             usado nos handlers de pintura já reflete o zoom do navegador). */}
         <div
-          className="relative"
+          className="relative flex-shrink-0"
           style={{
             width: naturalSize?.width,
             height: naturalSize?.height,
+            // flex-shrink:1 é o default — sem zerar aqui, o container flex
+            // comprime a LARGURA (eixo principal) pra caber, sem tocar a
+            // altura (eixo cruzado), distorcendo a proporção da imagem e,
+            // com isso, todo o grid de células da névoa (calculado a partir
+            // dessa largura errada). Foi exatamente esse o bug: mapa
+            // "esticado numa faixa vertical estreita" e máscara desalinhada.
+            flexShrink: 0,
             transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
             transformOrigin: 'center center',
             transition: pointers.current.size > 0 ? 'none' : 'transform 0.15s ease-out',
