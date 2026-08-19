@@ -222,6 +222,11 @@ export default function PersonagensPage() {
   const [nomeNovo, setNomeNovo] = useState('')
   const [jogadorNovo, setJogadorNovo] = useState('')
   const [tipoNovo, setTipoNovo] = useState<'jogador' | 'npc' | 'monstro'>('jogador')
+  // Dono do personagem (user_id) — sem isso o personagem fica "órfão": o
+  // próprio jogador não consegue editar a ficha nem adicionar magia, porque
+  // toda checagem de posse no app depende de personagens.user_id. Atribuir
+  // já na criação evita depender de "Transferir para Jogador" depois.
+  const [donoNovo, setDonoNovo] = useState('')
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
   const [ordenacao, setOrdenacao] = useState<Ordenacao>('nome')
   const [plano, setPlano] = useState<string>('free')
@@ -282,25 +287,12 @@ export default function PersonagensPage() {
       const { data } = await query.order('nome')
       setPersonagens((data ?? []) as Personagem[])
 
-      const { data: membrosData } = await supabase
-        .from('campanha_membros')
-        .select('user_id')
-        .eq('campanha_id', campanhaAtiva.id)
-        .eq('status', 'ativo')
-        .eq('papel', 'jogador')
-
-      const userIds = (membrosData ?? []).map(m => m.user_id).filter((id): id is string => !!id)
-      const { data: profilesData } = userIds.length
-        ? await supabase.from('profiles').select('id, nome, username').in('id', userIds)
-        : { data: [] }
-
-      setJogadoresCampanha(
-        (profilesData ?? []).map(p => ({
-          id: p.id as string,
-          nome: (p.nome as string | null) ?? (p.username as string | null) ?? 'Jogador',
-          username: p.username as string | null,
-        }))
-      )
+      // Via API (service role) — profiles só permite "ver o próprio perfil"
+      // por RLS, então buscar nome de outros membros direto do client
+      // sempre volta vazio. Ver src/app/api/campanhas/[id]/jogadores/route.ts.
+      const respJogadores = await fetch(`/api/campanhas/${campanhaAtiva.id}/jogadores`)
+      const { jogadores } = respJogadores.ok ? await respJogadores.json() : { jogadores: [] }
+      setJogadoresCampanha(jogadores as JogadorCampanha[])
     } finally {
       setCarregando(false)
     }
@@ -334,6 +326,7 @@ export default function PersonagensPage() {
         vulnerabilidades: [],
       }
       if (ehJogador && userId) novoPersonagem.user_id = userId
+      else if (donoNovo) novoPersonagem.user_id = donoNovo
 
       const { error } = await supabase.from('personagens').insert(novoPersonagem)
       if (error) throw error
@@ -341,6 +334,7 @@ export default function PersonagensPage() {
       setCriando(false)
       setNomeNovo('')
       setJogadorNovo('')
+      setDonoNovo('')
       carregar()
     } catch {
       toast.error('Erro ao criar personagem')
@@ -479,7 +473,7 @@ export default function PersonagensPage() {
           >
             <Download className="w-3 h-3" /> Ficha Oficial
           </a>
-          <BotaoImportarFicha />
+          <BotaoImportarFicha jogadoresCampanha={jogadoresCampanha} />
           {!!campanhaAtiva && (
             <Link
               href="/personagens/criar"
@@ -547,6 +541,20 @@ export default function PersonagensPage() {
               <div>
                 <label className="text-[var(--text3)] text-xs font-cinzel uppercase">Nome do Jogador</label>
                 <input type="text" value={jogadorNovo} onChange={e => setJogadorNovo(e.target.value)} className="w-full input-dd mt-1" placeholder="João" />
+              </div>
+            )}
+            {!ehJogador && tipoNovo === 'jogador' && (
+              <div>
+                <label className="text-[var(--text3)] text-xs font-cinzel uppercase">Conta do jogador</label>
+                <select value={donoNovo} onChange={e => setDonoNovo(e.target.value)} className="w-full input-dd mt-1">
+                  <option value="">— Sem conta vinculada (atribuir depois) —</option>
+                  {jogadoresCampanha.map(j => (
+                    <option key={j.id} value={j.id}>{j.nome}{j.username ? ` (@${j.username})` : ''}</option>
+                  ))}
+                </select>
+                <p className="text-[var(--text3)] text-[10px] font-crimson mt-1">
+                  Sem isso vinculado, só você (mestre) consegue editar a ficha ou adicionar magias — o jogador não vê a opção.
+                </p>
               </div>
             )}
             <div className="flex gap-2">

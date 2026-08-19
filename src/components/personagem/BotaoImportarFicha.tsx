@@ -8,13 +8,21 @@ import { useRouter } from 'next/navigation'
 import { FileUp, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-export function BotaoImportarFicha() {
-  const { campanhaAtiva } = useCampanha()
+interface JogadorCampanha {
+  id: string
+  nome: string
+  username?: string | null
+}
+
+export function BotaoImportarFicha({ jogadoresCampanha = [] }: { jogadoresCampanha?: JogadorCampanha[] }) {
+  const { campanhaAtiva, papelPorCampanha } = useCampanha()
+  const ehJogador = campanhaAtiva ? papelPorCampanha[campanhaAtiva.id] === 'jogador' : false
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
   const [processando, setProcessando] = useState(false)
   const [modal, setModal] = useState(false)
   const [nomeJogador, setNomeJogador] = useState('')
+  const [donoSelecionado, setDonoSelecionado] = useState('')
   const [arquivoSelecionado, setArquivoSelecionado] = useState<File | null>(null)
 
   function abrirModal() {
@@ -39,8 +47,23 @@ export function BotaoImportarFicha() {
 
       const dados = json.dados
       const supabase = createClient()
+      // Um jogador importando a própria ficha precisa terminar dono dela —
+      // sem isso o personagem fica "órfão" (visível, mas sem ninguém capaz
+      // de editar/adicionar magia, porque toda a checagem de posse do app
+      // — RLS de magias_personagem, podeEditar da ficha, o seletor de
+      // personagem do "Adicionar à ficha" — depende de personagens.user_id).
+      // Quando é o DM importando para alguém, o vínculo continua manual via
+      // "Transferir para Jogador" na ficha, igual à criação normal.
+      let userIdDono: string | null = null
+      if (ehJogador) {
+        const { data: { user } } = await supabase.auth.getUser()
+        userIdDono = user?.id ?? null
+      } else if (donoSelecionado) {
+        userIdDono = donoSelecionado
+      }
       const { error } = await supabase.from('personagens').insert({
         campanha_id: campanhaAtiva.id,
+        ...(userIdDono ? { user_id: userIdDono } : {}),
         nome: dados.nome || 'Personagem Importado',
         jogador_nome: nomeJogador || dados.nome || 'Jogador',
         tipo_personagem: 'jogador',
@@ -82,6 +105,7 @@ export function BotaoImportarFicha() {
       toast.success(`${dados.nome || 'Personagem'} importado com sucesso!`)
       setModal(false)
       setArquivoSelecionado(null)
+      setDonoSelecionado('')
       router.refresh()
     } catch {
       toast.error('Erro ao salvar personagem importado')
@@ -125,6 +149,21 @@ export function BotaoImportarFicha() {
                   className="input-dd w-full"
                 />
               </div>
+
+              {!ehJogador && jogadoresCampanha.length > 0 && (
+                <div>
+                  <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Conta do jogador</label>
+                  <select value={donoSelecionado} onChange={e => setDonoSelecionado(e.target.value)} className="input-dd w-full">
+                    <option value="">— Sem conta vinculada (atribuir depois) —</option>
+                    {jogadoresCampanha.map(j => (
+                      <option key={j.id} value={j.id}>{j.nome}{j.username ? ` (@${j.username})` : ''}</option>
+                    ))}
+                  </select>
+                  <p className="text-[var(--text3)] text-[10px] font-crimson mt-1">
+                    Sem isso vinculado, só você (mestre) consegue editar a ficha ou adicionar magias.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <input

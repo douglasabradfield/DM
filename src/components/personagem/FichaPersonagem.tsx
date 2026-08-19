@@ -667,7 +667,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const [campanhasDisponiveis, setCampanhasDisponiveis] = useState<{ id: string; nome: string }[]>([])
   const [menuAberto, setMenuAberto] = useState(false)
   const [modalTransferir, setModalTransferir] = useState(false)
-  type MembroTransferir = { user_id: string; email: string; profiles: { nome: string | null; username: string | null } | null }
+  type MembroTransferir = { id: string; nome: string; username: string | null }
   const [membrosTransferir, setMembrosTransferir] = useState<MembroTransferir[]>([])
 
   async function abrirModalCopiar() {
@@ -702,14 +702,14 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
   useEffect(() => {
     if (!modalTransferir || !campanhaAtiva?.id || !userId) return
-    const supabase = createClient()
-    supabase
-      .from('campanha_membros')
-      .select('user_id, email, profiles:user_id(nome, username)')
-      .eq('campanha_id', campanhaAtiva.id)
-      .eq('status', 'ativo')
-      .neq('user_id', userId)
-      .then(({ data }) => setMembrosTransferir((data ?? []) as unknown as MembroTransferir[]))
+    // Via API (service role) — profiles só permite "ver o próprio perfil"
+    // por RLS, então o join direto pelo client sempre voltava sem nome
+    // pra qualquer membro que não fosse o próprio usuário logado.
+    fetch(`/api/campanhas/${campanhaAtiva.id}/jogadores`)
+      .then(r => r.ok ? r.json() : { jogadores: [] })
+      .then(({ jogadores }) => setMembrosTransferir(
+        (jogadores as MembroTransferir[]).filter(j => j.id !== userId)
+      ))
   }, [modalTransferir, campanhaAtiva?.id, userId])
 
   async function transferirPersonagem(novoUserId: string, nomeJogador: string) {
@@ -1806,13 +1806,13 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
                 {membrosTransferir.map(m => (
                   <button
-                    key={m.user_id}
-                    onClick={() => transferirPersonagem(m.user_id, m.profiles?.nome || m.email)}
+                    key={m.id}
+                    onClick={() => transferirPersonagem(m.id, m.nome)}
                     className="w-full text-left p-3 border border-[var(--border)] rounded-xl hover:border-[var(--gold)] hover:bg-[var(--surface)] font-cinzel text-sm text-[var(--text)] transition-all"
                   >
-                    @{m.profiles?.username || m.email}
-                    {m.profiles?.nome && (
-                      <span className="text-[var(--text3)] text-xs ml-2">— {m.profiles.nome}</span>
+                    {m.nome}
+                    {m.username && (
+                      <span className="text-[var(--text3)] text-xs ml-2">— @{m.username}</span>
                     )}
                   </button>
                 ))}
