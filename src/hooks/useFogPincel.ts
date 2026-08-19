@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useCampanha } from '@/store/campanha'
 import { createClient } from '@/lib/supabase/client'
-import { chamarApiFog, percentualRevelado } from '@/lib/fog-of-war'
+import { chamarApiFog, percentualRevelado, opacidadeOculta } from '@/lib/fog-of-war'
 
 export type ModoPincel = 'revelar' | 'ocultar' | null
 export type TamanhoPincel = 'pequeno' | 'medio' | 'grande'
@@ -16,7 +16,7 @@ const DEBOUNCE_MS = 300
 // imagem e acumula as células alteradas por um traço (mouse/dedo) num Set
 // local, aplicando na tela na hora (otimista) e só falando com a API 300ms
 // depois da última célula pintada — ver seção 3 do plano da Fase 7.
-export function useFogPincel({ imagemId }: { imagemId: string }) {
+export function useFogPincel({ imagemId, ehDM }: { imagemId: string; ehDM: boolean }) {
   const fog = useCampanha(s => s.fogPorImagem[imagemId])
   const definirFogImagem = useCampanha(s => s.definirFogImagem)
 
@@ -41,25 +41,30 @@ export function useFogPincel({ imagemId }: { imagemId: string }) {
     const wrapper = canvas.parentElement
     if (!wrapper) return
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    // O wrapper (pai do canvas) agora é dimensionado em pixels NATURAIS da
+    // imagem (ver VisualizadorFullscreen) — offsetWidth/Height já É a
+    // resolução nativa da imagem, então rasterizar 1:1 já dá a máscara na
+    // mesma nitidez que a própria imagem consegue oferecer. Multiplicar por
+    // devicePixelRatio aqui só infla a memória do canvas (numa imagem
+    // 2100x2850 isso passaria de ~24MB para ~95MB) sem ganho real de
+    // nitidez, já que a imagem-fonte não tem mais detalhe que isso.
     const largura = wrapper.offsetWidth
     const altura = wrapper.offsetHeight
     if (largura === 0 || altura === 0) return
-    const larguraPx = Math.round(largura * dpr)
-    const alturaPx = Math.round(altura * dpr)
-    if (canvas.width !== larguraPx || canvas.height !== alturaPx) {
-      canvas.width = larguraPx
-      canvas.height = alturaPx
+    if (canvas.width !== largura || canvas.height !== altura) {
+      canvas.width = largura
+      canvas.height = altura
     }
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, largura, altura)
 
-    // DM enxerga o mapa inteiro por trás de uma névoa leve; "ver como
-    // jogador" e a própria visão do jogador usam o preto quase opaco.
-    const opacidade = verComoJogador ? 0.97 : 0.45
+    // Único ponto de cálculo da opacidade — ver opacidadeOculta em
+    // src/lib/fog-of-war.ts. DM enxerga o mapa inteiro por trás de uma
+    // névoa leve; jogador real e "ver como jogador" usam preto opaco.
+    const opacidade = opacidadeOculta(ehDM, verComoJogador)
     ctx.fillStyle = `rgba(0, 0, 0, ${opacidade})`
     ctx.fillRect(0, 0, largura, altura)
 
@@ -73,7 +78,7 @@ export function useFogPincel({ imagemId }: { imagemId: string }) {
       ctx.fillRect(col * largCel, lin * altCel, largCel + 1, altCel + 1)
     }
     ctx.globalCompositeOperation = 'source-over'
-  }, [fog?.ativo, fog?.colunas, fog?.linhas, verComoJogador])
+  }, [fog?.ativo, fog?.colunas, fog?.linhas, ehDM, verComoJogador])
 
   // Reconcilia o Set local com o store (carga inicial, mudança feita em
   // outra aba/DM via Realtime, ou resultado de ativar/desativar/tudo).

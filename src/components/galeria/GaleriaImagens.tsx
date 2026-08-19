@@ -574,6 +574,15 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
   onToggleVis: () => void
   onRemover: () => void
 }) {
+  // "scale" é SEMPRE relativo ao pixel natural da imagem (1 = tamanho real),
+  // nunca ao CSS de shrink-to-fit — foi exatamente essa dependência de
+  // max-width/max-height percentual que cortava mapas grandes (max-height
+  // percentual não resolve contra um pai de altura automática, só
+  // max-width; ver diagnóstico). fitScale é calculada em JS a partir das
+  // dimensões naturais da imagem e do container, e é o "1x" que o usuário
+  // vê ao abrir o visualizador.
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null)
+  const [fitScale, setFitScale] = useState(1)
   const [scale, setScale] = useState(1)
   const [pos, setPos] = useState({ x: 0, y: 0 })
   const pointers = useRef(new Map<number, { x: number; y: number }>())
@@ -582,9 +591,72 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
   const startPos = useRef({ x: 0, y: 0 })
   const startMid = useRef({ x: 0, y: 0 })
   const arrastandoUnico = useRef(false)
+  const imgRef = useRef<HTMLImageElement>(null)
+  const panContainerRef = useRef<HTMLDivElement>(null)
+  // true enquanto o usuário não deu zoom manual — resize do container (ex.:
+  // toolbar de fog aparecendo/sumindo, rotação de tela) recalcula a escala
+  // de ajuste e realinha automaticamente só nesse caso.
+  const semZoomManual = useRef(true)
 
-  const mostraFog = !ehJogador && imagem.tipo === 'mapa'
-  const fog = useFogPincel({ imagemId: imagem.id })
+  const ehDM = !ehJogador
+  const mostraFog = ehDM && imagem.tipo === 'mapa'
+  const fog = useFogPincel({ imagemId: imagem.id, ehDM })
+  const pronto = !!naturalSize
+  const ampliado = scale > fitScale * 1.01
+
+  function medirContainer() {
+    const rect = panContainerRef.current?.getBoundingClientRect()
+    return { width: rect?.width ?? 0, height: rect?.height ?? 0 }
+  }
+
+  function calcularFit(natural: { width: number; height: number }, container: { width: number; height: number }) {
+    if (!natural.width || !natural.height || !container.width || !container.height) return 1
+    return Math.min(container.width / natural.width, container.height / natural.height)
+  }
+
+  function clampPos(x: number, y: number, escalaAtual: number) {
+    if (!naturalSize) return { x: 0, y: 0 }
+    const { width: cw, height: ch } = medirContainer()
+    const maxX = Math.max(0, (naturalSize.width * escalaAtual - cw) / 2)
+    const maxY = Math.max(0, (naturalSize.height * escalaAtual - ch) / 2)
+    return { x: Math.min(maxX, Math.max(-maxX, x)), y: Math.min(maxY, Math.max(-maxY, y)) }
+  }
+
+  function medirEAjustar() {
+    const w = imgRef.current?.naturalWidth ?? 0
+    const h = imgRef.current?.naturalHeight ?? 0
+    if (!w || !h) return
+    const natural = { width: w, height: h }
+    const fit = calcularFit(natural, medirContainer())
+    setNaturalSize(natural)
+    setFitScale(fit)
+    setScale(fit)
+    setPos({ x: 0, y: 0 })
+    semZoomManual.current = true
+  }
+
+  // Imagem em cache do navegador: o evento onLoad já pode ter disparado
+  // antes do handler ser anexado, e nunca mais dispara de novo.
+  useEffect(() => {
+    if (imgRef.current?.complete && imgRef.current.naturalWidth) medirEAjustar()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imagem.url])
+
+  // Recalcula a escala de ajuste quando o container muda de tamanho
+  // (toolbar de fog surgindo/sumindo, rotação de tela) — só realinha a
+  // escala atual se o usuário ainda não deu zoom manual.
+  useEffect(() => {
+    const el = panContainerRef.current
+    if (!el || !naturalSize || typeof ResizeObserver === 'undefined') return
+    const obs = new ResizeObserver(() => {
+      const novoFit = calcularFit(naturalSize, medirContainer())
+      setFitScale(novoFit)
+      if (semZoomManual.current) { setScale(novoFit); setPos({ x: 0, y: 0 }) }
+    })
+    obs.observe(el)
+    return () => obs.disconnect()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [naturalSize])
   const [processandoFog, setProcessandoFog] = useState(false)
   // Um traço de pincel (1 ponteiro) só pinta quando o pincel está
   // explicitamente ligado (modoPincel !== null) — enquanto ele está
@@ -625,7 +697,7 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
       startPos.current = pos
       arrastandoUnico.current = false
     } else if (pointers.current.size === 1) {
-      arrastandoUnico.current = scale > 1
+      arrastandoUnico.current = ampliado
       startPos.current = pos
       startMid.current = { x: e.clientX, y: e.clientY }
     }
@@ -643,19 +715,28 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()]
       const novaDist = distancia(a, b)
-      const novaEscala = Math.min(4, Math.max(1, startScale.current * (novaDist / (startDist.current || novaDist))))
+      // Limites relativos à escala de ajuste (0,5x–4x), mas nunca "prendem"
+      // uma escala que já esteja fora desse intervalo (ex.: usuário clicou
+      // em "100%" antes de dar pinça) — evita um salto brusco no primeiro
+      // movimento do gesto.
+      const escalaMin = Math.min(fitScale * 0.5, startScale.current)
+      const escalaMax = Math.max(fitScale * 4, startScale.current)
+      const novaEscala = Math.min(escalaMax, Math.max(escalaMin, startScale.current * (novaDist / (startDist.current || novaDist))))
       const novoMid = pontoMedio(a, b)
       setScale(novaEscala)
-      setPos({
-        x: startPos.current.x + (novoMid.x - startMid.current.x),
-        y: startPos.current.y + (novoMid.y - startMid.current.y),
-      })
+      setPos(clampPos(
+        startPos.current.x + (novoMid.x - startMid.current.x),
+        startPos.current.y + (novoMid.y - startMid.current.y),
+        novaEscala
+      ))
+      semZoomManual.current = false
     } else if (pointers.current.size === 1 && arrastandoUnico.current) {
       const p = [...pointers.current.values()][0]
-      setPos({
-        x: startPos.current.x + (p.x - startMid.current.x),
-        y: startPos.current.y + (p.y - startMid.current.y),
-      })
+      setPos(clampPos(
+        startPos.current.x + (p.x - startMid.current.x),
+        startPos.current.y + (p.y - startMid.current.y),
+        scale
+      ))
     }
   }
 
@@ -664,17 +745,41 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
     if (pointers.current.size === 0) {
       fog.finalizarTraco()
       arrastandoUnico.current = false
-      if (scale <= 1.02) { setScale(1); setPos({ x: 0, y: 0 }) }
+      if (scale <= fitScale * 1.02) {
+        setScale(fitScale)
+        setPos({ x: 0, y: 0 })
+        semZoomManual.current = true
+      }
     } else if (pointers.current.size === 1) {
       const p = [...pointers.current.values()][0]
-      arrastandoUnico.current = scale > 1
+      arrastandoUnico.current = ampliado
       startPos.current = pos
       startMid.current = p
     }
   }
 
   function alternarZoom() {
-    if (scale > 1) { setScale(1); setPos({ x: 0, y: 0 }) } else { setScale(2) }
+    if (ampliado) {
+      setScale(fitScale)
+      setPos({ x: 0, y: 0 })
+      semZoomManual.current = true
+    } else {
+      const alvo = Math.min(fitScale * 4, fitScale * 2)
+      setScale(alvo)
+      semZoomManual.current = false
+    }
+  }
+
+  function ajustarTela() {
+    setScale(fitScale)
+    setPos({ x: 0, y: 0 })
+    semZoomManual.current = true
+  }
+
+  function zoom100() {
+    setScale(1)
+    setPos(clampPos(0, 0, 1))
+    semZoomManual.current = false
   }
 
   async function handleAtivarFog() {
@@ -733,7 +838,7 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
   return createPortal(
     <div
       className="fixed inset-0 z-[9999] bg-black flex flex-col"
-      onClick={e => { if (e.target === e.currentTarget && scale <= 1) onClose() }}
+      onClick={e => { if (e.target === e.currentTarget && !ampliado) onClose() }}
     >
       <div className="flex items-center justify-between gap-2 p-3 flex-shrink-0">
         <p className="text-white/80 text-sm font-crimson truncate pr-2">{imagem.nome}</p>
@@ -747,29 +852,43 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
       </div>
 
       <div
-        className="flex-1 overflow-hidden touch-none flex items-center justify-center select-none"
+        ref={panContainerRef}
+        className="relative flex-1 overflow-hidden touch-none flex items-center justify-center select-none"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onDoubleClick={alternarZoom}
       >
-        {/* Wrapper compartilha o transform de zoom/pan com a imagem E o
-            canvas da névoa — se cada um tivesse seu próprio transform, a
-            máscara descolaria da imagem a cada gesto de zoom. */}
+        {/* Wrapper é dimensionado em px NATURAIS da imagem (nunca por
+            max-width/max-height percentual — max-height percentual não
+            resolve contra um pai de altura automática, foi isso que cortava
+            mapas grandes) e escalado via transform a partir de fitScale
+            (calculada em JS). A imagem e o canvas da névoa são desenhados
+            nesse MESMO sistema de coordenadas e recebem o MESMO transform —
+            é isso que mantém a máscara colada à imagem em qualquer zoom, e
+            também não desalinha com Ctrl+/- do navegador (getBoundingClientRect
+            usado nos handlers de pintura já reflete o zoom do navegador). */}
         <div
-          className="relative inline-block max-w-full max-h-full"
+          className="relative"
           style={{
+            width: naturalSize?.width,
+            height: naturalSize?.height,
             transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
+            transformOrigin: 'center center',
             transition: pointers.current.size > 0 ? 'none' : 'transform 0.15s ease-out',
+            opacity: pronto ? 1 : 0,
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
+            ref={imgRef}
             src={imagem.url}
             alt={imagem.nome}
-            className="block max-w-full max-h-full"
+            className="block"
+            style={{ width: naturalSize?.width, height: naturalSize?.height }}
             draggable={false}
+            onLoad={medirEAjustar}
           />
           {fog.fogAtivo && (
             <canvas
@@ -779,6 +898,29 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
             />
           )}
         </div>
+
+        {pronto && (
+          <div
+            className="absolute top-3 right-3 z-10 flex gap-1.5"
+            onPointerDown={e => e.stopPropagation()}
+            onDoubleClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={ajustarTela}
+              className="px-2.5 py-1.5 rounded-full text-[11px] font-cinzel bg-black/50 text-white/80 hover:bg-black/70 transition-colors"
+              title="Ajustar imagem inteira à tela"
+            >
+              ⤢ Ajustar
+            </button>
+            <button
+              onClick={zoom100}
+              className="px-2.5 py-1.5 rounded-full text-[11px] font-cinzel bg-black/50 text-white/80 hover:bg-black/70 transition-colors"
+              title="Ver em tamanho real (100%)"
+            >
+              100%
+            </button>
+          </div>
+        )}
       </div>
 
       {mostraFog && (

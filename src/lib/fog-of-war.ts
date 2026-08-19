@@ -32,6 +32,19 @@ export function percentualRevelado(fog: { colunas: number; linhas: number; revel
   return Math.round((fog.reveladas.size / total) * 100)
 }
 
+// Único ponto de decisão da opacidade da célula oculta — NUNCA reimplementar
+// essa conta em outro lugar. Depende só do papel real de quem está olhando
+// (ehDM), não do estado de preview local do hook: um jogador de verdade
+// nunca tem como alternar "ver como jogador" (a toolbar que faz isso só
+// existe para o DM), então se a opacidade dependesse apenas do preview, todo
+// jogador cairia no valor "leve" pensado pro DM enxergar por baixo — foi
+// exatamente esse o bug reportado (jogador via o mapa através da névoa).
+// Jogador (ou DM em preview) precisa de alfa OPACO: nada do mapa pode ser
+// inferido por trás da névoa.
+export function opacidadeOculta(ehDM: boolean, modoPreviewJogador: boolean): number {
+  return ehDM && !modoPreviewJogador ? 0.45 : 1.0
+}
+
 interface FogRow {
   ativo: boolean
   colunas: number
