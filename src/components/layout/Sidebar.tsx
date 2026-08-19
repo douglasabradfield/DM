@@ -43,7 +43,7 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
   const pathname = usePathname()
   const {
     campanhaAtiva, campanhas, setCampanhaAtiva, setCampanhas, carregarCampanhas, papelPorCampanha,
-    carregarSessaoAtiva,
+    carregarSessaoAtiva, carregarFog,
   } = useCampanha()
   const [dropdownAberto, setDropdownAberto] = useState(false)
   const [modalNova, setModalNova] = useState(false)
@@ -63,6 +63,7 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
   useEffect(() => {
     if (!campanhaAtiva?.id) return
     carregarSessaoAtiva(campanhaAtiva.id)
+    carregarFog(campanhaAtiva.id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campanhaAtiva?.id])
 

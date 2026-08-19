@@ -4,6 +4,13 @@ import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/
 import type { Campanha, Sessao } from '@/types/database'
 import { createClient } from '@/lib/supabase/client'
 
+interface FogImagem {
+  ativo: boolean
+  colunas: number
+  linhas: number
+  reveladas: Set<number>
+}
+
 interface EstadoCampanha {
   campanhaAtiva: Campanha | null
   sessaoAtiva: Sessao | null
@@ -14,6 +21,8 @@ interface EstadoCampanha {
   sessaoCarregando: boolean
   campanhas: Campanha[]
   papelPorCampanha: Record<string, 'dm' | 'jogador'>
+  // Fog of war por imagem (mapa) da campanha ativa — chave é imagem_id.
+  fogPorImagem: Record<string, FogImagem>
 
   setCampanhaAtiva: (campanha: Campanha | null) => void
   setSessaoAtiva: (sessao: Sessao | null) => void
@@ -27,6 +36,12 @@ interface EstadoCampanha {
   // layout do dashboard) sempre que campanhaAtiva muda — não em cada tela
   // que lê sessaoAtiva. Ver comentário em Sidebar.tsx.
   carregarSessaoAtiva: (campanhaId: string) => Promise<void>
+
+  // Mesmo padrão de carregarSessaoAtiva: chamado uma vez pela Sidebar sempre
+  // que campanhaAtiva muda, não por cada tela que lê fogPorImagem — foi
+  // exatamente esse o bug da sessão na Fase 3.5 (carga presa numa tela só).
+  carregarFog: (campanhaId: string) => Promise<void>
+  assinarFog: (campanhaId: string) => void
 }
 
 // Canal Realtime da sessão — vive fora do state reativo, mesmo padrão do
@@ -70,6 +85,66 @@ function assinarRealtimeSessao(campanhaId: string, set: (fn: (s: EstadoCampanha)
   canalSessaoCampanhaId = campanhaId
 }
 
+// Canal Realtime do fog of war — mesmo padrão de canalSessaoAtual acima.
+let canalFogAtual: RealtimeChannel | null = null
+let canalFogCampanhaId: string | null = null
+
+interface LinhaFog {
+  id: string
+  imagem_id: string
+  campanha_id: string
+  ativo: boolean
+  colunas: number
+  linhas: number
+  reveladas: number[]
+}
+
+function assinarRealtimeFog(campanhaId: string, set: (fn: (s: EstadoCampanha) => Partial<EstadoCampanha>) => void) {
+  if (canalFogAtual && canalFogCampanhaId === campanhaId) return
+  if (canalFogAtual) {
+    createClient().removeChannel(canalFogAtual)
+    canalFogAtual = null
+    canalFogCampanhaId = null
+  }
+
+  const supabase = createClient()
+  const channel = supabase
+    .channel(`mapa_fog:${campanhaId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'mapa_fog', filter: `campanha_id=eq.${campanhaId}` },
+      (payload: RealtimePostgresChangesPayload<LinhaFog>) => {
+        if (payload.eventType === 'DELETE') {
+          const antiga = payload.old as Partial<LinhaFog> | undefined
+          if (!antiga?.imagem_id) return
+          set(s => {
+            const resto = { ...s.fogPorImagem }
+            delete resto[antiga.imagem_id as string]
+            return { fogPorImagem: resto }
+          })
+          return
+        }
+        const linha = payload.new as LinhaFog | undefined
+        if (!linha?.imagem_id) return
+        set(s => ({
+          fogPorImagem: {
+            ...s.fogPorImagem,
+            [linha.imagem_id]: {
+              ativo: linha.ativo,
+              colunas: linha.colunas,
+              linhas: linha.linhas,
+              reveladas: new Set(linha.reveladas ?? []),
+            },
+          },
+        }))
+      }
+    )
+    .subscribe()
+
+  canalFogAtual = channel
+  canalFogCampanhaId = campanhaId
+}
+
 export const useCampanha = create<EstadoCampanha>()(
   persist(
     (set, get) => ({
@@ -78,6 +153,7 @@ export const useCampanha = create<EstadoCampanha>()(
       sessaoCarregando: true,
       campanhas: [],
       papelPorCampanha: {},
+      fogPorImagem: {},
 
       setCampanhaAtiva: (campanha) => set({ campanhaAtiva: campanha }),
       setSessaoAtiva: (sessao) => set({ sessaoAtiva: sessao }),
@@ -144,6 +220,28 @@ export const useCampanha = create<EstadoCampanha>()(
         set({ sessaoAtiva: (sessao as Sessao) ?? null, sessaoCarregando: false })
         assinarRealtimeSessao(campanhaId, set)
       },
+
+      carregarFog: async (campanhaId) => {
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('mapa_fog')
+          .select('imagem_id, ativo, colunas, linhas, reveladas')
+          .eq('campanha_id', campanhaId)
+
+        const fogPorImagem: Record<string, FogImagem> = {}
+        for (const linha of data ?? []) {
+          fogPorImagem[linha.imagem_id] = {
+            ativo: linha.ativo,
+            colunas: linha.colunas,
+            linhas: linha.linhas,
+            reveladas: new Set(linha.reveladas ?? []),
+          }
+        }
+        set({ fogPorImagem })
+        assinarRealtimeFog(campanhaId, set)
+      },
+
+      assinarFog: (campanhaId) => assinarRealtimeFog(campanhaId, set),
 
       carregarCampanhas: async () => {
         // Ler ID salvo ANTES de limpar o estado

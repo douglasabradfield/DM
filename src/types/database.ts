@@ -125,6 +125,18 @@ export interface CampaignMember {
   profiles?: { email: string; nome: string | null; avatar_url: string | null }
 }
 
+export interface MapaFog {
+  id: string
+  imagem_id: string
+  campanha_id: string
+  ativo: boolean
+  colunas: number
+  linhas: number
+  reveladas: number[]
+  atualizado_em: string
+  atualizado_por: string | null
+}
+
 export interface CampaignInvite {
   id: string
   campanha_id: string
