@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import toast from 'react-hot-toast'
 import { useBatalha } from '@/store/batalha'
 import type { Combatente, TipoCondicao, DadosMonstroSimples } from '@/types/batalha'
 import { BarraVida } from './BarraVida'
@@ -14,8 +15,10 @@ import { PopupCondicao } from './PopupCondicao'
 import { SeletorTipoDano } from './SeletorTipoDano'
 import { TooltipCombatente } from './TooltipCombatente'
 import { cn } from '@/lib/utils'
-import { Trash2, Plus, GripVertical, X, Pencil, Wand2, Eye } from 'lucide-react'
-import type { TipoDano } from '@/types/dnd'
+import { createClient } from '@/lib/supabase/client'
+import { normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
+import { Trash2, Plus, GripVertical, X, Pencil, Wand2, Eye, RotateCw } from 'lucide-react'
+import type { TipoDano, Ataque } from '@/types/dnd'
 
 interface LinhaCombatenteProps {
   combatente: Combatente
@@ -76,6 +79,47 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
 
   function reviverCombatente() {
     atualizarCombatente(c.id, { pv_atual: 1, morto: false })
+  }
+
+  const [atualizandoFicha, setAtualizandoFicha] = useState(false)
+
+  // Refaz o snapshot de combate a partir da ficha atual — o combatente é
+  // clonado da ficha só uma vez, ao entrar na batalha (ver adicionarCombatente
+  // em TabelaCombate.tsx); uma correção feita na ficha DEPOIS disso (ex.:
+  // tipo de dano de um ataque) não chega sozinha ao combatente em batalhas já
+  // em andamento. Só toca campos "de ficha" (CA, resistências, ataques...) —
+  // nunca PV/condições/iniciativa, que são estado vivo da batalha.
+  async function atualizarDaFicha() {
+    if (!c.personagem_id || atualizandoFicha) return
+    setAtualizandoFicha(true)
+    try {
+      const { data: p, error } = await createClient()
+        .from('personagens')
+        .select('nivel, classe, ca, ataques, resistencias, imunidades, vulnerabilidades')
+        .eq('id', c.personagem_id)
+        .single()
+      if (error || !p) { toast.error('Erro ao buscar a ficha'); return }
+      atualizarCombatente(c.id, {
+        ca: p.ca,
+        resistencias: p.resistencias ?? [],
+        imunidades: p.imunidades ?? [],
+        vulnerabilidades: p.vulnerabilidades ?? [],
+        nivel: p.nivel ?? c.nivel,
+        dados_personagem: {
+          nivel: p.nivel ?? 1,
+          classe: p.classe ?? null,
+          ataques: ((p.ataques ?? []) as Ataque[]).map(a => ({
+            nome: a.nome,
+            bonus: a.bonus_ataque,
+            dano: a.dano,
+            tipo_dano: normalizarTipoDano(a.tipo_dano) ?? undefined,
+          })),
+        },
+      })
+      toast.success(`${c.nome} sincronizado com a ficha`)
+    } finally {
+      setAtualizandoFicha(false)
+    }
   }
 
   return (
@@ -489,6 +533,16 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
       {/* Ações */}
       <td className="px-1 py-1 w-20">
         <div className="flex items-center gap-1">
+          {c.personagem_id && (
+            <button
+              onClick={atualizarDaFicha}
+              disabled={atualizandoFicha}
+              className="text-xs p-1 rounded text-[var(--text3)] hover:text-[var(--accent2)] transition-colors disabled:opacity-30"
+              title="Atualizar da ficha — refaz CA, resistências e ataques a partir do personagem atual (não mexe em PV/condições)"
+            >
+              <RotateCw className={cn('w-3 h-3', atualizandoFicha && 'animate-spin')} />
+            </button>
+          )}
           {estaMorto ? (
             <button
               onClick={reviverCombatente}

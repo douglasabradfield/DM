@@ -375,7 +375,13 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
           {!minimizada && (
             <div className="text-center pt-1">
               <p className="font-cinzel text-xs text-[var(--border)] tracking-widest uppercase">Dungeon Desk</p>
-              <p className="text-xs text-[var(--border)] mt-0.5">v1.0</p>
+              {/* Hash do commit buildado — ver next.config.ts. Só serve pra
+                  confirmar "quem está em qual versão" quando uma correção
+                  não aparece pra alguém; sem isso não tinha como diferenciar
+                  cache velho de app realmente desatualizado. */}
+              <p className="text-xs text-[var(--border)] mt-0.5" title="Versão do build">
+                v1.0 · {process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev'}
+              </p>
             </div>
           )}
         </div>
@@ -681,6 +687,9 @@ export function BottomNav({ isAdmin }: { isAdmin?: boolean; plano?: string }) {
                 <span>💬</span>
                 <span>Feedback & Sugestões</span>
               </Link>
+              <p className="text-center text-[10px] text-[var(--dd-text3)] opacity-60 pt-2">
+                v1.0 · {process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev'}
+              </p>
             </div>
           </div>
         </>

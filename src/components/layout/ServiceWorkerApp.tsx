@@ -3,7 +3,12 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 
-const INTERVALO_VERIFICACAO_MS = 30 * 60 * 1000
+// Uma sessão de batalha pode ficar horas com a mesma aba em foco (sem
+// esconder/mostrar, sem trocar de aba) — visibilitychange sozinho não
+// dispara nesse caso, então o polling é quem garante que um deploy no meio
+// da sessão é detectado num tempo razoável, não só na próxima vez que a
+// pessoa voltar o foco pra aba.
+const INTERVALO_VERIFICACAO_MS = 5 * 60 * 1000
 
 /**
  * Registra o service worker (public/sw.js) e mostra um aviso quando uma
