@@ -581,10 +581,9 @@ export function MagiasCliente() {
   const [modalMagiaAberto, setModalMagiaAberto] = useState<'criar' | 'editar' | null>(null)
   const [nomesAutores, setNomesAutores] = useState<Record<string, string>>({})
   const { ehDM } = usePermissao()
-  const { campanhaAtiva, papelPorCampanha } = useCampanha()
+  const { campanhaAtiva } = useCampanha()
 
-  const dmDaCampanhaAtiva = !!campanhaAtiva && papelPorCampanha[campanhaAtiva.id] === 'dm'
-  const podeCriarMagia = isAdmin || dmDaCampanhaAtiva
+  const podeCriarMagia = !!userId
 
   useEffect(() => {
     const supabase = createClient()

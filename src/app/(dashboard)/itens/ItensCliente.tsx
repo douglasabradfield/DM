@@ -1584,8 +1584,7 @@ export function ItensCliente() {
   const { ehDM } = usePermissao()
   const { campanhaAtiva, papelPorCampanha } = useCampanha()
 
-  const dmDaCampanhaAtiva = !!campanhaAtiva && papelPorCampanha[campanhaAtiva.id] === 'dm'
-  const podeCriarItem = isAdmin || dmDaCampanhaAtiva
+  const podeCriarItem = !!userId
   const abaProps: ItemAbaProps = { userId, isAdmin, podeCriarItem, campanhaId: campanhaAtiva?.id, ehDM }
 
   useEffect(() => {
