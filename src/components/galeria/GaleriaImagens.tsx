@@ -448,22 +448,28 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                     }
                   </button>
                 )}
-                <a
-                  href={selecionada.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 px-3 py-1.5 border border-[var(--border)] text-[var(--text2)] rounded text-xs hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
-                >
-                  <ExternalLink className="w-3 h-3" /> Abrir original
-                </a>
-                {!ehJogador && tipo === 'mapa' && (
+                {/* Jogador nunca pode abrir o arquivo cru de um mapa — o único
+                    caminho de ampliação para ele é o visualizador com máscara
+                    abaixo. Para imagens comuns (sem névoa) ou para o DM, o link
+                    original continua disponível. */}
+                {!(ehJogador && tipo === 'mapa') && (
+                  <a
+                    href={selecionada.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 px-3 py-1.5 border border-[var(--border)] text-[var(--text2)] rounded text-xs hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                  >
+                    <ExternalLink className="w-3 h-3" /> Abrir original
+                  </a>
+                )}
+                {tipo === 'mapa' && (
                   <button
                     onClick={() => setVisualizando(selecionada)}
                     className="flex items-center gap-1 px-3 py-1.5 border border-[var(--accent)] text-[var(--accent)] rounded text-xs hover:bg-[var(--accent)]/10 transition-colors"
-                    title="Abrir em tela cheia para pintar a névoa de guerra"
+                    title={ehJogador ? 'Abrir em tela cheia' : 'Abrir em tela cheia para pintar a névoa de guerra'}
                   >
-                    <Maximize2 className="w-3 h-3" /> Tela cheia / Névoa
-                    {fogPorImagem[selecionada.id]?.ativo ? ` (${percentualRevelado(fogPorImagem[selecionada.id])}%)` : ''}
+                    <Maximize2 className="w-3 h-3" /> {ehJogador ? 'Ampliar' : 'Tela cheia / Névoa'}
+                    {!ehJogador && fogPorImagem[selecionada.id]?.ativo ? ` (${percentualRevelado(fogPorImagem[selecionada.id])}%)` : ''}
                   </button>
                 )}
                 {!ehJogador && (
@@ -476,12 +482,20 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                 )}
               </div>
             </div>
-            <div className="relative">
+            {/* w-fit em vez de w-full: o wrapper precisa ter EXATAMENTE o
+                tamanho renderizado da imagem. Com w-full + object-contain,
+                mapas com proporção diferente do painel ficavam com faixas
+                vazias (letterbox) dentro da própria div — a máscara do
+                FogThumbOverlay (w-full/h-full do wrapper) cobria essas faixas
+                em vez da imagem, desalinhando a névoa. max-width/max-height
+                sem width/height fixos deixa o navegador encolher a <img> só
+                pela proporção real, então wrapper e conteúdo coincidem. */}
+            <div className="relative w-fit mx-auto">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={selecionada.url}
                 alt={selecionada.nome}
-                className="w-full rounded-lg border border-[var(--border)] shadow-xl object-contain max-h-[70vh]"
+                className="block max-w-full max-h-[70vh] rounded-lg border border-[var(--border)] shadow-xl"
                 onError={e => { (e.target as HTMLImageElement).alt = 'Erro ao carregar imagem' }}
               />
               {tipo === 'mapa' && <FogThumbOverlay imagemId={selecionada.id} ehDM={!ehJogador} />}
