@@ -12,7 +12,7 @@ import {
 } from '@/lib/fog-of-war'
 import { useFogPincel } from '@/hooks/useFogPincel'
 import { FogToolbar } from './FogToolbar'
-import { FogThumbOverlay } from './FogThumbOverlay'
+import { ImagemComFog } from './ImagemComFog'
 
 interface ImagemGaleria {
   id: string
@@ -292,14 +292,24 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                   onClick={() => setVisualizando(img)}
                   className="relative aspect-square rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg3)]"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={img.url}
-                    alt={img.nome}
-                    className="w-full h-full object-cover"
-                    onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                  />
-                  {tipo === 'mapa' && <FogThumbOverlay imagemId={img.id} ehDM={!ehJogador} />}
+                  {tipo === 'mapa' ? (
+                    <ImagemComFog
+                      imagemId={img.id}
+                      url={img.url}
+                      alt={img.nome}
+                      ehDM={!ehJogador}
+                      wrapperClassName="absolute inset-0 flex items-center justify-center"
+                      imgClassName="max-w-full max-h-full object-contain"
+                    />
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={img.url}
+                      alt={img.nome}
+                      className="w-full h-full object-cover"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                    />
+                  )}
                   {!ehJogador && (
                     <span className={cn(
                       'absolute top-1 right-1 rounded-full p-1',
@@ -377,14 +387,25 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
               >
                 <div className="flex gap-2 items-start">
                   <div className="relative w-12 h-12 bg-[var(--bg3)] rounded overflow-hidden flex-shrink-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={img.url}
-                      alt={img.nome}
-                      className="w-full h-full object-cover"
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                    />
-                    {tipo === 'mapa' && <FogThumbOverlay imagemId={img.id} ehDM={!ehJogador} />}
+                    {tipo === 'mapa' ? (
+                      <ImagemComFog
+                        imagemId={img.id}
+                        url={img.url}
+                        alt={img.nome}
+                        ehDM={!ehJogador}
+                        wrapperClassName="absolute inset-0 flex items-center justify-center"
+                        imgClassName="max-w-full max-h-full object-contain"
+                        blurPx={2}
+                      />
+                    ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={img.url}
+                        alt={img.nome}
+                        className="w-full h-full object-cover"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-[var(--text)] text-sm font-crimson truncate">{img.nome}</p>
@@ -482,23 +503,29 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                 )}
               </div>
             </div>
-            {/* w-fit em vez de w-full: o wrapper precisa ter EXATAMENTE o
-                tamanho renderizado da imagem. Com w-full + object-contain,
-                mapas com proporção diferente do painel ficavam com faixas
-                vazias (letterbox) dentro da própria div — a máscara do
-                FogThumbOverlay (w-full/h-full do wrapper) cobria essas faixas
-                em vez da imagem, desalinhando a névoa. max-width/max-height
-                sem width/height fixos deixa o navegador encolher a <img> só
-                pela proporção real, então wrapper e conteúdo coincidem. */}
-            <div className="relative w-fit mx-auto">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={selecionada.url}
-                alt={selecionada.nome}
-                className="block max-w-full max-h-[70vh] rounded-lg border border-[var(--border)] shadow-xl"
-                onError={e => { (e.target as HTMLImageElement).alt = 'Erro ao carregar imagem' }}
-              />
-              {tipo === 'mapa' && <FogThumbOverlay imagemId={selecionada.id} ehDM={!ehJogador} />}
+            {/* Mapa: ImagemComFog mede o retângulo REAL da <img> (limitada por
+                max-h-[70vh]) e cola o canvas da máscara nele — não depende de
+                o wrapper coincidir com a imagem (foi um wrapper mais largo que
+                a imagem que desalinhava a névoa). Imagem comum: <img> simples. */}
+            <div className="mx-auto w-fit">
+              {tipo === 'mapa' ? (
+                <ImagemComFog
+                  imagemId={selecionada.id}
+                  url={selecionada.url}
+                  alt={selecionada.nome}
+                  ehDM={!ehJogador}
+                  wrapperClassName="relative inline-block"
+                  imgClassName="block max-w-full max-h-[70vh] rounded-lg border border-[var(--border)] shadow-xl"
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={selecionada.url}
+                  alt={selecionada.nome}
+                  className="block max-w-full max-h-[70vh] rounded-lg border border-[var(--border)] shadow-xl"
+                  onError={e => { (e.target as HTMLImageElement).alt = 'Erro ao carregar imagem' }}
+                />
+              )}
             </div>
           </div>
         )}
@@ -716,6 +743,17 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
     return () => obs.disconnect()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [naturalSize])
+
+  // O <canvas> da névoa monta assim que fog.fogAtivo fica true, mas o wrapper
+  // pai só ganha tamanho (px naturais) depois que medirEAjustar roda — os
+  // efeitos internos do useFogPincel não observam naturalSize, então força o
+  // redesenho aqui quando as dimensões chegam. Sem isso a máscara podia
+  // ficar em branco na primeira abertura em tela cheia.
+  useEffect(() => {
+    if (naturalSize) fog.redesenhar()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [naturalSize, fog.fogAtivo, fog.redesenhar])
+
   const [processandoFog, setProcessandoFog] = useState(false)
   // Um traço de pincel (1 ponteiro) só pinta quando o pincel está
   // explicitamente ligado (modoPincel !== null) — enquanto ele está

@@ -45,6 +45,74 @@ export function opacidadeOculta(ehDM: boolean, modoPreviewJogador: boolean): num
   return ehDM && !modoPreviewJogador ? 0.45 : 1.0
 }
 
+// Teto de resolução do backing store do canvas da máscara. A névoa é sempre
+// exibida borrada (filter: blur), então não precisa da resolução total do
+// mapa. SEM esse teto, um mapa grande (ex.: 3000x4000 = 12 Mpx, ou maior)
+// estoura o limite de área de canvas do Safari/iOS (~16,7 Mpx / 4096 px por
+// lado) e o canvas INTEIRO passa a renderizar transparente — a máscara some
+// e o jogador vê o mapa completo. Foi exatamente essa a causa do bug "a
+// névoa some ao abrir em tela cheia" que voltou: dependia da resolução do
+// arquivo do mapa, então só acontecia em alguns mapas / alguns aparelhos
+// (jogador no celular), nunca no desktop do DM. A miniatura nunca sofreu
+// disso porque o canvas dela é pequeno.
+const MAX_CANVAS_LADO = 1600
+
+export function dimensoesCanvasFog(larguraExib: number, alturaExib: number) {
+  const maior = Math.max(larguraExib, alturaExib)
+  const fator = maior > MAX_CANVAS_LADO ? MAX_CANVAS_LADO / maior : 1
+  return {
+    width: Math.max(1, Math.round(larguraExib * fator)),
+    height: Math.max(1, Math.round(alturaExib * fator)),
+  }
+}
+
+interface FogMascara {
+  colunas: number
+  linhas: number
+  reveladas: Set<number>
+}
+
+// ÚNICO lugar do app que sabe rasterizar a máscara de névoa — miniatura,
+// pré-visualização, tela cheia (jogador) e tela cheia (DM, via useFogPincel)
+// todos passam por aqui. Recebe o canvas e o tamanho de EXIBIÇÃO em CSS px
+// do elemento renderizado (a caixa real da <img>, não de um wrapper que
+// possa ter proporção diferente). Ajusta o backing store respeitando o teto
+// de resolução e desenha as células reveladas recortando o preto.
+export function desenharMascaraFog(
+  canvas: HTMLCanvasElement,
+  larguraExib: number,
+  alturaExib: number,
+  fog: FogMascara | undefined,
+  opcoes: { ehDM: boolean; modoPreviewJogador?: boolean },
+) {
+  if (!fog || larguraExib <= 0 || alturaExib <= 0) return
+  const { width, height } = dimensoesCanvasFog(larguraExib, alturaExib)
+  if (canvas.width !== width) canvas.width = width
+  if (canvas.height !== height) canvas.height = height
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, width, height)
+
+  const opacidade = opacidadeOculta(opcoes.ehDM, opcoes.modoPreviewJogador ?? false)
+  ctx.fillStyle = `rgba(0, 0, 0, ${opacidade})`
+  ctx.fillRect(0, 0, width, height)
+
+  if (fog.colunas > 0 && fog.linhas > 0) {
+    const largCel = width / fog.colunas
+    const altCel = height / fog.linhas
+    ctx.globalCompositeOperation = 'destination-out'
+    ctx.fillStyle = '#000'
+    for (const indice of fog.reveladas) {
+      const col = indice % fog.colunas
+      const lin = Math.floor(indice / fog.colunas)
+      ctx.fillRect(col * largCel, lin * altCel, largCel + 1, altCel + 1)
+    }
+    ctx.globalCompositeOperation = 'source-over'
+  }
+}
+
 interface FogRow {
   ativo: boolean
   colunas: number

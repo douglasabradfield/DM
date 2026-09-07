@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useCampanha } from '@/store/campanha'
 import { createClient } from '@/lib/supabase/client'
-import { chamarApiFog, percentualRevelado, opacidadeOculta } from '@/lib/fog-of-war'
+import { chamarApiFog, percentualRevelado, desenharMascaraFog } from '@/lib/fog-of-war'
 
 export type ModoPincel = 'revelar' | 'ocultar' | null
 export type TamanhoPincel = 'pequeno' | 'medio' | 'grande'
@@ -37,48 +37,28 @@ export function useFogPincel({ imagemId, ehDM }: { imagemId: string; ehDM: boole
 
   const desenhar = useCallback(() => {
     const canvas = canvasRef.current
-    if (!canvas || !fog?.ativo) return
+    if (!canvas || !fog || !fog.ativo) return
     const wrapper = canvas.parentElement
     if (!wrapper) return
 
-    // O wrapper (pai do canvas) agora é dimensionado em pixels NATURAIS da
-    // imagem (ver VisualizadorFullscreen) — offsetWidth/Height já É a
-    // resolução nativa da imagem, então rasterizar 1:1 já dá a máscara na
-    // mesma nitidez que a própria imagem consegue oferecer. Multiplicar por
-    // devicePixelRatio aqui só infla a memória do canvas (numa imagem
-    // 2100x2850 isso passaria de ~24MB para ~95MB) sem ganho real de
-    // nitidez, já que a imagem-fonte não tem mais detalhe que isso.
+    // O wrapper (pai do canvas) é dimensionado em px NATURAIS da imagem (ver
+    // VisualizadorFullscreen) — offsetWidth/Height é a resolução nativa do
+    // mapa. Passa esse tamanho de exibição para o rasterizador único
+    // (desenharMascaraFog), que CAPA o backing store: sem esse teto, um mapa
+    // grande estoura o limite de canvas do Safari/iOS e a máscara some
+    // inteira (o jogador via o mapa completo em tela cheia). O canvas
+    // continua com CSS w-full/h-full do wrapper e o blur esconde a diferença
+    // de resolução.
     const largura = wrapper.offsetWidth
     const altura = wrapper.offsetHeight
     if (largura === 0 || altura === 0) return
-    if (canvas.width !== largura || canvas.height !== altura) {
-      canvas.width = largura
-      canvas.height = altura
-    }
 
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.clearRect(0, 0, largura, altura)
-
-    // Único ponto de cálculo da opacidade — ver opacidadeOculta em
-    // src/lib/fog-of-war.ts. DM enxerga o mapa inteiro por trás de uma
-    // névoa leve; jogador real e "ver como jogador" usam preto opaco.
-    const opacidade = opacidadeOculta(ehDM, verComoJogador)
-    ctx.fillStyle = `rgba(0, 0, 0, ${opacidade})`
-    ctx.fillRect(0, 0, largura, altura)
-
-    const largCel = largura / fog.colunas
-    const altCel = altura / fog.linhas
-    ctx.globalCompositeOperation = 'destination-out'
-    ctx.fillStyle = '#000'
-    for (const indice of revealedRef.current) {
-      const col = indice % fog.colunas
-      const lin = Math.floor(indice / fog.colunas)
-      ctx.fillRect(col * largCel, lin * altCel, largCel + 1, altCel + 1)
-    }
-    ctx.globalCompositeOperation = 'source-over'
-  }, [fog?.ativo, fog?.colunas, fog?.linhas, ehDM, verComoJogador])
+    desenharMascaraFog(
+      canvas, largura, altura,
+      { colunas: fog.colunas, linhas: fog.linhas, reveladas: revealedRef.current },
+      { ehDM, modoPreviewJogador: verComoJogador },
+    )
+  }, [fog, ehDM, verComoJogador])
 
   // Reconcilia o Set local com o store (carga inicial, mudança feita em
   // outra aba/DM via Realtime, ou resultado de ativar/desativar/tudo).
@@ -189,6 +169,10 @@ export function useFogPincel({ imagemId, ehDM }: { imagemId: string; ehDM: boole
     setVerComoJogador,
     salvando,
     pintarEm,
+    // Redesenho manual — o visualizador chama quando descobre as dimensões
+    // naturais da imagem (o <canvas> monta antes disso e os efeitos internos
+    // não observam esse estado externo).
+    redesenhar: desenhar,
     iniciarTraco: () => { pintandoRef.current = true },
     finalizarTraco: () => { pintandoRef.current = false },
   }
