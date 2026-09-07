@@ -286,13 +286,16 @@ function mensagemToast(entrada: EntradaLog): string | null {
   return null
 }
 
-// Degradação graciosa: prioriza magias preparadas; se nenhuma estiver
-// marcada como preparada (caso comum hoje — a ficha ainda não expõe esse
-// toggle), mostra todas com um aviso em vez de uma lista vazia enganosa.
+// Degradação graciosa. Truques (nível 0) não têm preparação em D&D 5e —
+// aparecem sempre. Para nível 1+: se há alguma preparada, mostra só as
+// preparadas (+ truques); se nenhuma está preparada, mostra todas com um
+// aviso em vez de uma lista enganosamente curta.
 function selecionarMagiasExibidas(magias: MagiaExibida[]): { magias: MagiaExibida[]; aviso: string | null } {
   if (magias.length === 0) return { magias: [], aviso: null }
-  const preparadas = magias.filter(m => m.preparada)
-  if (preparadas.length > 0) return { magias: preparadas, aviso: null }
+  const truques = magias.filter(m => m.nivel === 0)
+  const comNivel = magias.filter(m => m.nivel > 0)
+  const preparadas = comNivel.filter(m => m.preparada)
+  if (preparadas.length > 0) return { magias: [...truques, ...preparadas], aviso: null }
   return { magias, aviso: 'Nenhuma magia marcada como preparada na ficha' }
 }
 
