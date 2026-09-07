@@ -4,14 +4,17 @@ import { useState } from 'react'
 import { useBatalha } from '@/store/batalha'
 import { useCampanha } from '@/store/campanha'
 import { createClient } from '@/lib/supabase/client'
-import type { Monster } from '@/types/dnd'
+import type { Monster, MonsterDamageModifier } from '@/types/dnd'
+import { separarModificadoresDano } from '@/lib/dados-dnd/tipos-dano'
 import { Search } from 'lucide-react'
+
+type MonstroBusca = Monster & { monster_damage_modifiers?: MonsterDamageModifier[] }
 
 export function SidebarMonstros() {
   const { adicionarCombatente } = useBatalha()
   const { campanhaAtiva } = useCampanha()
   const [busca, setBusca] = useState('')
-  const [resultados, setResultados] = useState<Monster[]>([])
+  const [resultados, setResultados] = useState<MonstroBusca[]>([])
   const [carregando, setCarregando] = useState(false)
 
   async function buscarMonstros(termo: string) {
@@ -21,20 +24,21 @@ export function SidebarMonstros() {
       const supabase = createClient()
       let query = supabase
         .from('monsters')
-        .select('id, slug, name_pt, type_pt, challenge_rating, xp, armor_class, hit_points, str_score, dex_score, con_score, int_score, wis_score, cha_score, traits_pt, traits_rules_pt, actions_pt, actions_rules_pt')
+        .select('id, slug, name_pt, type_pt, challenge_rating, xp, armor_class, hit_points, str_score, dex_score, con_score, int_score, wis_score, cha_score, traits_pt, traits_rules_pt, actions_pt, actions_rules_pt, monster_damage_modifiers(*)')
         .ilike('name_pt', `%${termo}%`)
         .limit(10)
       query = campanhaAtiva?.id
         ? query.or(`criado_por.is.null,campanha_id.eq.${campanhaAtiva.id}`)
         : query.is('criado_por', null)
       const { data } = await query
-      setResultados((data ?? []) as Monster[])
+      setResultados((data ?? []) as MonstroBusca[])
     } finally {
       setCarregando(false)
     }
   }
 
-  function adicionarMonstro(m: Monster, quantidade = 1) {
+  function adicionarMonstro(m: MonstroBusca, quantidade = 1) {
+    const { resistencias, imunidades, vulnerabilidades } = separarModificadoresDano(m.monster_damage_modifiers)
     for (let i = 0; i < quantidade; i++) {
       const pvBase = m.hit_points ?? 10
       const pv = quantidade > 1
@@ -53,9 +57,9 @@ export function SidebarMonstros() {
         ausente: false,
         morto: false,
         condicoes: [],
-        resistencias: [],
-        imunidades: [],
-        vulnerabilidades: [],
+        resistencias,
+        imunidades,
+        vulnerabilidades,
         espacos_magia: {},
         notas: '',
         pv_revelado: false,

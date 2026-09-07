@@ -170,6 +170,7 @@ export interface MonsterDamageModifier {
   id?: number
   monster_id?: number
   modifier_type: string
+  damage_type_en?: string | null
   damage_type_pt: string
   note_pt?: string | null
 }

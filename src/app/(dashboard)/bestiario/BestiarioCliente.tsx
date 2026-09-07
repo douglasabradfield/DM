@@ -9,6 +9,7 @@ import { useBatalha } from '@/store/batalha'
 import { usePermissao } from '@/hooks/usePermissao'
 import { useCampanha } from '@/store/campanha'
 import { calcularModificadorAtributo, formatarModificador, cn } from '@/lib/utils'
+import { separarModificadoresDano } from '@/lib/dados-dnd/tipos-dano'
 import { Search, Swords, Plus, X, Trash2, Pencil, ShieldAlert, Star } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
@@ -1060,6 +1061,7 @@ export function BestiarioCliente() {
     const ataquesEstruturados = m.monster_actions?.filter(
       a => ['action', 'multiattack', 'bonus_action'].includes(a.action_type)
     )
+    const { resistencias, imunidades, vulnerabilidades } = separarModificadoresDano(m.monster_damage_modifiers)
     adicionarCombatente({
       personagem_id: null,
       nome: m.name_pt,
@@ -1072,9 +1074,9 @@ export function BestiarioCliente() {
       ausente: false,
       morto: false,
       condicoes: [],
-      resistencias: [],
-      imunidades: [],
-      vulnerabilidades: [],
+      resistencias,
+      imunidades,
+      vulnerabilidades,
       espacos_magia: {},
       notas: '',
       pv_revelado: false,

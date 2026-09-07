@@ -22,7 +22,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getNivelPorXP } from '@/lib/dados-dnd/xp-niveis'
 import { TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
 import { calcularDificuldade, xpParaCR, type NivelDificuldade } from '@/lib/dados-dnd/xp-encontro'
-import { TIPOS_DANO, normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
+import { TIPOS_DANO, normalizarTipoDano, resolverTipoDanoSRD } from '@/lib/dados-dnd/tipos-dano'
 import type { Personagem, TipoDano } from '@/types/dnd'
 import { cn } from '@/lib/utils'
 import {
@@ -1299,15 +1299,22 @@ const TIPOS_MAGIA_SLOTS = new Set(['magia', 'contra_magia', 'acao_bonus_magia', 
 // DM escolhe manualmente.
 function inferirTipoDano(c: Combatente | null): TipoDano | null {
   if (!c) return null
-  const tipos = new Set<string>()
+  const tipos = new Set<TipoDano>()
   if (c.dados_personagem?.ataques) {
-    c.dados_personagem.ataques.forEach(a => { if (a.tipo_dano) tipos.add(a.tipo_dano) })
+    c.dados_personagem.ataques.forEach(a => {
+      const t = normalizarTipoDano(a.tipo_dano)
+      if (t) tipos.add(t)
+    })
   } else if (c.ataques_estruturados) {
-    c.ataques_estruturados.forEach(a => { if (a.damage_dice && a.damage_type_pt) tipos.add(a.damage_type_pt) })
+    c.ataques_estruturados.forEach(a => {
+      if (!a.damage_dice) return
+      const t = resolverTipoDanoSRD(a)
+      if (t) tipos.add(t)
+    })
   }
   if (tipos.size !== 1) return null
   const [unico] = tipos
-  return TIPOS_DANO.some(t => t.id === unico) ? (unico as TipoDano) : null
+  return unico
 }
 
 function ModalRegistrarAcao({

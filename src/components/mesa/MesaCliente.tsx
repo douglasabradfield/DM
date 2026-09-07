@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 import { pvVisivelParaJogador, ESTADO_VAGO_INFO, type ModoRevelacao } from '@/lib/batalha/visibilidade-pv'
 import { vantagemDerivada } from '@/lib/batalha/vantagem-por-condicao'
 import { getCondicao, TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
-import { TIPOS_DANO, normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
+import { TIPOS_DANO, normalizarTipoDano, resolverTipoDanoSRD, getTipoDano } from '@/lib/dados-dnd/tipos-dano'
 import { BarraVida } from '@/components/batalha/BarraVida'
 import type { ArmaEmpunhada, Combatente, EntradaLog, TipoCondicao, EspacosMagiaBatalha, TipoEntradaLog } from '@/types/batalha'
 import type { InventarioItemDb, Personagem, Spell, TipoDano } from '@/types/dnd'
@@ -267,7 +267,7 @@ function ataquesDoCombatente(c: Combatente): AtaqueDisponivel[] {
         nome: a.name_pt,
         bonus: a.attack_bonus != null ? (a.attack_bonus >= 0 ? `+${a.attack_bonus}` : `${a.attack_bonus}`) : '',
         dano: a.damage_dice ?? '',
-        tipo_dano: a.damage_type_pt ?? undefined,
+        tipo_dano: resolverTipoDanoSRD(a) ?? undefined,
       }))
   }
   return []
@@ -386,7 +386,10 @@ function ModalValorAcao({
 }) {
   const [texto, setTexto] = useState('')
   const [tipoDano, setTipoDano] = useState<TipoDano>(acao.tipoDanoPadrao ?? 'cortante')
-  const precisaTipoDano = acao.efeito === 'dano' && !acao.tipoDanoPadrao
+  // Sem tipo predeterminado o jogador precisa escolher; com tipo, mostra o
+  // chip fechado — mas ele pode abrir pra corrigir se a ficha estiver errada.
+  const [editandoTipo, setEditandoTipo] = useState(!acao.tipoDanoPadrao)
+  const mostrarTipoDano = acao.efeito === 'dano'
   const valorNumerico = parseInt(texto) || 0
 
   return createPortal(
@@ -410,9 +413,22 @@ function ModalValorAcao({
           <span className="text-[var(--text3)] text-xs ml-1.5">{acao.efeito === 'cura' ? 'PV de cura' : 'de dano'}</span>
         </div>
 
-        {precisaTipoDano && (
+        {mostrarTipoDano && (
           <div className="mb-2">
-            <SeletorTipoDano valor={tipoDano} onChange={setTipoDano} />
+            {editandoTipo ? (
+              <SeletorTipoDano valor={tipoDano} onChange={setTipoDano} />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditandoTipo(true)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[var(--bg2)] border border-[var(--border)] min-h-[40px]"
+              >
+                <span className="font-crimson text-sm text-[var(--text)] truncate">
+                  {getTipoDano(tipoDano).icone} {getTipoDano(tipoDano).nome}
+                </span>
+                <span className="text-[var(--text3)] text-xs font-cinzel flex-shrink-0">trocar</span>
+              </button>
+            )}
           </div>
         )}
 
