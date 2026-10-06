@@ -17,7 +17,7 @@ import { DadosVirtuais } from './DadosVirtuais'
 import { SidebarMonstros } from './SidebarMonstros'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
-import { getEspacosMagia } from '@/lib/dados-dnd/espacos-magia'
+import { getEspacosMagiaPorClasse } from '@/lib/dados-dnd/espacos-magia'
 import { createClient } from '@/lib/supabase/client'
 import { getNivelPorXP } from '@/lib/dados-dnd/xp-niveis'
 import { TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
@@ -1016,10 +1016,16 @@ function ModalCarregarPersonagens({ campanhaId, onFechar }: { campanhaId: string
     if (!escolhidos.length) return
 
     escolhidos.forEach(p => {
+      // A ficha é a fonte dos espaços de magia. A tabela por classe serve apenas
+      // de semente para os totais quando a ficha ainda não tem o nível gravado.
       const espacos: Record<number, { total: number; utilizados: number }> = {}
-      const slots = getEspacosMagia(p.nivel)
-      slots.forEach((total, idx) => {
-        if (total > 0) espacos[idx + 1] = { total, utilizados: 0 }
+      const slotsFicha = (p.slots_magia ?? {}) as Record<string, { total: number; usados: number }>
+      const seed = getEspacosMagiaPorClasse(p.classe, p.nivel)
+      seed.forEach((totalTabela, idx) => {
+        const nivel = idx + 1
+        const daFicha = slotsFicha[String(nivel)]
+        const total = daFicha?.total ?? totalTabela
+        if (total > 0) espacos[nivel] = { total, utilizados: daFicha?.usados ?? 0 }
       })
 
       adicionarCombatente({
