@@ -175,6 +175,15 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
   const [levelUp, setLevelUp] = useState<{ novoNivel: number; novaProf: number } | null>(null)
   const nivelNotificado = useRef(p.nivel)
+  // Nível/classe da última gravação — referência para detectar mudança em
+  // salvar() e avisar que os totais de espaços de magia podem estar
+  // desatualizados. Nunca recalcula sozinho: os totais podem ter sido
+  // ajustados de propósito (modoAjuste). O aviso é local, não vai ao banco.
+  const referenciaEspacos = useRef<{ nivel: number; classe: string }>({
+    nivel: parseInt(String(p.nivel)) || 1,
+    classe: (p.classe ?? '').trim().toLowerCase(),
+  })
+  const [avisoEspacos, setAvisoEspacos] = useState<{ nivel: number; classe: string | null } | null>(null)
 
   // Inventário — Fase 4: lê/escreve em inventario_itens via API árbitro
   // (/api/mesa/acao, modo ficha — só personagemId, sem sessão/batalha ativa
@@ -407,6 +416,20 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         })
         nivelNotificado.current = dados.nivel
       }
+
+      // Nível ou classe mudou desde a última gravação: avisa (sem alterar
+      // slots_magia) se a tabela da classe diverge dos totais da ficha.
+      const nivelSalvo = parseInt(String(dados.nivel)) || 1
+      const classeSalva = (dados.classe ?? '').trim().toLowerCase()
+      const ref = referenciaEspacos.current
+      if (nivelSalvo !== ref.nivel || classeSalva !== ref.classe) {
+        referenciaEspacos.current = { nivel: nivelSalvo, classe: classeSalva }
+        const novoAviso = { nivel: nivelSalvo, classe: dados.classe ?? null }
+        setAvisoEspacos(novoAviso)
+        if (podeEditar && calcularDiferencasEspacos(novoAviso.classe, novoAviso.nivel).length > 0) {
+          toast('Os espaços de magia da ficha diferem da tabela da classe. Veja a página de Magias.', { icon: '✨' })
+        }
+      }
       // Sincroniza com a batalha se o personagem estiver em combate
       atualizarCombatentePorPersonagem(p.id, {
         ca: parseInt(String(dados.ca)) || 10,
@@ -503,9 +526,23 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     salvarSlotsDb(novosUsados, espacosTotais)
   }
 
-  function recalcularPelaClasse() {
+  // Diferenças entre os totais atuais da ficha e a tabela da classe, por
+  // nível de magia. Lista vazia = ficha já bate com a tabela.
+  function calcularDiferencasEspacos(classe: string | null | undefined, nivel: number) {
+    const seed = getEspacosMagiaPorClasse(classe, nivel)
+    const diferencas: { nivelMagia: number; naFicha: number; pelaClasse: number }[] = []
+    for (let n = 1; n <= 9; n++) {
+      const naFicha = espacosTotais[n] ?? 0
+      const pelaClasse = seed[n - 1] ?? 0
+      if (naFicha !== pelaClasse) diferencas.push({ nivelMagia: n, naFicha, pelaClasse })
+    }
+    return diferencas
+  }
+
+  function recalcularPelaClasse(classe: string | null | undefined = dados.classe, nivel: number = dados.nivel) {
     if (!confirm('Recalcular espaços de magia pela classe? Isso substituirá os totais atuais.')) return
-    const seed = getEspacosMagiaPorClasse(dados.classe, dados.nivel)
+    setAvisoEspacos(null)
+    const seed = getEspacosMagiaPorClasse(classe, nivel)
     const novosTotais = Object.fromEntries(seed.map((total, idx) => [idx + 1, total]))
     const novosUsados: Record<number, number> = {}
     for (let n = 1; n <= 9; n++) {
@@ -1377,6 +1414,46 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                 Pacto Arcano — todos os espaços são do mesmo nível e voltam em descanso curto.
               </p>
             )}
+            {podeEditar && avisoEspacos && (() => {
+              const diferencas = calcularDiferencasEspacos(avisoEspacos.classe, avisoEspacos.nivel)
+              if (diferencas.length === 0) return null
+              const zerados = diferencas.filter(d => d.pelaClasse === 0 && d.naFicha > 0).map(d => `${d.nivelMagia}º`)
+              return (
+                <div className="border border-[var(--gold)]/50 bg-[var(--gold)]/5 rounded p-3 mb-3 space-y-2">
+                  <p className="text-[var(--gold)] text-xs font-cinzel">
+                    ⚠️ Nível ou classe mudou — os espaços da ficha diferem da tabela de {avisoEspacos.classe || 'classe'} nível {avisoEspacos.nivel}.
+                  </p>
+                  <ul className="text-[var(--text2)] text-sm font-crimson list-disc pl-5">
+                    {diferencas.map(d => (
+                      <li key={d.nivelMagia}>{d.nivelMagia}º nível: {d.naFicha} na ficha, {d.pelaClasse} pela classe</li>
+                    ))}
+                  </ul>
+                  {zerados.length > 0 && (
+                    <p className="text-[var(--red)] text-sm font-crimson">
+                      O recálculo zera {zerados.length === 1 ? 'o' : 'os'} {zerados.join(', ').replace(/, ([^,]*)$/, ' e $1')} nível,
+                      que hoje {zerados.length === 1 ? 'tem' : 'têm'} espaços na ficha — provavelmente ajuste manual, que será perdido.
+                    </p>
+                  )}
+                  <p className="text-[var(--text3)] text-xs font-crimson">Nada foi alterado. Recalcule só se quiser seguir a tabela da classe.</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => recalcularPelaClasse(avisoEspacos.classe, avisoEspacos.nivel)}
+                      disabled={emCombate}
+                      title={emCombate ? 'Personagem em combate' : undefined}
+                      className="text-xs font-cinzel text-[var(--accent)] border border-[var(--accent)]/40 px-3 py-1 rounded hover:bg-[var(--accent)]/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      ↺ Recalcular pela classe
+                    </button>
+                    <button
+                      onClick={() => setAvisoEspacos(null)}
+                      className="text-xs font-cinzel text-[var(--text3)] border border-[var(--border)] px-3 py-1 rounded hover:border-[var(--border2)] transition-colors"
+                    >
+                      Dispensar
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
             {!modoAjuste && Object.values(espacosTotais).every(t => !t) ? (
               <p className="text-[var(--border)] text-sm font-crimson text-center py-3">
                 Nenhum espaço de magia. Use ✏️ Ajustar para definir.
@@ -1431,7 +1508,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
             {modoAjuste ? (
               <div className="flex items-center gap-2">
                 <button
-                  onClick={recalcularPelaClasse}
+                  onClick={() => recalcularPelaClasse()}
                   className="text-xs font-cinzel text-[var(--accent)] border border-[var(--accent)]/40 px-3 py-1 rounded hover:bg-[var(--accent)]/10 transition-colors"
                 >
                   ↺ Recalcular pela classe
