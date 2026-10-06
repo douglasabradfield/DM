@@ -462,6 +462,46 @@ async function tratarAcaoBatalha(
 // personagem (nunca um "alvo" de ataque — fora de combate não existe isso).
 // =============================================================================
 
+// Recursos de classe (recursos_personagem) no descanso:
+// - longo: zera usados de todos;
+// - curto: zera 'curto', devolve 1 uso de 'um_curto_todos_longo' (piso 0),
+//   não mexe em 'longo'.
+async function recuperarRecursosNoDescanso(
+  admin: ReturnType<typeof createAdminClient>,
+  personagemId: string,
+  descanso: 'longo' | 'curto'
+): Promise<unknown> {
+  const agora = new Date().toISOString()
+  if (descanso === 'longo') {
+    const { error } = await admin.from('recursos_personagem')
+      .update({ usados: 0, atualizado_em: agora })
+      .eq('personagem_id', personagemId)
+      .gt('usados', 0)
+    return error
+  }
+
+  const { error: erroCurto } = await admin.from('recursos_personagem')
+    .update({ usados: 0, atualizado_em: agora })
+    .eq('personagem_id', personagemId)
+    .eq('recuperacao', 'curto')
+    .gt('usados', 0)
+  if (erroCurto) return erroCurto
+
+  const { data: parciais, error: erroBusca } = await admin.from('recursos_personagem')
+    .select('id, usados')
+    .eq('personagem_id', personagemId)
+    .eq('recuperacao', 'um_curto_todos_longo')
+    .gt('usados', 0)
+  if (erroBusca) return erroBusca
+  for (const r of parciais ?? []) {
+    const { error } = await admin.from('recursos_personagem')
+      .update({ usados: Math.max(0, (r.usados as number) - 1), atualizado_em: agora })
+      .eq('id', r.id)
+    if (error) return error
+  }
+  return null
+}
+
 async function tratarAcaoSessao(
   payload: Partial<AcaoSessaoPayload>,
   userId: string,
@@ -581,26 +621,33 @@ async function tratarAcaoSessao(
       const usadosAtuais = (personagem.dados_vida_usados as number) ?? 0
       patch.dados_vida_usados = Math.max(0, usadosAtuais - Math.max(1, Math.floor(totalDados / 2)))
 
-      descricao = `${personagem.nome} fez um descanso longo — PV e espaços de magia recuperados`
+      descricao = `${personagem.nome} fez um descanso longo — PV, espaços de magia e recursos de classe recuperados`
       break
     }
     case 'descanso_curto': {
+      // dadosGastos = 0 é válido: descanso curto sem gastar dado de vida
+      // ainda recupera recursos de classe (Canalizar Divindade, Segundo
+      // Fôlego...) e Pacto Arcano. Sem dado gasto não há cura.
       const dadosGastos = payload.dadosGastos ?? 0
-      const curaInformada = payload.curaInformada ?? 0
-      if (dadosGastos <= 0) return Response.json({ erro: 'Informe quantos dados de vida gastar' }, { status: 400 })
+      const curaInformada = dadosGastos > 0 ? (payload.curaInformada ?? 0) : 0
+      if (!Number.isInteger(dadosGastos) || dadosGastos < 0) {
+        return Response.json({ erro: 'Quantidade de dados de vida inválida' }, { status: 400 })
+      }
 
       const totalDados = (personagem.dados_vida_total as number | null) ?? (personagem.nivel as number) ?? 1
       const usadosAtuais = (personagem.dados_vida_usados as number) ?? 0
-      if (usadosAtuais + dadosGastos > totalDados) {
+      if (dadosGastos > 0 && usadosAtuais + dadosGastos > totalDados) {
         return Response.json(
           { erro: `Só restam ${totalDados - usadosAtuais} dado(s) de vida disponíveis` },
           { status: 403 }
         )
       }
 
-      patch.pv_atual = Math.min(personagem.pv_maximo as number, (personagem.pv_atual as number) + curaInformada)
-      patch.dados_vida_usados = usadosAtuais + dadosGastos
-      valorLog = curaInformada
+      if (dadosGastos > 0) {
+        patch.pv_atual = Math.min(personagem.pv_maximo as number, (personagem.pv_atual as number) + curaInformada)
+        patch.dados_vida_usados = usadosAtuais + dadosGastos
+        valorLog = curaInformada
+      }
 
       // Pacto Arcano (Bruxo) recupera todos os espaços de magia no descanso
       // curto, não no longo — é a mecânica central da classe.
@@ -611,7 +658,9 @@ async function tratarAcaoSessao(
         patch.slots_magia = slotsRecuperados
       }
 
-      descricao = `${personagem.nome} fez um descanso curto — gastou ${dadosGastos} dado(s) de vida, recuperou ${curaInformada} PV`
+      descricao = dadosGastos > 0
+        ? `${personagem.nome} fez um descanso curto — gastou ${dadosGastos} dado(s) de vida, recuperou ${curaInformada} PV`
+        : `${personagem.nome} fez um descanso curto sem gastar dados de vida`
       break
     }
     default:
@@ -623,6 +672,14 @@ async function tratarAcaoSessao(
     if (error) {
       console.error('Erro ao aplicar ação de sessão:', error)
       return Response.json({ erro: 'Erro ao salvar alteração no personagem' }, { status: 500 })
+    }
+  }
+
+  if (tipo === 'descanso_longo' || tipo === 'descanso_curto') {
+    const erroRecursos = await recuperarRecursosNoDescanso(admin, personagemId, tipo === 'descanso_longo' ? 'longo' : 'curto')
+    if (erroRecursos) {
+      console.error('Erro ao recuperar recursos de classe no descanso:', erroRecursos)
+      return Response.json({ erro: 'Descanso aplicado, mas os recursos de classe não foram recuperados' }, { status: 500 })
     }
   }
 

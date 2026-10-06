@@ -146,3 +146,19 @@ export interface CampaignInvite {
   expires_at: string
   criado_em: string
 }
+
+export interface RecursoPersonagem {
+  id: string
+  personagem_id: string
+  recurso_id: string | null
+  nome: string
+  total: number
+  usados: number
+  recuperacao: 'longo' | 'curto' | 'um_curto_todos_longo'
+  unidade: 'usos' | 'pontos'
+  origem: 'classe' | 'manual' | 'item'
+  ordem: number
+  nota: string | null
+  criado_em: string
+  atualizado_em: string
+}

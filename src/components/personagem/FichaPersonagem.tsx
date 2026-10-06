@@ -10,11 +10,12 @@ import { DivisorOrnamentado } from '@/components/ui/DivisorOrnamentado'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { ModalLevelUp } from '@/components/personagem/ModalLevelUp'
+import { RecursosClasse } from '@/components/personagem/RecursosClasse'
 import { createClient } from '@/lib/supabase/client'
 import { useBatalha } from '@/store/batalha'
 import { useOnline } from '@/hooks/useOnline'
 import { TIPOS_DANO, normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
-import { getEspacosMagiaPorClasse, ehPactoArcano } from '@/lib/dados-dnd/espacos-magia'
+import { getEspacosMagiaPorClasse, ehPactoArcano, calcularModificador } from '@/lib/dados-dnd/espacos-magia'
 import { getNivelPorXP, getProgressoXP } from '@/lib/dados-dnd/xp-niveis'
 import type { TipoDano } from '@/types/dnd'
 import { Search, X, MoreVertical } from 'lucide-react'
@@ -184,6 +185,9 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     classe: (p.classe ?? '').trim().toLowerCase(),
   })
   const [avisoEspacos, setAvisoEspacos] = useState<{ nivel: number; classe: string | null } | null>(null)
+  // Nível/classe/atributos da última gravação — base da semeadura e do aviso
+  // de recursos de classe (RecursosClasse), que não reage ao que está digitado.
+  const [referenciaRecursos, setReferenciaRecursos] = useState(() => referenciaRecursosDe(p))
 
   // Inventário — Fase 4: lê/escreve em inventario_itens via API árbitro
   // (/api/mesa/acao, modo ficha — só personagemId, sem sessão/batalha ativa
@@ -417,6 +421,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         nivelNotificado.current = dados.nivel
       }
 
+      setReferenciaRecursos(referenciaRecursosDe(dados))
+
       // Nível ou classe mudou desde a última gravação: avisa (sem alterar
       // slots_magia) se a tabela da classe diverge dos totais da ficha.
       const nivelSalvo = parseInt(String(dados.nivel)) || 1
@@ -427,7 +433,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         const novoAviso = { nivel: nivelSalvo, classe: dados.classe ?? null }
         setAvisoEspacos(novoAviso)
         if (podeEditar && calcularDiferencasEspacos(novoAviso.classe, novoAviso.nivel).length > 0) {
-          toast('Os espaços de magia da ficha diferem da tabela da classe. Veja a página de Magias.', { icon: '✨' })
+          toast('Os espaços de magia da ficha diferem da tabela da classe. Veja a Página 3.', { icon: '✨' })
         }
       }
       // Sincroniza com a batalha se o personagem estiver em combate
@@ -1541,6 +1547,10 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
             )}
           </PainelGrimorio>
 
+          <PainelGrimorio titulo="Recursos de Classe">
+            <RecursosClasse personagemId={p.id} referencia={referenciaRecursos} podeEditar={podeEditar} />
+          </PainelGrimorio>
+
           {/* Magias conhecidas */}
           <PainelGrimorio
             titulo="Magias Conhecidas"
@@ -1959,6 +1969,18 @@ function AtributoCard({ abrev, value, onChange, disabled }: {
 
 // Campo numérico com steppers +/− visíveis só no mobile (md:hidden) — no
 // desktop o input fica idêntico ao original, os botões apenas não renderizam.
+function referenciaRecursosDe(per: Pick<Personagem, 'classe' | 'nivel' | 'carisma' | 'sabedoria' | 'inteligencia'>) {
+  return {
+    classe: per.classe ?? null,
+    nivel: parseInt(String(per.nivel)) || 1,
+    modificadores: {
+      carisma: calcularModificador(Number(per.carisma) || 10),
+      sabedoria: calcularModificador(Number(per.sabedoria) || 10),
+      inteligencia: calcularModificador(Number(per.inteligencia) || 10),
+    },
+  }
+}
+
 function CampoNumerico({ value, onChange, min, max, step = 1, disabled, inputClassName }: {
   value: number
   onChange: (v: number) => void

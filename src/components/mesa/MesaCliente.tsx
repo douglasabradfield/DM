@@ -13,6 +13,7 @@ import { vantagemDerivada } from '@/lib/batalha/vantagem-por-condicao'
 import { getCondicao, TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
 import { TIPOS_DANO, normalizarTipoDano, resolverTipoDanoSRD, getTipoDano } from '@/lib/dados-dnd/tipos-dano'
 import { BarraVida } from '@/components/batalha/BarraVida'
+import { RecursosLeitura } from '@/components/personagem/RecursosClasse'
 import type { ArmaEmpunhada, Combatente, EntradaLog, TipoCondicao, EspacosMagiaBatalha, TipoEntradaLog } from '@/types/batalha'
 import type { InventarioItemDb, Personagem, Spell, TipoDano } from '@/types/dnd'
 import { cn } from '@/lib/utils'
@@ -823,6 +824,13 @@ function CartaoPersonagem({
       {Object.keys(c.espacos_magia).length > 0 && (
         <div className="flex-shrink-0">
           <EspacosMagiaLeitura espacos={c.espacos_magia} />
+        </div>
+      )}
+
+      {/* Recursos de classe — só leitura, vindos da ficha vinculada. */}
+      {c.personagem_id && (
+        <div className="flex-shrink-0">
+          <RecursosLeitura personagemId={c.personagem_id} />
         </div>
       )}
 
@@ -2088,6 +2096,11 @@ function CartaoPersonagemSessao({
         </div>
       )}
 
+      {/* Recursos de classe — só leitura na mesa; edição fica na ficha. */}
+      <div className="flex-shrink-0">
+        <RecursosLeitura personagemId={personagem.id} />
+      </div>
+
       {condicaoAberta && <ModalCondicao condicao={condicaoAberta} onFechar={() => setCondicaoAberta(null)} />}
     </div>
   )
@@ -2550,10 +2563,12 @@ function ModalDescanso({
   onFechar: () => void
 }) {
   const [modo, setModo] = useState<'escolha' | 'curto'>('escolha')
-  const [dadosGastos, setDadosGastos] = useState(1)
-  const [curaTexto, setCuraTexto] = useState('')
   const total = personagem.dados_vida_total ?? personagem.nivel ?? 1
   const disponivel = Math.max(0, total - (personagem.dados_vida_usados ?? 0))
+  // 0 dados é um descanso curto válido: recupera recursos de classe e Pacto
+  // Arcano sem cura.
+  const [dadosGastos, setDadosGastos] = useState(disponivel > 0 ? 1 : 0)
+  const [curaTexto, setCuraTexto] = useState('')
 
   if (modo === 'curto') {
     return createPortal(
@@ -2575,8 +2590,9 @@ function ModalDescanso({
             <span className="text-[var(--text3)] text-[10px] font-cinzel uppercase block mb-1">Quantos dados gastar</span>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setDadosGastos(d => Math.max(1, d - 1))}
-                className="w-9 h-9 rounded border border-[var(--border)] text-[var(--text2)] font-cinzel"
+                onClick={() => setDadosGastos(d => Math.max(0, d - 1))}
+                disabled={dadosGastos <= 0}
+                className="w-9 h-9 rounded border border-[var(--border)] text-[var(--text2)] font-cinzel disabled:opacity-40"
               >
                 −
               </button>
@@ -2591,22 +2607,28 @@ function ModalDescanso({
             </div>
           </label>
 
-          <label className="block mb-3">
-            <span className="text-[var(--text3)] text-[10px] font-cinzel uppercase block mb-1">Total de cura rolado</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={curaTexto}
-              onChange={e => setCuraTexto(e.target.value)}
-              placeholder="0"
-              className="input-dd w-full text-center text-lg py-2"
-            />
-          </label>
+          {dadosGastos > 0 ? (
+            <label className="block mb-3">
+              <span className="text-[var(--text3)] text-[10px] font-cinzel uppercase block mb-1">Total de cura rolado</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={curaTexto}
+                onChange={e => setCuraTexto(e.target.value)}
+                placeholder="0"
+                className="input-dd w-full text-center text-lg py-2"
+              />
+            </label>
+          ) : (
+            <p className="text-[var(--text3)] text-xs font-crimson mb-3">
+              Sem gastar dados de vida: não cura, mas recupera recursos de classe de descanso curto.
+            </p>
+          )}
 
           <button
-            onClick={() => onCurto(dadosGastos, parseInt(curaTexto) || 0)}
-            disabled={disponivel === 0 || dadosGastos < 1}
+            onClick={() => onCurto(dadosGastos, dadosGastos > 0 ? (parseInt(curaTexto) || 0) : 0)}
+            disabled={dadosGastos < 0 || dadosGastos > disponivel}
             className="w-full py-3 rounded-lg bg-[var(--gold)] text-[var(--bg)] font-cinzel text-sm font-bold min-h-[48px] disabled:opacity-40"
           >
             Confirmar descanso curto
@@ -2631,14 +2653,13 @@ function ModalDescanso({
             onClick={onLongo}
             className="w-full text-left px-3 py-2.5 rounded-lg bg-[var(--surface)] hover:bg-[var(--bg2)] border border-[var(--border)] text-[var(--text)] text-sm font-crimson min-h-[44px] transition-colors"
           >
-            🌙 Descanso longo — recupera todo PV, espaços de magia e metade dos dados de vida
+            🌙 Descanso longo — recupera todo PV, espaços de magia, recursos de classe e metade dos dados de vida
           </button>
           <button
             onClick={() => setModo('curto')}
-            disabled={disponivel === 0}
             className="w-full text-left px-3 py-2.5 rounded-lg bg-[var(--surface)] hover:bg-[var(--bg2)] border border-[var(--border)] text-[var(--text)] text-sm font-crimson min-h-[44px] transition-colors disabled:opacity-40"
           >
-            ☕ Descanso curto — gasta dados de vida ({disponivel} disponíveis)
+            ☕ Descanso curto — dados de vida opcionais ({disponivel} disponíveis)
           </button>
         </div>
       </div>
