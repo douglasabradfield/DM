@@ -54,6 +54,11 @@ const CAT_ARMADURA_PT: Record<string, string> = {
 const CAT_GEAR_PT: string[] = [
   'Equipamento de Aventura', 'Foco', 'Montaria', 'Munição', 'Pacote', 'Veículo', 'Veículo ou Arreio',
 ]
+// equipment_gear.category_en é NOT NULL — pares tirados do SRD já no banco.
+const CAT_GEAR_EN: Record<string, string> = {
+  'Equipamento de Aventura': 'Adventuring Gear', 'Foco': 'Focus', 'Montaria': 'Mount', 'Munição': 'Ammunition',
+  'Pacote': 'Pack', 'Veículo': 'Vehicle', 'Veículo ou Arreio': 'Vehicle or Tack',
+}
 
 // Custo — todas as tabelas de equipamento gravam em peças de cobre (cp),
 // inclusive equipment_gear.cost_gp, cujo nome é enganoso: confirmado
@@ -372,10 +377,13 @@ function ModalAdminEditarItem({ modo, tipoInicial, item, criadoPor, campanhaId, 
 
   const secoesModal = [...SECOES_ITEM_BASE, ...(SECAO_POR_TIPO[tipo] ? [SECAO_POR_TIPO[tipo]!] : [])]
 
-  async function salvar() {
+  // reduzido = formulário rápido do celular: sem campo de nome EN, que
+  // então espelha o nome PT (name_en é NOT NULL e base do slug).
+  async function salvar(reduzido = false) {
+    const nameEn = form.name_en.trim() || (reduzido ? form.name_pt.trim() : '')
     const faltando: { chave: string; secao: string; rotulo: string }[] = []
-    if (!form.name_pt.trim()) faltando.push({ chave: 'name_pt', secao: 'basico', rotulo: 'Nome PT' })
-    if (!form.name_en.trim()) faltando.push({ chave: 'name_en', secao: 'basico', rotulo: 'Nome EN' })
+    if (!form.name_pt.trim()) faltando.push({ chave: 'name_pt', secao: 'basico', rotulo: reduzido ? 'Nome' : 'Nome PT' })
+    if (!nameEn) faltando.push({ chave: 'name_en', secao: 'basico', rotulo: 'Nome EN' })
     if (tipo === 'magico' && !form.description_pt.trim()) faltando.push({ chave: 'description_pt', secao: 'basico', rotulo: 'Descrição PT' })
     if (faltando.length > 0) {
       toast.error(`Preencha os campos obrigatórios: ${faltando.map(f => f.rotulo).join(', ')}`)
@@ -392,7 +400,7 @@ function ModalAdminEditarItem({ modo, tipoInicial, item, criadoPor, campanhaId, 
 
     let payload: Record<string, unknown> = {
       name_pt: form.name_pt.trim(),
-      name_en: form.name_en.trim(),
+      name_en: nameEn,
     }
 
     if (tipo === 'magico') {
@@ -449,6 +457,7 @@ function ModalAdminEditarItem({ modo, tipoInicial, item, criadoPor, campanhaId, 
       payload = {
         ...payload,
         category_pt: form.category_gear,
+        category_en: CAT_GEAR_EN[form.category_gear] ?? form.category_gear,
         weight_lb: pesoLb,
         cost_gp: valorCp,
         description_pt: form.description_pt.trim() || null,
@@ -468,7 +477,7 @@ function ModalAdminEditarItem({ modo, tipoInicial, item, criadoPor, campanhaId, 
     } else {
       const dadosCriacao = {
         ...payload,
-        slug: slugGerado,
+        slug: `${gerarSlugBase(nameEn) || 'item'}-${sufixoSlug}`,
         criado_por: criadoPor,
         campanha_id: campanhaId,
         visivel_jogadores: visivelJogadores,
@@ -493,12 +502,61 @@ function ModalAdminEditarItem({ modo, tipoInicial, item, criadoPor, campanhaId, 
           <button onClick={onClose} className="text-[var(--border)] hover:text-[var(--red2)]"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="flex md:hidden flex-col items-center justify-center flex-1 p-8 text-center">
-          <p className="font-cinzel text-[var(--gold)] text-base mb-1">🖥️ Melhor no computador</p>
-          <p className="text-[var(--text3)] text-sm font-crimson max-w-xs">
-            {modo === 'criar' ? 'Criar' : 'Editar'} item usa um formulário grande, feito para telas maiores.
-            Abra no notebook ou tablet para usar.
-          </p>
+        {/* Celular: formulário reduzido — o bastante para registrar uma
+            bugiganga no meio da sessão. Mesmo estado e mesmo salvar() do
+            completo; o que não aparece aqui fica vazio (ou como estava, na
+            edição) e pode ser completado depois numa tela maior. */}
+        <div className="md:hidden contents">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <p className="text-[var(--text3)] text-xs font-crimson italic">🖥️ Mais campos (valor, nome em inglês, dano, CA…) numa tela maior.</p>
+
+            <div>
+              <label className={lbl}>Tipo</label>
+              {modo === 'criar' ? (
+                <select className={inp} value={tipo} onChange={e => trocarTipo(e.target.value as TipoItem)}>
+                  {TIPOS_ITEM.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              ) : (
+                <p className="text-[var(--text2)] text-sm mt-0.5">{TIPOS_ITEM.find(t => t.value === tipo)?.label}</p>
+              )}
+            </div>
+
+            <div>
+              <label className={lbl}>Nome <span className="text-[var(--red2)]">*</span></label>
+              <input className={campoInvalido('name_pt')} value={form.name_pt} onChange={e => setForm(f => ({ ...f, name_pt: e.target.value }))} />
+            </div>
+
+            {/* Raridade só existe em magic_items — as tabelas de equipamento não têm a coluna. */}
+            {tipo === 'magico' && (
+              <div>
+                <label className={lbl}>Raridade</label>
+                <select className={inp} value={form.rarity} onChange={e => setForm(f => ({ ...f, rarity: e.target.value }))}>
+                  {Object.entries(RARIDADE_PT).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className={lbl}>Peso (kg)</label>
+              <input className={inp} inputMode="decimal" value={form.peso} onChange={e => setForm(f => ({ ...f, peso: e.target.value }))} placeholder="1,5" />
+            </div>
+
+            <div>
+              <label className={lbl}>Descrição {tipo === 'magico' && <span className="text-[var(--red2)]">*</span>}</label>
+              <textarea rows={4} className={cn(campoInvalido('description_pt'), 'resize-none')} value={form.description_pt} onChange={e => setForm(f => ({ ...f, description_pt: e.target.value }))} />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 p-4 border-t border-[var(--border)] flex-shrink-0">
+            <button onClick={onClose} className="px-3 py-2 text-xs font-cinzel text-[var(--text3)] border border-[var(--border)] rounded hover:border-[var(--border2)] transition-colors">Cancelar</button>
+            <button
+              onClick={() => salvar(true)}
+              disabled={salvando || !form.name_pt.trim()}
+              className="px-4 py-2 text-xs font-cinzel text-[var(--gold)] bg-[var(--surface)] border border-[var(--gold)]/50 rounded hover:bg-[var(--gold)]/10 transition-colors disabled:opacity-50"
+            >
+              {salvando ? 'Salvando...' : modo === 'criar' ? '✨ Criar Item' : '💾 Salvar'}
+            </button>
+          </div>
         </div>
 
         <div className="hidden md:contents">
@@ -663,7 +721,7 @@ function ModalAdminEditarItem({ modo, tipoInicial, item, criadoPor, campanhaId, 
           <div className="flex items-center justify-end gap-2 p-4 border-t border-[var(--border)] flex-shrink-0">
             <button onClick={onClose} className="px-3 py-1.5 text-xs font-cinzel text-[var(--text3)] border border-[var(--border)] rounded hover:border-[var(--border2)] transition-colors">Cancelar</button>
             <button
-              onClick={salvar}
+              onClick={() => salvar()}
               disabled={salvando || !form.name_pt.trim()}
               className="px-4 py-1.5 text-xs font-cinzel text-[var(--gold)] bg-[var(--surface)] border border-[var(--gold)]/50 rounded hover:bg-[var(--gold)]/10 transition-colors disabled:opacity-50"
             >

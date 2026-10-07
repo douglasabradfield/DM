@@ -15,6 +15,7 @@ import { TIPOS_DANO, normalizarTipoDano, resolverTipoDanoSRD, getTipoDano } from
 import { BarraVida } from '@/components/batalha/BarraVida'
 import { BotaoEspacosMagia, resumoEspacos } from '@/components/batalha/EspacosMagia'
 import { RecursosLeitura } from '@/components/personagem/RecursosClasse'
+import { ModalCompendioItens, type ItemCompendioEscolhido } from '@/components/personagem/ModalCompendioItens'
 import type { ArmaEmpunhada, Combatente, EntradaLog, TipoCondicao, EspacosMagiaBatalha, TipoEntradaLog } from '@/types/batalha'
 import type { InventarioItemDb, Personagem, Spell, TipoDano } from '@/types/dnd'
 import { chamarAcaoApi, type ResultadoAcao } from '@/lib/batalha/acao-api'
@@ -1343,9 +1344,11 @@ function ModalPrepararMagias({
 type ContextoAcao = { sessaoId: string } | { batalhaId: string; combatenteId: string }
 
 function ModalItem({
-  personagemId, contexto, destinatarios, onFechar,
+  personagemId, campanhaId, ehDM, contexto, destinatarios, onFechar,
 }: {
   personagemId: string
+  campanhaId: string
+  ehDM: boolean
   contexto: ContextoAcao
   destinatarios: Destinatario[]
   onFechar: () => void
@@ -1356,6 +1359,7 @@ function ModalItem({
   const [vista, setVista] = useState<'detalhe' | 'usar' | 'dar'>('detalhe')
   const [cura, setCura] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [compendioAberto, setCompendioAberto] = useState(false)
 
   const carregarItens = useCallback(() => {
     createClient()
@@ -1427,6 +1431,14 @@ function ModalItem({
     if (ok) { setItemEscolhido(null); carregarItens() }
   }
 
+  // Item achado no meio da sessão — o mestre cria no compêndio (aba Itens)
+  // e o jogador põe na própria ficha daqui, sem sair da mesa.
+  async function acrescentar(item: ItemCompendioEscolhido) {
+    setCompendioAberto(false)
+    const ok = await executar({ tipo: 'adicionar_item', ...item, quantidade: 1 })
+    if (ok) carregarItens()
+  }
+
   function abrirItem(item: InventarioItemDb) {
     setItemEscolhido(item)
     setVista('detalhe')
@@ -1467,6 +1479,23 @@ function ModalItem({
                   </button>
                 ))}
               </div>
+            )}
+            {!carregando && (
+              <button
+                onClick={() => setCompendioAberto(true)}
+                disabled={enviando}
+                className="w-full mt-3 py-2.5 rounded-lg border border-dashed border-[var(--accent)]/50 text-[var(--accent)] font-cinzel text-xs min-h-[44px] hover:bg-[var(--accent)]/10 transition-colors disabled:opacity-50"
+              >
+                + Acrescentar do compêndio
+              </button>
+            )}
+            {compendioAberto && (
+              <ModalCompendioItens
+                campanhaId={campanhaId}
+                ehDM={ehDM}
+                onEscolher={acrescentar}
+                onFechar={() => setCompendioAberto(false)}
+              />
             )}
           </>
         ) : vista === 'dar' ? (
@@ -3283,6 +3312,8 @@ export function MesaCliente() {
         {modalItemSessaoAberto && personagemOperadoSessao && sessaoAtiva && (
           <ModalItem
             personagemId={personagemOperadoSessao.id}
+            campanhaId={personagemOperadoSessao.campanha_id}
+            ehDM={ehDM}
             contexto={{ sessaoId: sessaoAtiva.id }}
             destinatarios={personagensPresentes
               .filter(p => p.id !== personagemOperadoSessao.id)
@@ -3422,6 +3453,8 @@ export function MesaCliente() {
       {modalItemAberto && combatenteOperado?.personagem_id && batalhaId && (
         <ModalItem
           personagemId={combatenteOperado.personagem_id}
+          campanhaId={campanhaAtiva?.id ?? ''}
+          ehDM={ehDM}
           contexto={{ batalhaId, combatenteId: combatenteOperado.id }}
           destinatarios={combatentes
             .filter((c): c is typeof c & { personagem_id: string } => !!c.personagem_id && c.personagem_id !== combatenteOperado.personagem_id)
