@@ -489,6 +489,20 @@ interface EstadoBatalhaStore {
 
   // Sincronização com ficha
   atualizarCombatentePorPersonagem: (personagemId: string, dados: Partial<Combatente>) => void
+
+  // Prévia otimista de ação gravada pela API (/api/mesa/acao)
+  aplicarPreviaAcao: (previa: PreviaAcao) => () => void
+}
+
+// Efeito de uma ação que a API (/api/mesa/acao) vai gravar. Mesmo cálculo de
+// tratarAcaoBatalha — tipoDano já resolvido pelo chamador do jeito da API.
+export interface PreviaAcao {
+  atorId: string
+  efeito: 'dano' | 'cura'
+  alvos: { combatenteId: string; valor: number; tipoDano: TipoDano }[]
+  nivelMagia?: number
+  reacao?: boolean
+  marcarEfeitoAtivo?: string
 }
 
 // Canal Realtime — vive fora do state reativo (não precisa disparar renders)
@@ -1651,6 +1665,105 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         persistirCombatente(c.id, c)
         // Chamado depois que a ficha já gravou em personagens.
         espelharFicha(c.id, camposFichaEm(dados))
+      },
+
+      // Só a tela: a gravação é da API, e persistir aqui aplicaria o efeito
+      // duas vezes. Espelha no mapa das fichas para o eco de
+      // batalha_combatentes não trazer o PV antigo. Devolve a reversão, que
+      // restaura apenas os campos tocados (para o caso de a API recusar).
+      aplicarPreviaAcao: (previa) => {
+        const state0 = get()
+        const tocados = new Set([previa.atorId, ...previa.alvos.map(a => a.combatenteId)])
+        const anteriores = state0.combatentes
+          .filter(c => tocados.has(c.id))
+          .map(c => ({
+            id: c.id,
+            pv_atual: c.pv_atual,
+            pv_temporarios: c.pv_temporarios,
+            dano_total: c.dano_total,
+            cura_total: c.cura_total,
+            morto: c.morto,
+            espacos_magia: c.espacos_magia,
+            slots_monstro: c.slots_monstro,
+            reacao_usada: c.reacao_usada,
+            efeitos_ativos: c.efeitos_ativos,
+          }))
+        const pids = [...new Set(state0.combatentes
+          .filter(c => tocados.has(c.id) && c.personagem_id)
+          .map(c => c.personagem_id as string))]
+        const fichasAnteriores = Object.fromEntries(pids.map(pid => [pid, state0.personagensDaBatalha[pid]]))
+        const xpAnterior = state0.xpGanhoNaBatalha
+        const idsAlvo = previa.alvos.map(a => a.combatenteId)
+
+        set(s => {
+          for (const alvo of previa.alvos) {
+            const c = s.combatentes.find(x => x.id === alvo.combatenteId)
+            if (!c || !(alvo.valor > 0)) continue
+            if (previa.efeito === 'cura') {
+              c.pv_atual = calcularCura(alvo.valor, c).pvFinal
+              c.cura_total += alvo.valor
+              c.flash = 'cura'
+            } else {
+              const { danoFinal, absorvidoTemporario } = calcularDano(alvo.valor, alvo.tipoDano, c)
+              const pvAntes = c.pv_atual
+              c.pv_temporarios -= absorvidoTemporario
+              c.pv_atual = Math.max(0, pvAntes - (danoFinal - absorvidoTemporario))
+              c.dano_total += danoFinal
+              c.flash = 'dano'
+              if (pvAntes > 0 && c.pv_atual === 0) {
+                c.morto = false
+                if (c.tipo === 'monstro' && c.dados_monstro?.xp) s.xpGanhoNaBatalha += c.dados_monstro.xp
+              }
+            }
+          }
+
+          const ator = s.combatentes.find(x => x.id === previa.atorId)
+          if (ator) {
+            if (previa.nivelMagia !== undefined) {
+              if (ator.personagem_id) {
+                ator.espacos_magia = consumirEspaco(ator.espacos_magia, previa.nivelMagia).novosEspacos
+              } else {
+                const slots = ator.slots_monstro ?? {}
+                const nivelStr = String(previa.nivelMagia)
+                ator.slots_monstro = { ...slots, [nivelStr]: (slots[nivelStr] ?? 0) - 1 }
+              }
+            }
+            if (previa.reacao) ator.reacao_usada = true
+            if (previa.marcarEfeitoAtivo) {
+              ator.efeitos_ativos = [...ator.efeitos_ativos, { nome: previa.marcarEfeitoAtivo, rodada_inicio: s.rodadaAtual }]
+            }
+          }
+
+          for (const c of s.combatentes) {
+            if (!tocados.has(c.id) || !c.personagem_id || !s.personagensDaBatalha[c.personagem_id]) continue
+            s.personagensDaBatalha[c.personagem_id] = {
+              ...s.personagensDaBatalha[c.personagem_id],
+              pv_atual: c.pv_atual,
+              pv_temporarios: c.pv_temporarios,
+              slots_magia: c.espacos_magia as Record<string, { total: number; usados: number }>,
+            }
+          }
+        })
+
+        setTimeout(() => {
+          set(s => {
+            s.combatentes.forEach(c => { if (idsAlvo.includes(c.id)) c.flash = null })
+          })
+        }, 600)
+
+        return () => {
+          set(s => {
+            for (const a of anteriores) {
+              const c = s.combatentes.find(x => x.id === a.id)
+              if (c) Object.assign(c, a)
+            }
+            for (const pid of pids) {
+              const ficha = fichasAnteriores[pid]
+              if (ficha) s.personagensDaBatalha[pid] = ficha
+            }
+            s.xpGanhoNaBatalha = xpAnterior
+          })
+        }
       },
 
       usarInspiracao: (id) => {

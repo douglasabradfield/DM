@@ -16,6 +16,7 @@ import { BarraVida } from '@/components/batalha/BarraVida'
 import { RecursosLeitura } from '@/components/personagem/RecursosClasse'
 import type { ArmaEmpunhada, Combatente, EntradaLog, TipoCondicao, EspacosMagiaBatalha, TipoEntradaLog } from '@/types/batalha'
 import type { InventarioItemDb, Personagem, Spell, TipoDano } from '@/types/dnd'
+import { chamarAcaoApi, type ResultadoAcao } from '@/lib/batalha/acao-api'
 import { cn } from '@/lib/utils'
 import { Swords, X, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -40,41 +41,8 @@ interface AcaoPendente {
   marcarEfeitoAtivo?: string
 }
 
-interface ResultadoAcao {
-  ok: boolean
-  erro?: string
-}
-
 interface ResultadoAcaoSessao extends ResultadoAcao {
   personagem?: Personagem
-}
-
-async function chamarAcaoApi(payload: {
-  batalhaId: string
-  combatenteId: string
-  tipo: TipoEntradaLog
-  alvos: { combatenteId: string; valor: number; tipoDano?: TipoDano }[]
-  nivelMagia?: number
-  nomeAcao?: string
-  vantagem?: 'vantagem' | 'desvantagem' | null
-  descricao?: string
-  marcarEfeitoAtivo?: string
-  encerrarEfeitoAtivo?: string
-}): Promise<ResultadoAcao> {
-  try {
-    const resp = await fetch('/api/mesa/acao', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    const dados = await resp.json().catch(() => null)
-    if (!resp.ok) {
-      return { ok: false, erro: dados?.erro ?? 'Erro ao registrar ação' }
-    }
-    return { ok: true }
-  } catch {
-    return { ok: false, erro: 'Sem conexão — tente novamente' }
-  }
 }
 
 // Ação fora de combate — sempre sobre o próprio personagem (ou o que o DM

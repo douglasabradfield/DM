@@ -10,7 +10,9 @@ import {
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useBatalha } from '@/store/batalha'
 import { useCampanha } from '@/store/campanha'
-import type { Combatente, EntradaLog, EspacosMagiaBatalha } from '@/types/batalha'
+import { usePermissao } from '@/hooks/usePermissao'
+import type { Combatente, EspacosMagiaBatalha, TipoEntradaLog } from '@/types/batalha'
+import { chamarAcaoApi, type PayloadAcaoBatalha } from '@/lib/batalha/acao-api'
 import { LinhaCombatente, CartaoCombatenteMobile } from './LinhaCombatente'
 import { LogBatalha } from './LogBatalha'
 import { DadosVirtuais } from './DadosVirtuais'
@@ -44,6 +46,13 @@ export function TabelaCombate() {
     revelacaoPv, definirRevelacaoPv,
   } = useBatalha()
   const { campanhaAtiva, sessaoAtiva, sessaoCarregando } = useCampanha()
+  const { ehDM } = usePermissao()
+
+  // O controle Padrão / Exato saiu da barra: batalha que tenha ficado em
+  // 'exato' volta para 'padrao', senão não haveria como desfazer.
+  useEffect(() => {
+    if (ehDM && batalhaId && revelacaoPv !== 'padrao') definirRevelacaoPv('padrao')
+  }, [ehDM, batalhaId, revelacaoPv, definirRevelacaoPv])
 
   // Canal Realtime da batalha — assina quando batalhaId aparece, encerra no
   // cleanup (troca de batalha ou saída da tela) para não vazar o canal.
@@ -237,27 +246,9 @@ export function TabelaCombate() {
             </span>
           )}
 
-          <div
-            className="flex items-center gap-0.5 bg-[var(--bg3)] border border-[var(--border)] rounded px-1 py-1"
-            title="Padrão: jogadores só veem o nome dos monstros. Use o 👁️ na linha para revelar o estado de um monstro específico. Exato: jogadores veem todos os números."
-          >
-            {([
-              { valor: 'padrao', label: '🙈 Padrão' },
-              { valor: 'exato', label: '🔢 Exato' },
-            ] as const).map(opt => (
-              <button
-                key={opt.valor}
-                onClick={() => definirRevelacaoPv(opt.valor)}
-                className={`px-2 py-1 rounded text-xs font-cinzel transition-colors ${
-                  revelacaoPv === opt.valor
-                    ? 'bg-[var(--gold)] text-[var(--bg)]'
-                    : 'text-[var(--text3)] hover:text-[var(--text2)]'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          {/* Controle Padrão / Exato da revelação de PV fora da barra: fica
+              sempre 'padrao' (efeito no topo do componente). revelacaoPv e
+              definirRevelacaoPv seguem no store para a opção poder voltar. */}
 
           <div className="flex-1" />
 
@@ -385,16 +376,6 @@ export function TabelaCombate() {
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-
-          <button
-            onClick={() => definirRevelacaoPv(revelacaoPv === 'padrao' ? 'exato' : 'padrao')}
-            title={revelacaoPv === 'padrao'
-              ? 'Padrão: jogadores só veem o que for revelado. Toque para trocar pra Exato (todos os números visíveis).'
-              : 'Exato: jogadores veem todos os números. Toque para voltar ao Padrão.'}
-            className="w-9 h-9 rounded bg-[var(--bg3)] border border-[var(--border)] flex items-center justify-center text-sm flex-shrink-0"
-          >
-            {revelacaoPv === 'padrao' ? '🙈' : '🔢'}
-          </button>
 
           <BotaoRunico variante="ouro" tamanho="sm" onClick={() => setModalRegistrarAcao(true)} className="flex-shrink-0">
             ⚔️ Ação
@@ -1298,6 +1279,7 @@ interface AlvoAcao {
 
 const TIPOS_CURA_ACAO = new Set(['cura', 'cura_bonus', 'pv_temporarios', 'estabilizar'])
 const TIPOS_MAGIA_SLOTS = new Set(['magia', 'contra_magia', 'acao_bonus_magia', 'outra_reacao'])
+const TIPOS_REACAO_ACAO = new Set(GRUPOS_ACAO.find(g => g.icone === '🛡️')?.opcoes.map(o => o.value as string) ?? [])
 
 // O modal não rastreia qual ataque específico foi usado (só a categoria da
 // ação) — então só dá pra inferir o tipo de dano quando TODOS os ataques do
@@ -1332,24 +1314,31 @@ function ModalRegistrarAcao({
   preenchido?: { tipo: string; origemNome: string } | null
   onFechar: () => void
 }) {
-  const { aplicarDano, aplicarCura, adicionarEntradaLog, atualizarCombatente, atualizarCombatentePorPersonagem } = useBatalha()
+  const { batalhaId, statusBatalha, aplicarPreviaAcao } = useBatalha()
   const [tipo, setTipo] = useState(preenchido?.tipo ?? '')
   const [origemNome, setOrigemNome] = useState(preenchido?.origemNome ?? '')
+  const [nomeAcao, setNomeAcao] = useState('')
   const [nivelMagia, setNivelMagia] = useState(0) // 0 = Truque
+  const [efeitoAtivo, setEfeitoAtivo] = useState(false)
+  const marcaEfeito = TIPOS_MAGIA_SLOTS.has(tipo) && efeitoAtivo
   const [erroSlot, setErroSlot] = useState('')
-  const [salvando, setSalvando] = useState(false)
   const [alvos, setAlvos] = useState<AlvoAcao[]>([])
   const [observacao, setObservacao] = useState('')
-  const [tipoDanoAcao, setTipoDanoAcao] = useState<TipoDano | 'sem_tipo' | ''>('')
+  const [tipoDanoAcao, setTipoDanoAcao] = useState<TipoDano | ''>('')
 
   const ativos = combatentes.filter(c => !c.ausente && !c.morto)
   const tipoInfo = GRUPOS_ACAO.flatMap(g => g.opcoes.map(o => ({ ...o, icone: g.icone }))).find(o => o.value === tipo)
   const ehMagia = TIPOS_MAGIA_SLOTS.has(tipo)
   const origemCombatente = ativos.find(c => c.nome === origemNome) ?? null
   const temAlvoDano = alvos.some(a => a.efeitoTipo === 'dano')
+  // A API grava a ação: sem batalha ativa no banco não há onde gravar.
+  const batalhaAtiva = !!batalhaId && statusBatalha === 'ativa'
+  const podeConfirmar = batalhaAtiva && !!tipo && !!origemCombatente
+    && !(temAlvoDano && !tipoDanoAcao)
+    && !(marcaEfeito && !nomeAcao.trim())
 
   // Pré-seleciona o tipo de dano quando dá pra inferir do atacante escolhido;
-  // se não der, fica em branco e o DM precisa escolher (inclusive "Sem tipo").
+  // se não der, fica em branco e o DM precisa escolher.
   useEffect(() => {
     if (!origemNome) return
     const inferido = inferirTipoDano(origemCombatente)
@@ -1379,111 +1368,95 @@ function ModalRegistrarAcao({
     setAlvos(prev => prev.filter(a => a.uid !== uid))
   }
 
-  async function confirmar() {
-    if (!tipo || !origemNome || salvando) return
-    if (temAlvoDano && !tipoDanoAcao) return
-    setErroSlot('')
-
-    const descontarSlot = ehMagia && nivelMagia > 0 && origemCombatente
-
-    if (descontarSlot && origemCombatente) {
-      const nivelStr = String(nivelMagia)
-
-      if (origemCombatente.personagem_id) {
-        // Jogador/NPC com ficha vinculada — verificar via Supabase
-        setSalvando(true)
-        const supabase = createClient()
-        const { data } = await supabase
-          .from('personagens')
-          .select('slots_magia')
-          .eq('id', origemCombatente.personagem_id)
-          .single()
-
-        const slotsDb = (data?.slots_magia ?? {}) as Record<string, { total: number; usados: number }>
-        const slotNivel = slotsDb[nivelStr] ?? { total: 0, usados: 0 }
-
-        if (slotNivel.usados >= slotNivel.total) {
-          setErroSlot(`Sem slots de ${nivelMagia}º nível disponíveis (${slotNivel.usados}/${slotNivel.total})`)
-          setSalvando(false)
-          return
-        }
-
-        const novosSlots = { ...slotsDb, [nivelStr]: { ...slotNivel, usados: slotNivel.usados + 1 } }
-        await supabase.from('personagens').update({ slots_magia: novosSlots }).eq('id', origemCombatente.personagem_id)
-
-        atualizarCombatentePorPersonagem(origemCombatente.personagem_id, { espacos_magia: novosSlots })
-        setSalvando(false)
-      } else {
-        // Monstro/NPC sem ficha — verificar slots_monstro local
-        const slotsLocal = origemCombatente.slots_monstro ?? {}
-        const qtd = slotsLocal[nivelStr] ?? 0
-
-        if (qtd <= 0) {
-          const continuar = window.confirm(
-            `Slots não configurados ou esgotados para ${nivelMagia}º nível.\nDeseja continuar mesmo assim?`
-          )
-          if (!continuar) return
-        } else {
-          atualizarCombatente(origemCombatente.id, {
-            slots_monstro: { ...slotsLocal, [nivelStr]: qtd - 1 },
-          })
-        }
-      }
+  // Mesmas recusas da API, checadas antes para o erro aparecer no modal em
+  // vez de depois da prévia já aplicada. A API continua sendo quem decide.
+  function recusaLocal(ator: Combatente, nivel: number | undefined): string {
+    if (TIPOS_REACAO_ACAO.has(tipo) && ator.reacao_usada) {
+      return `${ator.nome} já usou a reação nesta rodada`
     }
+    if (nivel === undefined) return ''
+    const disponivel = ator.personagem_id
+      ? (ator.espacos_magia[nivel]?.total ?? 0) - (ator.espacos_magia[nivel]?.usados ?? 0)
+      : ator.slots_monstro?.[String(nivel)] ?? 0
+    return disponivel > 0 ? '' : `Sem espaços de ${nivel}º nível disponíveis para ${ator.nome}`
+  }
 
+  function confirmar() {
+    if (!podeConfirmar || !origemCombatente || !batalhaId) return
+    const ator = origemCombatente
+    const nivel = ehMagia && nivelMagia > 0 ? nivelMagia : undefined
+    const recusa = recusaLocal(ator, nivel)
+    if (recusa) { setErroSlot(recusa); return }
+
+    // A API decide cura ou dano pelo `tipo` da ação (TIPOS_CURA), não por
+    // alvo. Alvos com o efeito oposto ao do tipo vão num segundo envio, com
+    // tipo 'cura'/'dano' puro — o espaço, a reação e o efeito ativo ficam só
+    // no primeiro, para não serem consumidos duas vezes.
+    const efeitoPrincipal = efeitoPadrao()
+    const efeitoSecundario = efeitoPrincipal === 'cura' ? 'dano' : 'cura'
     const alvosValidos = alvos.filter(a => a.combatenteId && a.valor > 0)
-    const tipoDanoParaMotor: TipoDano | null = tipoDanoAcao && tipoDanoAcao !== 'sem_tipo' ? tipoDanoAcao : null
+    // Mesmo default da API para dano sem tipo informado.
+    const tipoDano: TipoDano = tipoDanoAcao || 'cortante'
+    const paraPayload = (lista: AlvoAcao[], efeito: 'dano' | 'cura') =>
+      lista.map(a => ({ combatenteId: a.combatenteId, valor: a.valor, ...(efeito === 'dano' ? { tipoDano } : {}) }))
 
-    // Aplica silenciosamente (sem gerar a entrada 'dano'/'cura' automática de
-    // aplicarDano/aplicarCura) e guarda o valor final pós-resistência/cap para
-    // as entradas contábeis abaixo — a UI mostra a narrativa, a agregação do
-    // diário lê as contábeis.
-    const resumosContabeis: { nome: string; valor: number; efeitoTipo: 'dano' | 'cura'; modificador: string }[] = []
-    for (const alvo of alvosValidos) {
-      if (alvo.efeitoTipo === 'cura') {
-        const resultado = aplicarCura(alvo.combatenteId, alvo.valor, true)
-        resumosContabeis.push({ nome: alvo.nome, valor: resultado?.curaEfetiva ?? alvo.valor, efeitoTipo: 'cura', modificador: '' })
-      } else {
-        const resultado = aplicarDano(alvo.combatenteId, alvo.valor, tipoDanoParaMotor, true)
-        resumosContabeis.push({ nome: alvo.nome, valor: resultado?.danoFinal ?? alvo.valor, efeitoTipo: 'dano', modificador: resultado?.modificador ?? '' })
-      }
+    const nomeBase = nomeAcao.trim() || tipoInfo?.label || tipo
+    const nomeFinal = ehMagia && nivelMagia === 0 ? `${nomeBase} (Truque)` : nomeBase
+    const principais = alvosValidos.filter(a => a.efeitoTipo === efeitoPrincipal)
+    const secundarios = alvosValidos.filter(a => a.efeitoTipo === efeitoSecundario)
+    const marcarEfeitoAtivo = marcaEfeito ? nomeAcao.trim() : undefined
+
+    const payloadPrincipal: PayloadAcaoBatalha = {
+      batalhaId,
+      combatenteId: ator.id,
+      tipo: tipo as TipoEntradaLog,
+      alvos: paraPayload(principais, efeitoPrincipal),
+      nivelMagia: nivel,
+      nomeAcao: nomeFinal,
+      descricao: observacao.trim() || undefined,
+      marcarEfeitoAtivo,
     }
+    const payloadSecundario: PayloadAcaoBatalha | null = secundarios.length > 0 ? {
+      batalhaId,
+      combatenteId: ator.id,
+      tipo: efeitoSecundario,
+      alvos: paraPayload(secundarios, efeitoSecundario),
+      nomeAcao: nomeFinal,
+    } : null
 
-    const nivelLabel = ehMagia ? (nivelMagia === 0 ? ' (Truque)' : ` (N${nivelMagia})`) : ''
-    const acaoLabel = `${tipoInfo?.label ?? tipo}${nivelLabel}`
-    const alvosDesc = resumosContabeis.map(r => {
-      const modSufixo = r.efeitoTipo === 'dano' && r.modificador ? ` (${r.modificador})` : ''
-      return `${r.nome}: ${r.valor} ${r.efeitoTipo === 'cura' ? 'cura' : 'dano'}${modSufixo}`
+    // Prévia na tela já, envio em seguida — o modal fecha sem esperar a API.
+    const reverterPrincipal = aplicarPreviaAcao({
+      atorId: ator.id,
+      efeito: efeitoPrincipal,
+      alvos: principais.map(a => ({ combatenteId: a.combatenteId, valor: a.valor, tipoDano })),
+      nivelMagia: nivel,
+      reacao: TIPOS_REACAO_ACAO.has(tipo),
+      marcarEfeitoAtivo,
     })
-    const partes: string[] = [
-      `${tipoInfo?.icone ?? '📝'} ${acaoLabel} — ${origemNome}`,
-      ...(alvosDesc.length > 0 ? [`→ ${alvosDesc.join(', ')}`] : []),
-      ...(observacao ? [`(${observacao})`] : []),
-    ]
-
-    adicionarEntradaLog({
-      tipo: tipo as EntradaLog['tipo'],
-      origem: origemNome,
-      alvo: alvosValidos.map(a => a.nome).join(', '),
-      valor: resumosContabeis.reduce((sum, r) => sum + r.valor, 0),
-      tipo_dano: temAlvoDano ? tipoDanoParaMotor : null,
-      descricao: partes.join(' '),
-    })
-
-    resumosContabeis.forEach(r => {
-      const modSufixo = r.efeitoTipo === 'dano' && r.modificador ? ` (${r.modificador})` : ''
-      adicionarEntradaLog({
-        tipo: r.efeitoTipo,
-        origem: origemNome,
-        alvo: r.nome,
-        valor: r.valor,
-        tipo_dano: r.efeitoTipo === 'dano' ? tipoDanoParaMotor : null,
-        descricao: `${origemNome} → ${r.nome}: ${r.valor} ${r.efeitoTipo}${modSufixo}`,
-        resumo: true,
-      })
-    })
-
+    const reverterSecundario = payloadSecundario
+      ? aplicarPreviaAcao({
+          atorId: ator.id,
+          efeito: efeitoSecundario,
+          alvos: secundarios.map(a => ({ combatenteId: a.combatenteId, valor: a.valor, tipoDano })),
+        })
+      : null
     onFechar()
+
+    void (async () => {
+      const principal = await chamarAcaoApi(payloadPrincipal)
+      if (!principal.ok) {
+        reverterSecundario?.()
+        reverterPrincipal()
+        toast.error(principal.erro ?? 'Erro ao registrar ação')
+        return
+      }
+      if (!payloadSecundario) return
+      const secundario = await chamarAcaoApi(payloadSecundario)
+      if (!secundario.ok) {
+        reverterSecundario?.()
+        toast.error(`Ação registrada, mas ${efeitoSecundario === 'cura' ? 'a cura' : 'o dano'} não: ${secundario.erro ?? 'erro desconhecido'}`)
+      }
+    })()
   }
 
   return createPortal(
@@ -1493,6 +1466,14 @@ function ModalRegistrarAcao({
         onClick={e => e.stopPropagation()}
       >
         <h3 className="font-cinzel text-[var(--gold)] text-base font-bold">⚔️ Registrar Ação</h3>
+
+        {!batalhaAtiva && (
+          <p className="text-[var(--red2)] text-xs font-crimson">
+            {statusBatalha === 'pausada'
+              ? 'A batalha está pausada — retome para registrar ações.'
+              : 'Inicie a batalha para registrar ações.'}
+          </p>
+        )}
 
         {/* Tipo */}
         <div>
@@ -1528,18 +1509,41 @@ function ModalRegistrarAcao({
                 <option key={n} value={n}>{n}º nível</option>
               ))}
             </select>
-            {erroSlot && (
-              <p className="text-[var(--red2)] text-xs mt-1 font-crimson">{erroSlot}</p>
-            )}
           </div>
+        )}
+
+        {/* Nome — vira o nome da ação no log e o do efeito ativo */}
+        <div>
+          <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">
+            Nome {marcaEfeito ? '*' : '(opcional)'}
+          </label>
+          <input
+            type="text"
+            value={nomeAcao}
+            onChange={e => setNomeAcao(e.target.value)}
+            placeholder={ehMagia ? 'Ex: Guardiões Espirituais' : 'Ex: Espada longa'}
+            className="input-dd w-full text-sm"
+          />
+        </div>
+
+        {/* Efeito ativo — mesmo critério da mesa: magia que segue em jogo */}
+        {ehMagia && (
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={efeitoAtivo}
+              onChange={e => setEfeitoAtivo(e.target.checked)}
+              className="w-4 h-4 accent-[var(--gold)]"
+            />
+            <span className="text-[var(--text2)] text-xs font-crimson">🔮 Manter como efeito ativo (concentração)</span>
+          </label>
         )}
 
         {/* Quem fez */}
         <div>
           <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Quem fez *</label>
-          <select value={origemNome} onChange={e => setOrigemNome(e.target.value)} className="input-dd w-full text-sm">
+          <select value={origemNome} onChange={e => { setOrigemNome(e.target.value); setErroSlot('') }} className="input-dd w-full text-sm">
             <option value="">— Selecione —</option>
-            <option value="DM">DM</option>
             {ativos.map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
           </select>
         </div>
@@ -1610,18 +1614,17 @@ function ModalRegistrarAcao({
             <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Tipo de dano *</label>
             <select
               value={tipoDanoAcao}
-              onChange={e => setTipoDanoAcao(e.target.value as TipoDano | 'sem_tipo' | '')}
+              onChange={e => setTipoDanoAcao(e.target.value as TipoDano | '')}
               className="input-dd w-full text-sm"
             >
               <option value="">— Selecione o tipo —</option>
               {TIPOS_DANO.map(t => (
                 <option key={t.id} value={t.id}>{t.icone} {t.nome}</option>
               ))}
-              <option value="sem_tipo">🚫 Sem tipo (ignora resistência/imunidade/vulnerabilidade)</option>
             </select>
             {!tipoDanoAcao && (
               <p className="text-[var(--red2)] text-xs mt-1 font-crimson">
-                Obrigatório — escolha &quot;Sem tipo&quot; para dano narrativo (queda etc.) que ignora resistências.
+                Obrigatório. Dano sem atacante nem tipo (queda, armadilha) vai pelo Ajuste PV da linha.
               </p>
             )}
           </div>
@@ -1639,16 +1642,20 @@ function ModalRegistrarAcao({
           />
         </div>
 
+        {erroSlot && (
+          <p className="text-[var(--red2)] text-xs font-crimson">{erroSlot}</p>
+        )}
+
         <div className="flex gap-2 pt-1">
           <button onClick={onFechar} className="flex-1 py-2 border border-[var(--border)] rounded text-[var(--text2)] text-sm">
             Cancelar
           </button>
           <button
             onClick={confirmar}
-            disabled={!tipo || !origemNome || salvando || (temAlvoDano && !tipoDanoAcao)}
+            disabled={!podeConfirmar}
             className="flex-1 py-2 bg-[var(--accent)] hover:opacity-90 text-white rounded font-cinzel text-sm disabled:opacity-50"
           >
-            {salvando ? 'Registrando...' : 'Registrar'}
+            Registrar
           </button>
         </div>
       </div>
