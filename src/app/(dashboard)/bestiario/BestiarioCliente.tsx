@@ -10,7 +10,7 @@ import { usePermissao } from '@/hooks/usePermissao'
 import { useCampanha } from '@/store/campanha'
 import { calcularModificadorAtributo, formatarModificador, cn } from '@/lib/utils'
 import { separarModificadoresDano } from '@/lib/dados-dnd/tipos-dano'
-import { Search, Swords, Plus, X, Trash2, Pencil, ShieldAlert, Star } from 'lucide-react'
+import { Search, Swords, Plus, X, Trash2, Pencil, ShieldAlert, Star, ClipboardPaste } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import { BotaoReportar } from '@/components/ui/BotaoReportar'
@@ -269,6 +269,159 @@ function gerarSufixoAleatorio(): string {
   return Math.random().toString(36).slice(2, 6)
 }
 
+// ─── Importador de bloco de criatura ──────────────────────────────────────
+
+type MonstroExtraido = {
+  name_pt: string; name_en: string | null; size_pt: string | null; type_pt: string | null
+  alignment_pt: string | null; armor_class: number; hit_points: number; hit_dice: string | null
+  challenge_rating: string | null; xp: number | null; proficiency_bonus: string | null
+  str_score: number | null; dex_score: number | null; con_score: number | null
+  int_score: number | null; wis_score: number | null; cha_score: number | null
+  speed_pt: string | null; senses_pt: string | null; languages_pt: string | null
+  passive_perception: number | null; darkvision_ft: number | null; blindsight_ft: number | null
+  tremorsense_ft: number | null; truesight_ft: number | null; traits_rules_pt: string | null
+  acoes: Omit<MonsterAction, 'id' | 'monster_id'>[]
+  saves: { ability: string; bonus: number }[]
+  skills: { skill_pt: string; skill_en: string; bonus: number }[]
+  damage_modifiers: { modifier_type: string; damage_type_pt: string; note_pt: string | null }[]
+  condition_immunities: { condition_en: string }[]
+}
+
+// A rota devolve o id do tipo de dano ("acido"); os selects do modal usam o
+// rótulo ("Ácido"), que o salvar já converte para damage_type_en.
+function rotuloDano(id: string | null | undefined): string | null {
+  if (!id) return null
+  return TIPOS_DANO_OPCOES.find(pt => gerarSlugBase(pt) === id) ?? null
+}
+
+// Monta um MonsterDetailed completo — campo ausente cai no padrão do
+// MONSTRO_VAZIO, para o modal nunca receber undefined nos inputs controlados.
+function montarMonstroImportado(d: MonstroExtraido): MonsterDetailed {
+  const v = MONSTRO_VAZIO
+  const condicaoPt = Object.fromEntries(CONDICOES_D5E.map(c => [c.en, c.pt]))
+  return {
+    id: '', slug: '', source_page_start: null, traits_pt: null, actions_pt: null, actions_rules_pt: null,
+    visivel_jogadores: false,
+    name_pt: d.name_pt ?? v.name_pt,
+    name_en: d.name_en ?? v.name_en,
+    size_pt: d.size_pt ?? v.size_pt,
+    type_pt: d.type_pt ?? v.type_pt,
+    alignment_pt: d.alignment_pt ?? v.alignment_pt,
+    armor_class: d.armor_class ?? v.armor_class,
+    hit_points: d.hit_points ?? v.hit_points,
+    hit_dice: d.hit_dice ?? v.hit_dice,
+    speed_pt: d.speed_pt ?? v.speed_pt,
+    str_score: d.str_score ?? v.str_score,
+    dex_score: d.dex_score ?? v.dex_score,
+    con_score: d.con_score ?? v.con_score,
+    int_score: d.int_score ?? v.int_score,
+    wis_score: d.wis_score ?? v.wis_score,
+    cha_score: d.cha_score ?? v.cha_score,
+    challenge_rating: d.challenge_rating ?? v.challenge_rating,
+    xp: d.xp ?? v.xp,
+    proficiency_bonus: d.proficiency_bonus ?? v.proficiency_bonus,
+    passive_perception: d.passive_perception ?? v.passive_perception,
+    darkvision_ft: d.darkvision_ft ?? v.darkvision_ft,
+    blindsight_ft: d.blindsight_ft ?? v.blindsight_ft,
+    tremorsense_ft: d.tremorsense_ft ?? v.tremorsense_ft,
+    truesight_ft: d.truesight_ft ?? v.truesight_ft,
+    senses_pt: d.senses_pt ?? v.senses_pt,
+    languages_pt: d.languages_pt ?? v.languages_pt,
+    traits_rules_pt: d.traits_rules_pt,
+    monster_saves: (d.saves ?? []).map(s => ({ ability: s.ability, bonus: s.bonus })),
+    monster_skills: (d.skills ?? []).map(s => ({ skill_pt: s.skill_pt, skill_en: s.skill_en, bonus: s.bonus })),
+    monster_damage_modifiers: (d.damage_modifiers ?? []).flatMap(m => {
+      const rotulo = rotuloDano(m.damage_type_pt)
+      return rotulo ? [{ modifier_type: m.modifier_type, damage_type_pt: rotulo, note_pt: m.note_pt }] : []
+    }),
+    monster_condition_immunities: (d.condition_immunities ?? []).flatMap(c =>
+      condicaoPt[c.condition_en] ? [{ condition_pt: condicaoPt[c.condition_en] }] : []
+    ),
+    // id negativo e único: o modal usa o id como chave do buffer de metros.
+    monster_actions: (d.acoes ?? []).map((a, i) => ({
+      ...a,
+      id: -(i + 1),
+      monster_id: 0,
+      damage_type_pt: rotuloDano(a.damage_type_pt),
+      damage2_type_pt: rotuloDano(a.damage2_type_pt),
+      description_pt: a.description_pt ?? '',
+    })),
+  }
+}
+
+function ModalImportarMonstro({ texto, setTexto, campanhaId, onClose, onExtraido }: {
+  texto: string
+  setTexto: (t: string) => void
+  campanhaId: string
+  onClose: () => void
+  onExtraido: (m: MonsterDetailed) => void
+}) {
+  const [carregando, setCarregando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+
+  async function extrair() {
+    setCarregando(true)
+    setErro(null)
+    try {
+      const resp = await fetch('/api/bestiario/importar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto, campanhaId }),
+      })
+      const json = await resp.json().catch(() => ({}))
+      if (!resp.ok || !json.dados) {
+        setErro(json.erro ?? `Erro ao extrair (${resp.status})`)
+        return
+      }
+      onExtraido(montarMonstroImportado(json.dados as MonstroExtraido))
+    } catch {
+      setErro('Sem conexão. Verifique a internet e tente de novo — o texto continua aqui.')
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-[var(--bg3)] border border-[var(--border2)] rounded-lg w-full max-w-2xl shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--border)] flex-shrink-0">
+          <h2 className="font-cinzel text-[var(--gold)] font-bold">📜 Importar Criatura</h2>
+          <button onClick={onClose} disabled={carregando} className="text-[var(--border)] hover:text-[var(--red2)] disabled:opacity-40"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <p className="text-[var(--text2)] text-sm font-crimson">
+            Cole o bloco de estatísticas da criatura. Nada é salvo agora: os campos abrem preenchidos no formulário para você revisar antes de criar.
+          </p>
+          <textarea
+            value={texto}
+            onChange={e => setTexto(e.target.value)}
+            disabled={carregando}
+            rows={14}
+            placeholder="Goblin — Humanoide Pequeno (goblinoide), neutro e mau&#10;Classe de Armadura 15 (armadura de couro, escudo)&#10;Pontos de Vida 7 (2d6)…"
+            className="w-full input-dd text-sm font-mono resize-y min-h-[12rem] disabled:opacity-60"
+          />
+          <p className={cn('text-[10px] font-cinzel text-right', texto.length > 20000 ? 'text-[var(--red2)]' : 'text-[var(--text3)]')}>
+            {texto.length.toLocaleString('pt-BR')} / 20.000{texto.length > 20000 && ' — texto grande demais, cole só uma criatura'}
+          </p>
+          {erro && (
+            <p className="text-[var(--red2)] text-sm font-crimson border border-[var(--red2)]/30 bg-[var(--red2)]/10 rounded p-2">{erro}</p>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 p-4 border-t border-[var(--border)] flex-shrink-0">
+          <button onClick={onClose} disabled={carregando} className="px-3 py-1.5 text-xs font-cinzel text-[var(--text3)] border border-[var(--border)] rounded hover:border-[var(--border2)] transition-colors disabled:opacity-40">Cancelar</button>
+          <button
+            onClick={extrair}
+            disabled={carregando || !texto.trim() || texto.length > 20000}
+            className="px-4 py-1.5 text-xs font-cinzel text-[var(--gold)] bg-[var(--surface)] border border-[var(--gold)]/50 rounded hover:bg-[var(--gold)]/10 transition-colors disabled:opacity-50"
+          >
+            {carregando ? <span className="animate-pulse">Extraindo… pode levar alguns segundos</span> : '✨ Extrair'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose, onSaved }: {
   modo: 'criar' | 'editar'
   monstro?: MonsterDetailed
@@ -280,7 +433,8 @@ function ModalAdminEditarMonstro({ modo, monstro, criadoPor, campanhaId, onClose
   const lbl = "text-[var(--text3)] text-[9px] font-cinzel uppercase"
   const inp = "w-full input-dd text-sm mt-0.5"
 
-  const dadosIniciais = modo === 'editar' && monstro ? {
+  // Em modo criar, `monstro` só chega preenchido vindo do importador de bloco.
+  const dadosIniciais = monstro ? {
     name_pt: monstro.name_pt,
     name_en: monstro.name_en,
     size_pt: monstro.size_pt ?? '',
@@ -903,6 +1057,11 @@ export function BestiarioCliente() {
   const [userId, setUserId] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [modalMonstroAberto, setModalMonstroAberto] = useState<'criar' | 'editar' | null>(null)
+  const [importarAberto, setImportarAberto] = useState(false)
+  // O texto colado vive aqui, não no modal de importação: sobrevive a erro,
+  // a fechar a caixa e a cancelar a revisão. Só é limpo quando o monstro é salvo.
+  const [textoImportacao, setTextoImportacao] = useState('')
+  const [monstroImportado, setMonstroImportado] = useState<MonsterDetailed | null>(null)
   const [nomesAutores, setNomesAutores] = useState<Record<string, string>>({})
   const { adicionarCombatente } = useBatalha()
   const { ehJogador } = usePermissao()
@@ -1140,12 +1299,21 @@ export function BestiarioCliente() {
             )}>
               <div className="p-3 border-b border-[var(--border)]">
                 {dmDaCampanhaAtiva && (
-                  <button
-                    onClick={() => setModalMonstroAberto('criar')}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 mb-2 bg-[var(--accent2)]/10 border border-[var(--accent2)]/40 text-[var(--accent2)] rounded text-sm font-cinzel hover:bg-[var(--accent2)]/20 transition-colors"
-                  >
-                    <Plus className="w-4 h-4" /> Criar Monstro
-                  </button>
+                  <div className="flex gap-2 mb-2">
+                    <button
+                      onClick={() => { setMonstroImportado(null); setModalMonstroAberto('criar') }}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-[var(--accent2)]/10 border border-[var(--accent2)]/40 text-[var(--accent2)] rounded text-sm font-cinzel hover:bg-[var(--accent2)]/20 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" /> Criar Monstro
+                    </button>
+                    <button
+                      onClick={() => setImportarAberto(true)}
+                      title="Importar de um bloco de estatísticas colado"
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-[var(--accent2)]/10 border border-[var(--accent2)]/40 text-[var(--accent2)] rounded text-sm font-cinzel hover:bg-[var(--accent2)]/20 transition-colors"
+                    >
+                      <ClipboardPaste className="w-4 h-4" /> Importar
+                    </button>
+                  </div>
                 )}
                 <div className="relative mb-2">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />
@@ -1531,10 +1699,28 @@ export function BestiarioCliente() {
       {modalMonstroAberto === 'criar' && userId && (
         <ModalAdminEditarMonstro
           modo="criar"
+          monstro={monstroImportado ?? undefined}
           criadoPor={userId}
           campanhaId={campanhaAtiva?.id ?? null}
-          onClose={() => setModalMonstroAberto(null)}
-          onSaved={(m) => { monstroSalvo(m); setVisao('detalhe') }}
+          onClose={() => { setModalMonstroAberto(null); setMonstroImportado(null) }}
+          onSaved={(m) => {
+            if (monstroImportado) setTextoImportacao('')
+            monstroSalvo(m)
+            setVisao('detalhe')
+          }}
+        />
+      )}
+      {importarAberto && campanhaAtiva && (
+        <ModalImportarMonstro
+          texto={textoImportacao}
+          setTexto={setTextoImportacao}
+          campanhaId={campanhaAtiva.id}
+          onClose={() => setImportarAberto(false)}
+          onExtraido={(m) => {
+            setMonstroImportado(m)
+            setImportarAberto(false)
+            setModalMonstroAberto('criar')
+          }}
         />
       )}
     </div>
