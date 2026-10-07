@@ -13,3 +13,4 @@
 drop table if exists public.espacos_magia;
 drop table if exists public.locais;
 drop table if exists public.campaign_members;
+drop table if exists public.campaign_invites;
