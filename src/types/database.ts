@@ -32,7 +32,6 @@ export interface Campanha {
   sistema: string
   ativa: boolean
   status?: string
-  link_token: string | null
   criado_em: string
   resumo_final?: string | null
   moeda_custom_nome?: string | null
