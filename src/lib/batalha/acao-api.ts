@@ -16,12 +16,32 @@ export interface PayloadAcaoBatalha {
   encerrarEfeitoAtivo?: string
 }
 
+// Contrato de AcaoEstadoPayload — edição de estado sem ator, só o mestre.
+export type TipoAcaoEstado =
+  | 'dano_ambiente' | 'cura_ambiente' | 'ajustar_pv'
+  | 'definir_pv_maximo' | 'definir_espacos' | 'zerar_contadores'
+
+export interface PayloadAcaoEstado {
+  batalhaId: string
+  tipo: TipoAcaoEstado
+  alvos: {
+    combatenteId: string
+    valor?: number
+    pvTemporarios?: number
+    pvMaximo?: number
+    nivelMagia?: number
+    usar?: boolean
+  }[]
+  tipoDano?: TipoDano
+  motivo?: string
+}
+
 export interface ResultadoAcao {
   ok: boolean
   erro?: string
 }
 
-export async function chamarAcaoApi(payload: PayloadAcaoBatalha): Promise<ResultadoAcao> {
+export async function chamarAcaoApi(payload: PayloadAcaoBatalha | PayloadAcaoEstado): Promise<ResultadoAcao> {
   try {
     const resp = await fetch('/api/mesa/acao', {
       method: 'POST',

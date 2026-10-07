@@ -41,7 +41,7 @@ export function TabelaCombate() {
     resetarBatalha,
     adicionarCombatente, confirmarIniciativa, rolarIniciativasMonstros,
     proximoTurno, turnoAnterior, proximaRodada,
-    aplicarTodosDanos, aplicarTodasCuras, zerarContadores, reordenarCombatentes,
+    editarEstado, setarDanoInput, reordenarCombatentes,
     xpGanhoNaBatalha, xpDistribuido,
     revelacaoPv, definirRevelacaoPv,
   } = useBatalha()
@@ -147,6 +147,39 @@ export function TabelaCombate() {
   const combatenteAtivo = turnoCombatenteId
     ? combatentesOrdenados.filter(c => !c.ausente && !c.morto)[turnoAtual]
     : undefined
+
+  // Danos / Cura em lote: o valor digitado no "ajuste" de cada linha vira um
+  // alvo de uma única edição. Dano com tipos diferentes vira um envio por
+  // tipo (a API aplica um tipoDano por ação); linha sem tipo é recusada.
+  function aplicarLoteDano() {
+    const comValor = combatentes.filter(c => c.dano_input > 0 && !c.ausente && !c.morto)
+    if (comValor.length === 0) return
+    const semTipo = comValor.filter(c => !c.dano_tipo)
+    if (semTipo.length > 0) {
+      toast.error(`Escolha o tipo de dano de ${semTipo.map(c => c.nome).join(', ')} — dano sem tipo não é aplicado`)
+      return
+    }
+    const porTipo = new Map<TipoDano, typeof comValor>()
+    comValor.forEach(c => porTipo.set(c.dano_tipo!, [...(porTipo.get(c.dano_tipo!) ?? []), c]))
+    porTipo.forEach((lista, tipoDano) => editarEstado({
+      tipo: 'dano_ambiente',
+      tipoDano,
+      alvos: lista.map(c => ({ combatenteId: c.id, valor: c.dano_input })),
+    }))
+    comValor.forEach(c => setarDanoInput(c.id, 0))
+  }
+
+  function aplicarLoteCura() {
+    const comValor = combatentes.filter(c => c.dano_input > 0 && !c.ausente && !(c.morto && c.tipo === 'monstro'))
+    if (comValor.length === 0) return
+    editarEstado({ tipo: 'cura_ambiente', alvos: comValor.map(c => ({ combatenteId: c.id, valor: c.dano_input })) })
+    comValor.forEach(c => setarDanoInput(c.id, 0))
+  }
+
+  function zerarTodos() {
+    editarEstado({ tipo: 'zerar_contadores', alvos: [] })
+    combatentes.forEach(c => { if (c.dano_input) setarDanoInput(c.id, 0) })
+  }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -262,16 +295,16 @@ export function TabelaCombate() {
           <BotaoRunico variante="secundario" tamanho="sm" onClick={confirmarIniciativa}>
             🎯 Ordenar
           </BotaoRunico>
-          <BotaoRunico variante="secundario" tamanho="sm" onClick={aplicarTodosDanos}>
+          <BotaoRunico variante="secundario" tamanho="sm" onClick={aplicarLoteDano}>
             <Zap className="w-3 h-3" /> Danos
           </BotaoRunico>
           <button
-            onClick={aplicarTodasCuras}
+            onClick={aplicarLoteCura}
             className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[var(--green2)]/60 text-[var(--green2)] hover:bg-[var(--green2)]/10 font-cinzel text-xs transition-colors"
           >
             💚 Cura
           </button>
-          <BotaoRunico variante="secundario" tamanho="sm" onClick={zerarContadores}>
+          <BotaoRunico variante="secundario" tamanho="sm" onClick={zerarTodos}>
             <RotateCcw className="w-3 h-3" /> Zerar
           </BotaoRunico>
           <BotaoRunico variante="secundario" tamanho="sm" onClick={() => setModalXP(true)}>
@@ -681,9 +714,9 @@ export function TabelaCombate() {
             )}
             <ItemAcaoMais label="Rolar iniciativas dos monstros" icone="🎲" onClick={() => { rolarIniciativasMonstros(); setMaisAberto(false) }} />
             <ItemAcaoMais label="Ordenar por iniciativa" icone="🎯" onClick={() => { confirmarIniciativa(); setMaisAberto(false) }} />
-            <ItemAcaoMais label="Aplicar todos os danos" icone="💥" onClick={() => { aplicarTodosDanos(); setMaisAberto(false) }} />
-            <ItemAcaoMais label="Aplicar todas as curas" icone="💚" onClick={() => { aplicarTodasCuras(); setMaisAberto(false) }} />
-            <ItemAcaoMais label="Zerar contadores" icone="🔄" onClick={() => { zerarContadores(); setMaisAberto(false) }} />
+            <ItemAcaoMais label="Aplicar todos os danos" icone="💥" onClick={() => { aplicarLoteDano(); setMaisAberto(false) }} />
+            <ItemAcaoMais label="Aplicar todas as curas" icone="💚" onClick={() => { aplicarLoteCura(); setMaisAberto(false) }} />
+            <ItemAcaoMais label="Zerar contadores" icone="🔄" onClick={() => { zerarTodos(); setMaisAberto(false) }} />
             <ItemAcaoMais label="Distribuir XP" icone="⭐" onClick={() => { setMaisAberto(false); setModalXP(true) }} />
             <ItemAcaoMais label="Dar inspiração" icone="⭐" onClick={() => { setMaisAberto(false); setModalInspiracao(true) }} />
             {statusBatalha === 'ativa' && (

@@ -31,7 +31,7 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
   const router = useRouter()
   const {
     toggleMorto, removerCombatente,
-    aplicarDano, aplicarCura, atualizarCombatente,
+    editarEstado, atualizarCombatente,
     setarDanoInput, setarTipoDano,
     adicionarCondicao, removerCondicao,
     definirIniciativa, setVantagem, usarInspiracao,
@@ -308,7 +308,10 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
               defaultValue={c.pv_atual}
               autoFocus
               onBlur={e => {
-                atualizarCombatente(c.id, { pv_atual: Math.min(parseInt(e.target.value) || 0, c.pv_maximo) })
+                const valor = parseInt(e.target.value)
+                if (!Number.isNaN(valor) && valor !== c.pv_atual) {
+                  editarEstado({ tipo: 'ajustar_pv', alvos: [{ combatenteId: c.id, valor }] })
+                }
                 setEditandoPV(false)
               }}
               onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
@@ -328,7 +331,13 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
               type="number"
               defaultValue={c.pv_maximo}
               autoFocus
-              onBlur={e => { atualizarCombatente(c.id, { pv_maximo: parseInt(e.target.value) || c.pv_maximo }); setEditandoPVMax(false) }}
+              onBlur={e => {
+                const pvMaximo = parseInt(e.target.value)
+                if (pvMaximo > 0 && pvMaximo !== c.pv_maximo) {
+                  editarEstado({ tipo: 'definir_pv_maximo', alvos: [{ combatenteId: c.id, pvMaximo }] })
+                }
+                setEditandoPVMax(false)
+              }}
               onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
               className="w-12 input-dd text-center text-sm"
             />
@@ -380,7 +389,7 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
             onClick={() => {
               const v = parseInt(valorAcao)
               if (!v || pausada) return
-              aplicarDano(c.id, v, c.dano_tipo)
+              editarEstado({ tipo: 'dano_ambiente', alvos: [{ combatenteId: c.id, valor: v }], tipoDano: c.dano_tipo ?? undefined })
               setValorAcao('')
               setarDanoInput(c.id, 0)
             }}
@@ -392,7 +401,7 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
             onClick={() => {
               const v = parseInt(valorAcao)
               if (!v || pausada) return
-              aplicarCura(c.id, v)
+              editarEstado({ tipo: 'cura_ambiente', alvos: [{ combatenteId: c.id, valor: v }] })
               setValorAcao('')
               setarDanoInput(c.id, 0)
             }}
@@ -590,15 +599,14 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
 // elimina o scroll horizontal. É consulta + o essencial, não paridade
 // total com a tabela: sem drag-reorder, vantagem/desvantagem, seletor de
 // tipo de dano, totais acumulados ou slots de magia — isso continua só
-// no desktop. Dano/cura aqui usam c.dano_tipo tal como está (mesmo
-// comportamento do botão de ajuste rápido da tabela); pra dano com tipo
-// específico o caminho é "⚔️ Registrar Ação", que continua visível.
+// no desktop. O popover de dano tem o próprio seletor de tipo (começa no
+// c.dano_tipo da linha) — dano sem tipo é recusado, igual à tabela.
 export function CartaoCombatenteMobile({ combatente: c, ativo, condicoesDisponiveis }: {
   combatente: Combatente
   ativo: boolean
   condicoesDisponiveis: string[]
 }) {
-  const { aplicarDano, aplicarCura, adicionarCondicao, removerCondicao, togglePvRevelado } = useBatalha()
+  const { editarEstado, setarTipoDano, adicionarCondicao, removerCondicao, togglePvRevelado } = useBatalha()
   const pausada = useBatalha(s => s.statusBatalha === 'pausada')
   const revelacaoPv = useBatalha(s => s.revelacaoPv)
 
@@ -694,7 +702,10 @@ export function CartaoCombatenteMobile({ combatente: c, ativo, condicoesDisponiv
           titulo={popoverAberto === 'dano' ? '💥 Aplicar dano' : '💚 Aplicar cura'}
           pos={posPopover}
           onFechar={() => setPopoverAberto(null)}
-          onConfirmar={v => popoverAberto === 'dano' ? aplicarDano(c.id, v, c.dano_tipo) : aplicarCura(c.id, v)}
+          tipoDano={popoverAberto === 'dano' ? { valor: c.dano_tipo, onChange: t => setarTipoDano(c.id, t) } : undefined}
+          onConfirmar={v => popoverAberto === 'dano'
+            ? editarEstado({ tipo: 'dano_ambiente', alvos: [{ combatenteId: c.id, valor: v }], tipoDano: c.dano_tipo ?? undefined })
+            : editarEstado({ tipo: 'cura_ambiente', alvos: [{ combatenteId: c.id, valor: v }] })}
         />,
         document.body
       )}
@@ -723,9 +734,10 @@ export function CartaoCombatenteMobile({ combatente: c, ativo, condicoesDisponiv
   )
 }
 
-function PopoverValor({ titulo, pos, onFechar, onConfirmar }: {
+function PopoverValor({ titulo, pos, tipoDano, onFechar, onConfirmar }: {
   titulo: string
   pos: { top: number; left: number }
+  tipoDano?: { valor: TipoDano | null; onChange: (t: TipoDano | null) => void }
   onFechar: () => void
   onConfirmar: (valor: number) => void
 }) {
@@ -744,6 +756,11 @@ function PopoverValor({ titulo, pos, onFechar, onConfirmar }: {
         className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-xl p-3 w-52"
       >
         <p className="text-[var(--text3)] text-xs font-cinzel mb-2">{titulo}</p>
+        {tipoDano && (
+          <div className="mb-2">
+            <SeletorTipoDano valor={tipoDano.valor} onChange={tipoDano.onChange} />
+          </div>
+        )}
         <div className="flex gap-2">
           <input
             type="text"

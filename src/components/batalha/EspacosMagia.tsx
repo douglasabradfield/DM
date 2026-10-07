@@ -9,7 +9,9 @@ interface EspacosMagiaProps {
 }
 
 export function EspacosMagia({ combatenteId, espacos }: EspacosMagiaProps) {
-  const { usarEspaco, recuperarEspaco } = useBatalha()
+  const editarEstado = useBatalha(s => s.editarEstado)
+  const marcar = (nivel: number, usar: boolean) =>
+    editarEstado({ tipo: 'definir_espacos', alvos: [{ combatenteId, nivelMagia: nivel, usar }] })
 
   const niveisComEspacos = Object.entries(espacos)
     .filter(([, e]) => e.total > 0)
@@ -28,7 +30,7 @@ export function EspacosMagia({ combatenteId, espacos }: EspacosMagiaProps) {
               return (
                 <button
                   key={i}
-                  onClick={() => usado ? recuperarEspaco(combatenteId, nivel) : usarEspaco(combatenteId, nivel)}
+                  onClick={() => marcar(nivel, !usado)}
                   className={`w-3 h-3 rounded-full border transition-all ${
                     usado
                       ? 'bg-transparent border-[#4a3060]'

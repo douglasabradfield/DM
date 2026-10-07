@@ -7,9 +7,9 @@ import type {
 } from '@/types/batalha'
 import type { TipoDano } from '@/types/dnd'
 import { calcularDano, aplicarCura as calcularCura, consumirEspaco } from '@/lib/batalha/motor'
-import { MODIFICADOR_RESISTENCIA, MODIFICADOR_VULNERABILIDADE } from '@/lib/dados-dnd/tipos-dano'
 import type { ModoRevelacao } from '@/lib/batalha/visibilidade-pv'
 import { createClient } from '@/lib/supabase/client'
+import { chamarAcaoApi, type PayloadAcaoEstado, type TipoAcaoEstado } from '@/lib/batalha/acao-api'
 import toast from 'react-hot-toast'
 
 // =============================================================================
@@ -123,7 +123,7 @@ function combatenteFromDB(row: CombatenteDB): Combatente {
     reacao_usada: row.reacao_usada,
     efeitos_ativos: row.efeitos_ativos ?? [],
     dano_input: 0,
-    dano_tipo: 'cortante',
+    dano_tipo: null,
     dano_total: row.dano_total,
     cura_total: row.cura_total,
     flash: null,
@@ -447,24 +447,13 @@ interface EstadoBatalhaStore {
   confirmarIniciativa: () => void
 
   // PV
-  aplicarDano: (id: string, dano: number, tipo: TipoDano | null, silencioso?: boolean) => { danoFinal: number; morreu: boolean; modificador: string } | undefined
-  aplicarCura: (id: string, cura: number, silencioso?: boolean) => { curaEfetiva: number } | undefined
-  atualizarPV: (id: string, pvAtual: number) => void
-  atualizarPVMax: (id: string, pvMax: number) => void
   setarDanoInput: (id: string, valor: number) => void
-  setarTipoDano: (id: string, tipo: TipoDano) => void
-  aplicarTodosDanos: () => void
-  aplicarTodasCuras: () => void
-  zerarContadores: () => void
+  setarTipoDano: (id: string, tipo: TipoDano | null) => void
   adicionarEntradaLog: (entrada: Omit<EntradaLog, 'id' | 'rodada' | 'turno' | 'criado_em' | 'resumo'> & { resumo?: boolean }) => void
 
   // Condições
   adicionarCondicao: (id: string, condicao: TipoCondicao) => void
   removerCondicao: (id: string, condicao: TipoCondicao) => void
-
-  // Espaços de magia
-  usarEspaco: (id: string, nivel: number) => void
-  recuperarEspaco: (id: string, nivel: number) => void
 
   // Turnos
   proximoTurno: () => void
@@ -492,18 +481,58 @@ interface EstadoBatalhaStore {
 
   // Prévia otimista de ação gravada pela API (/api/mesa/acao)
   aplicarPreviaAcao: (previa: PreviaAcao) => () => void
+  // Edição de estado pelo mestre (dano/cura sem ator, PV, espaços, zerar)
+  editarEstado: (edicao: EdicaoEstado) => void
 }
 
 // Efeito de uma ação que a API (/api/mesa/acao) vai gravar. Mesmo cálculo de
-// tratarAcaoBatalha — tipoDano já resolvido pelo chamador do jeito da API.
+// tratarAcaoBatalha / tratarAcaoEstado — tipoDano já resolvido pelo chamador
+// do jeito da API. Sem atorId = edição de estado do mestre (ninguém agindo).
+//   dano/cura: valor é o dano ou a cura
+//   ajustar_pv: valor é o PV atual absoluto
+//   definir_pv_maximo: valor é o novo máximo
+//   definir_espacos: nivelMagia + usar
+//   zerar: alvos são os combatentes a zerar
 export interface PreviaAcao {
-  atorId: string
-  efeito: 'dano' | 'cura'
-  alvos: { combatenteId: string; valor: number; tipoDano: TipoDano }[]
+  atorId?: string
+  efeito: 'dano' | 'cura' | 'ajustar_pv' | 'definir_pv_maximo' | 'definir_espacos' | 'zerar'
+  alvos: { combatenteId: string; valor?: number; tipoDano?: TipoDano; nivelMagia?: number; usar?: boolean }[]
   nivelMagia?: number
   reacao?: boolean
   marcarEfeitoAtivo?: string
 }
+
+const EFEITO_PREVIA: Record<TipoAcaoEstado, PreviaAcao['efeito']> = {
+  dano_ambiente: 'dano',
+  cura_ambiente: 'cura',
+  ajustar_pv: 'ajustar_pv',
+  definir_pv_maximo: 'definir_pv_maximo',
+  definir_espacos: 'definir_espacos',
+  zerar_contadores: 'zerar',
+}
+
+// Mesmas recusas determinísticas da API, checadas antes da prévia para o
+// erro aparecer sem a tela piscar. A API continua sendo quem decide.
+function recusaEdicaoLocal(edicao: EdicaoEstado, combatentes: Combatente[]): string {
+  if (edicao.tipo === 'dano_ambiente' && !edicao.tipoDano) {
+    return 'Escolha o tipo de dano — dano sem tipo não é aplicado'
+  }
+  if (edicao.tipo === 'definir_espacos') {
+    for (const alvo of edicao.alvos) {
+      const c = combatentes.find(x => x.id === alvo.combatenteId)
+      if (!c || !alvo.usar || alvo.nivelMagia === undefined) continue
+      const disponivel = c.personagem_id
+        ? (c.espacos_magia[alvo.nivelMagia]?.total ?? 0) - (c.espacos_magia[alvo.nivelMagia]?.usados ?? 0)
+        : c.slots_monstro?.[String(alvo.nivelMagia)] ?? 0
+      if (disponivel <= 0) {
+        return `Sem espaços de magia de ${alvo.nivelMagia}º nível disponíveis — escolha outro nível ou espere um descanso.`
+      }
+    }
+  }
+  return ''
+}
+
+export type EdicaoEstado = Omit<PayloadAcaoEstado, 'batalhaId'>
 
 // Canal Realtime — vive fora do state reativo (não precisa disparar renders)
 let canalAtual: RealtimeChannel | null = null
@@ -1129,7 +1158,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           id: crypto.randomUUID(),
           batalha_id: state0.batalhaId ?? '',
           dano_input: 0,
-          dano_tipo: 'cortante',
+          dano_tipo: null,
           dano_total: 0,
           cura_total: 0,
           reacao_usada: false,
@@ -1237,132 +1266,6 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         })
       },
 
-      aplicarDano: (id, dano, tipo, silencioso = false) => {
-        const state0 = get()
-        const c = state0.combatentes.find(x => x.id === id)
-        if (!c) return
-
-        const ordenados = [...state0.combatentes].sort((a, b) => a.ordem - b.ordem)
-        const ativos = ordenados.filter(x => !x.ausente && !x.morto)
-        const combatenteAtivo = ativos[state0.turnoAtual] || null
-        const nomeAtacante = combatenteAtivo?.nome || 'DM'
-
-        const { danoFinal, absorvidoTemporario, modificador } = calcularDano(dano, tipo, c)
-
-        const pvAntes = c.pv_atual
-        const novoPvTemp = c.pv_temporarios - absorvidoTemporario
-        const novoPv = Math.max(0, c.pv_atual - (danoFinal - absorvidoTemporario))
-
-        const caiu = pvAntes > 0 && novoPv === 0
-        const xpGanho = caiu && c.tipo === 'monstro' && c.dados_monstro?.xp ? c.dados_monstro.xp : 0
-
-        let descricao: string
-        if (danoFinal === 0 && tipo) {
-          descricao = `${c.nome} é IMUNE a ${tipo}`
-        } else {
-          descricao = `${nomeAtacante} causou ${danoFinal} de dano${tipo ? ` (${tipo})` : ''} em ${c.nome}`
-          if (modificador === MODIFICADOR_RESISTENCIA) descricao += ` (resistência: ${dano}→${danoFinal})`
-          else if (modificador === MODIFICADOR_VULNERABILIDADE) descricao += ` (vulnerabilidade: ${dano}→${danoFinal})`
-          if (novoPv <= 0 && pvAntes > 0) descricao += ` — ${c.nome} caiu! 💀`
-        }
-
-        const entradasLog: EntradaLog[] = []
-        if (caiu) {
-          entradasLog.push(novaEntradaLog(state0.rodadaAtual, state0.turnoAtual, {
-            tipo: 'morte', origem: 'Sistema', alvo: c.nome, valor: danoFinal, tipo_dano: tipo,
-            descricao: `${c.nome} caiu inconsciente!`,
-          }))
-        }
-        if (!silencioso) {
-          entradasLog.push(novaEntradaLog(state0.rodadaAtual, state0.turnoAtual, {
-            tipo: 'dano', origem: nomeAtacante, alvo: c.nome, valor: danoFinal, tipo_dano: tipo,
-            descricao,
-          }))
-        }
-
-        set(state => {
-          const comb = state.combatentes.find(x => x.id === id)
-          if (!comb) return
-          comb.pv_temporarios = novoPvTemp
-          comb.pv_atual = novoPv
-          comb.dano_total += danoFinal
-          comb.flash = 'dano'
-          if (caiu) comb.morto = false
-          if (xpGanho > 0) state.xpGanhoNaBatalha += xpGanho
-          entradasLog.forEach(e => state.log.push(e))
-        })
-
-        persistirCombatente(id, c)
-        entradasLog.forEach(persistirLog)
-        gravarFicha(id, CAMPOS_PV)
-
-        setTimeout(() => {
-          set(s => {
-            const comb = s.combatentes.find(x => x.id === id)
-            if (comb) comb.flash = null
-          })
-        }, 600)
-
-        return { danoFinal, morreu: caiu, modificador }
-      },
-
-      aplicarCura: (id, cura, silencioso = false) => {
-        const state0 = get()
-        const c = state0.combatentes.find(x => x.id === id)
-        if (!c) return
-
-        const ordenados = [...state0.combatentes].sort((a, b) => a.ordem - b.ordem)
-        const ativos = ordenados.filter(x => !x.ausente && !x.morto)
-        const nomeAtacante = ativos[state0.turnoAtual]?.nome || 'DM'
-
-        const { pvFinal: novoPv, curaEfetiva } = calcularCura(cura, c)
-        const novoCuraTotal = c.cura_total + cura
-
-        const entrada = !silencioso ? novaEntradaLog(state0.rodadaAtual, state0.turnoAtual, {
-          tipo: 'cura', origem: nomeAtacante, alvo: c.nome, valor: cura, tipo_dano: null,
-          descricao: `${nomeAtacante} curou ${cura} PV de ${c.nome}`,
-        }) : null
-
-        set(state => {
-          const comb = state.combatentes.find(x => x.id === id)
-          if (!comb) return
-          comb.pv_atual = novoPv
-          comb.cura_total = novoCuraTotal
-          comb.flash = 'cura'
-          if (entrada) state.log.push(entrada)
-        })
-
-        persistirCombatente(id, c)
-        if (entrada) persistirLog(entrada)
-        gravarFicha(id, CAMPOS_PV)
-
-        setTimeout(() => {
-          set(s => {
-            const comb = s.combatentes.find(x => x.id === id)
-            if (comb) comb.flash = null
-          })
-        }, 600)
-
-        return { curaEfetiva }
-      },
-
-      atualizarPV: (id, pvAtual) => {
-        mutarCombatente(id, c => { c.pv_atual = Math.max(0, Math.min(c.pv_maximo, pvAtual)) })
-        gravarFicha(id, CAMPOS_PV)
-      },
-
-      atualizarPVMax: (id, pvMax) => {
-        const pvAntes = get().combatentes.find(x => x.id === id)?.pv_atual
-        mutarCombatente(id, c => {
-          c.pv_maximo = pvMax
-          c.pv_atual = Math.min(c.pv_atual, pvMax)
-        })
-        // pv_atual só entra se o corte pelo novo máximo o alterou — senão a
-        // ficha ficaria com PV atual acima do máximo.
-        const cortou = get().combatentes.find(x => x.id === id)?.pv_atual !== pvAntes
-        gravarFicha(id, cortou ? ['pv_maximo', 'pv_atual'] : ['pv_maximo'])
-      },
-
       setarDanoInput: (id, valor) => set(state => {
         const c = state.combatentes.find(c => c.id === id)
         if (c) c.dano_input = valor
@@ -1372,54 +1275,6 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         const c = state.combatentes.find(c => c.id === id)
         if (c) c.dano_tipo = tipo
       }),
-
-      aplicarTodosDanos: () => {
-        const { combatentes, aplicarDano } = get()
-        combatentes.forEach(c => {
-          if (c.dano_input > 0 && !c.ausente && !c.morto) {
-            aplicarDano(c.id, c.dano_input, c.dano_tipo)
-            set(s => {
-              const comb = s.combatentes.find(x => x.id === c.id)
-              if (comb) comb.dano_input = 0
-            })
-          }
-        })
-      },
-
-      aplicarTodasCuras: () => {
-        const { combatentes, aplicarCura } = get()
-        combatentes.forEach(c => {
-          if (c.dano_input > 0 && !c.ausente && !(c.morto && c.tipo === 'monstro')) {
-            aplicarCura(c.id, c.dano_input)
-            set(s => {
-              const comb = s.combatentes.find(x => x.id === c.id)
-              if (comb) comb.dano_input = 0
-            })
-          }
-        })
-      },
-
-      zerarContadores: () => {
-        const state0 = get()
-        const ids = state0.combatentes.map(c => c.id)
-        const entrada = novaEntradaLog(state0.rodadaAtual, state0.turnoAtual, {
-          tipo: 'sistema', origem: 'DM', alvo: 'Todos', valor: null, tipo_dano: null,
-          descricao: 'Contadores zerados — PV restaurados ao máximo e mortos revividos',
-        })
-        set(state => {
-          state.combatentes.forEach(c => {
-            c.dano_total = 0
-            c.cura_total = 0
-            c.dano_input = 0
-            c.pv_atual = c.pv_maximo
-            c.morto = false
-          })
-          state.log.push(entrada)
-        })
-        ids.forEach(id => persistirCombatente(id))
-        ids.forEach(id => gravarFicha(id, ['pv_atual']))
-        persistirLog(entrada)
-      },
 
       adicionarEntradaLog: (entrada) => {
         const { rodadaAtual, turnoAtual } = get()
@@ -1464,24 +1319,6 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         })
         persistirCombatente(id, c)
         persistirLog(entrada)
-      },
-
-      usarEspaco: (id, nivel) => {
-        mutarCombatente(id, c => {
-          const { novosEspacos, ok } = consumirEspaco(c.espacos_magia, nivel)
-          if (ok) c.espacos_magia = novosEspacos
-        })
-        gravarFicha(id, ['slots_magia'])
-      },
-
-      // Substitui o objeto do nível em vez de mutar: espacos_magia pode ser a
-      // mesma referência guardada em personagensDaBatalha.
-      recuperarEspaco: (id, nivel) => {
-        mutarCombatente(id, c => {
-          const espaco = c.espacos_magia[nivel]
-          if (espaco && espaco.usados > 0) c.espacos_magia = { ...c.espacos_magia, [nivel]: { ...espaco, usados: espaco.usados - 1 } }
-        })
-        gravarFicha(id, ['slots_magia'])
       },
 
       proximoTurno: () => {
@@ -1673,13 +1510,14 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       // restaura apenas os campos tocados (para o caso de a API recusar).
       aplicarPreviaAcao: (previa) => {
         const state0 = get()
-        const tocados = new Set([previa.atorId, ...previa.alvos.map(a => a.combatenteId)])
+        const tocados = new Set([...(previa.atorId ? [previa.atorId] : []), ...previa.alvos.map(a => a.combatenteId)])
         const anteriores = state0.combatentes
           .filter(c => tocados.has(c.id))
           .map(c => ({
             id: c.id,
             pv_atual: c.pv_atual,
             pv_temporarios: c.pv_temporarios,
+            pv_maximo: c.pv_maximo,
             dano_total: c.dano_total,
             cura_total: c.cura_total,
             morto: c.morto,
@@ -1698,26 +1536,62 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         set(s => {
           for (const alvo of previa.alvos) {
             const c = s.combatentes.find(x => x.id === alvo.combatenteId)
-            if (!c || !(alvo.valor > 0)) continue
-            if (previa.efeito === 'cura') {
-              c.pv_atual = calcularCura(alvo.valor, c).pvFinal
-              c.cura_total += alvo.valor
-              c.flash = 'cura'
-            } else {
-              const { danoFinal, absorvidoTemporario } = calcularDano(alvo.valor, alvo.tipoDano, c)
-              const pvAntes = c.pv_atual
-              c.pv_temporarios -= absorvidoTemporario
-              c.pv_atual = Math.max(0, pvAntes - (danoFinal - absorvidoTemporario))
-              c.dano_total += danoFinal
-              c.flash = 'dano'
-              if (pvAntes > 0 && c.pv_atual === 0) {
-                c.morto = false
-                if (c.tipo === 'monstro' && c.dados_monstro?.xp) s.xpGanhoNaBatalha += c.dados_monstro.xp
+            if (!c) continue
+            const valor = alvo.valor ?? 0
+            switch (previa.efeito) {
+              case 'cura': {
+                if (!(valor > 0)) break
+                c.pv_atual = calcularCura(valor, c).pvFinal
+                c.cura_total += valor
+                c.flash = 'cura'
+                break
               }
+              case 'dano': {
+                if (!(valor > 0)) break
+                const { danoFinal, absorvidoTemporario } = calcularDano(valor, alvo.tipoDano ?? null, c)
+                const pvAntes = c.pv_atual
+                c.pv_temporarios -= absorvidoTemporario
+                c.pv_atual = Math.max(0, pvAntes - (danoFinal - absorvidoTemporario))
+                c.dano_total += danoFinal
+                c.flash = 'dano'
+                if (pvAntes > 0 && c.pv_atual === 0) {
+                  c.morto = false
+                  if (c.tipo === 'monstro' && c.dados_monstro?.xp) s.xpGanhoNaBatalha += c.dados_monstro.xp
+                }
+                break
+              }
+              case 'ajustar_pv':
+                c.pv_atual = Math.max(0, Math.min(c.pv_maximo, valor))
+                break
+              case 'definir_pv_maximo':
+                if (!(valor > 0)) break
+                c.pv_maximo = valor
+                c.pv_atual = Math.min(c.pv_atual, valor)
+                break
+              case 'definir_espacos': {
+                const nivel = alvo.nivelMagia
+                if (nivel === undefined) break
+                const nivelStr = String(nivel)
+                if (c.personagem_id) {
+                  const espaco = c.espacos_magia[nivel]
+                  if (alvo.usar) c.espacos_magia = consumirEspaco(c.espacos_magia, nivel).novosEspacos
+                  else if (espaco) c.espacos_magia = { ...c.espacos_magia, [nivel]: { ...espaco, usados: Math.max(0, espaco.usados - 1) } }
+                } else {
+                  const slots = c.slots_monstro ?? {}
+                  c.slots_monstro = { ...slots, [nivelStr]: (slots[nivelStr] ?? 0) + (alvo.usar ? -1 : 1) }
+                }
+                break
+              }
+              case 'zerar':
+                c.dano_total = 0
+                c.cura_total = 0
+                c.pv_atual = c.pv_maximo
+                c.morto = false
+                break
             }
           }
 
-          const ator = s.combatentes.find(x => x.id === previa.atorId)
+          const ator = previa.atorId ? s.combatentes.find(x => x.id === previa.atorId) : undefined
           if (ator) {
             if (previa.nivelMagia !== undefined) {
               if (ator.personagem_id) {
@@ -1740,6 +1614,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
               ...s.personagensDaBatalha[c.personagem_id],
               pv_atual: c.pv_atual,
               pv_temporarios: c.pv_temporarios,
+              pv_maximo: c.pv_maximo,
               slots_magia: c.espacos_magia as Record<string, { total: number; usados: number }>,
             }
           }
@@ -1764,6 +1639,50 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             s.xpGanhoNaBatalha = xpAnterior
           })
         }
+      },
+
+      // Edição de estado pelo mestre: prévia na tela, gravação pela API,
+      // reversão com toast se ela recusar. Sem batalha no banco (combate em
+      // preparação) não há onde gravar: monstros e NPCs ficam só na tela,
+      // como sempre ficaram até o início; combatente com ficha é recusado,
+      // porque a mudança iria para a ficha sem passar pela API.
+      editarEstado: (edicao) => {
+        const state0 = get()
+        const recusa = recusaEdicaoLocal(edicao, state0.combatentes)
+        if (recusa) { toast.error(recusa); return }
+
+        const previa: PreviaAcao = {
+          efeito: EFEITO_PREVIA[edicao.tipo],
+          alvos: edicao.alvos.map(a => ({
+            combatenteId: a.combatenteId,
+            valor: edicao.tipo === 'definir_pv_maximo' ? a.pvMaximo : a.valor,
+            tipoDano: edicao.tipoDano,
+            nivelMagia: a.nivelMagia,
+            usar: a.usar,
+          })),
+        }
+        // Zerar sem alvos = a batalha inteira, igual à API.
+        if (edicao.tipo === 'zerar_contadores' && edicao.alvos.length === 0) {
+          previa.alvos = state0.combatentes.map(c => ({ combatenteId: c.id }))
+        }
+
+        if (!state0.batalhaId) {
+          const comFicha = previa.alvos.some(a => state0.combatentes.find(c => c.id === a.combatenteId)?.personagem_id)
+          if (comFicha) {
+            toast.error('Inicie a batalha para alterar PV ou espaços de personagens com ficha')
+            return
+          }
+          get().aplicarPreviaAcao(previa)
+          return
+        }
+
+        const reverter = get().aplicarPreviaAcao(previa)
+        const batalhaId = state0.batalhaId
+        void chamarAcaoApi({ ...edicao, batalhaId }).then(resultado => {
+          if (resultado.ok) return
+          reverter()
+          toast.error(resultado.erro ?? 'Erro ao salvar a alteração')
+        })
       },
 
       usarInspiracao: (id) => {

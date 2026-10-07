@@ -62,7 +62,7 @@ export interface Combatente {
   efeitos_ativos: { nome: string; rodada_inicio: number }[]
   // estado local (não salvo)
   dano_input: number
-  dano_tipo: TipoDano
+  dano_tipo: TipoDano | null
   dano_total: number
   cura_total: number
   flash?: 'dano' | 'cura' | null

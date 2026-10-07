@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import { calcularDano, aplicarCura } from '@/lib/batalha/motor'
-import { normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
+import { calcularDano, aplicarCura, consumirEspaco } from '@/lib/batalha/motor'
+import { normalizarTipoDano, MODIFICADOR_RESISTENCIA, MODIFICADOR_VULNERABILIDADE } from '@/lib/dados-dnd/tipos-dano'
 import { ehPactoArcano } from '@/lib/dados-dnd/espacos-magia'
 import type { TipoDano } from '@/types/dnd'
-import type { TipoCondicao, TipoEntradaLog } from '@/types/batalha'
+import type { TipoCondicao, TipoEntradaLog, EspacosMagiaBatalha } from '@/types/batalha'
 
 // Mesmo agrupamento de src/components/batalha/TabelaCombate.tsx (GRUPOS_ACAO /
 // TIPOS_MAGIA_SLOTS / TIPOS_CURA_ACAO) — duplicado aqui porque aquele arquivo
@@ -106,6 +106,34 @@ interface AcaoInventarioPayload {
   itens?: ItemDistribuido[]
 }
 
+// Edição de estado sem ator — o mestre acertando um número, não narrando uma
+// ação. Cada tipo é nomeado e tem validação própria: NÃO existe patch
+// genérico de campos aqui, de propósito (ver tratarAcaoEstado).
+type TipoAcaoEstado =
+  | 'dano_ambiente' | 'cura_ambiente' | 'ajustar_pv'
+  | 'definir_pv_maximo' | 'definir_espacos' | 'zerar_contadores'
+
+interface AlvoEstadoPayload {
+  combatenteId: string
+  valor?: number
+  pvTemporarios?: number
+  pvMaximo?: number
+  nivelMagia?: number
+  usar?: boolean
+}
+
+interface AcaoEstadoPayload {
+  batalhaId: string
+  tipo: TipoAcaoEstado
+  alvos: AlvoEstadoPayload[]
+  tipoDano?: TipoDano
+  motivo?: string
+}
+
+const TIPOS_ESTADO = new Set<string>([
+  'dano_ambiente', 'cura_ambiente', 'ajustar_pv', 'definir_pv_maximo', 'definir_espacos', 'zerar_contadores',
+])
+
 const TIPOS_INVENTARIO = new Set<string>([
   'usar_item', 'equipar_item', 'descartar_item', 'adicionar_item', 'definir_item',
   'transferir_item', 'transferir_moeda', 'ajuste_ouro', 'distribuir', 'conceder_inspiracao',
@@ -124,6 +152,9 @@ type PayloadBruto =
   Omit<Partial<AcaoSessaoPayload>, 'tipo'> &
   Omit<Partial<AcaoInventarioPayload>, 'tipo'> &
   { tipo?: string }
+
+// Edição de estado tem alvos com outro formato — fora da interseção acima.
+type PayloadBrutoEstado = Omit<PayloadBruto, 'alvos'> & { alvos?: AlvoEstadoPayload[] }
 
 export async function POST(req: NextRequest) {
   const payload = (await req.json()) as PayloadBruto
@@ -147,6 +178,9 @@ export async function POST(req: NextRequest) {
   // que o ModalOuro manda. Removido para não repetir esse bug.
   if (tipoRecebido && TIPOS_INVENTARIO.has(tipoRecebido)) {
     return tratarAcaoInventario(payload as AcaoInventarioPayload, user.id, admin)
+  }
+  if (tipoRecebido && TIPOS_ESTADO.has(tipoRecebido)) {
+    return tratarAcaoEstado(payload as PayloadBrutoEstado as Partial<AcaoEstadoPayload>, user.id, admin)
   }
   if (payload.batalhaId) {
     return tratarAcaoBatalha(payload as AcaoBatalhaPayload, user.id, admin)
@@ -483,6 +517,358 @@ async function tratarAcaoBatalha(
     combatentesAfetados: resultados,
     xpGanho,
     log: logInserido?.find(l => !l.resumo) ?? null,
+  })
+}
+
+// =============================================================================
+// Edição de estado — sem ator, só o mestre. Cada tipo é uma regra nomeada:
+// nada de aceitar um objeto de campos e gravar o que vier, senão qualquer
+// cliente passaria a escrever qualquer coluna de batalha_combatentes e de
+// personagens. Sem validação de turno: corrigir um número não é ação de turno.
+// =============================================================================
+
+const ORIGEM_AJUSTE = 'DM (ajuste)'
+
+const ehInteiro = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v)
+
+// O que uma edição faz num combatente: patch da linha da batalha (espelho) e
+// patch da ficha só com os campos que a edição mudou — nunca os quatro.
+interface EfeitoEstado {
+  combatente: Record<string, unknown>
+  linha: Record<string, unknown>
+  ficha: Record<string, unknown>
+  descricao: string
+  valor: number
+  morreu: boolean
+}
+
+async function tratarAcaoEstado(
+  payload: Partial<AcaoEstadoPayload>,
+  userId: string,
+  admin: ReturnType<typeof createAdminClient>
+) {
+  const { batalhaId, tipo, alvos } = payload
+  if (!batalhaId || !tipo || !Array.isArray(alvos)) {
+    return Response.json({ erro: 'Payload inválido' }, { status: 400 })
+  }
+
+  const { data: batalha } = await admin.from('batalhas').select('*').eq('id', batalhaId).maybeSingle()
+  if (!batalha) return Response.json({ erro: 'Batalha não encontrada' }, { status: 403 })
+
+  const { data: campanha } = await admin.from('campanhas').select('dm_id').eq('id', batalha.campanha_id).maybeSingle()
+  if (!campanha || campanha.dm_id !== userId) {
+    return Response.json({ erro: 'Só o mestre pode editar o estado dos combatentes' }, { status: 403 })
+  }
+
+  // Pausada continua editável: o mestre acerta números com o jogo parado.
+  if (batalha.status === 'encerrada') {
+    return Response.json({ erro: 'Esta batalha já foi encerrada.' }, { status: 403 })
+  }
+
+  // Zerar sem alvos = a batalha inteira. Os demais tipos exigem alvo.
+  const todaBatalha = tipo === 'zerar_contadores' && alvos.length === 0
+  if (!todaBatalha && alvos.length === 0) {
+    return Response.json({ erro: 'Selecione ao menos um alvo' }, { status: 400 })
+  }
+  const alvoIds = alvos.map(a => a?.combatenteId)
+  if (alvoIds.some(id => typeof id !== 'string' || !id) || new Set(alvoIds).size !== alvoIds.length) {
+    return Response.json({ erro: 'Alvos inválidos ou repetidos' }, { status: 400 })
+  }
+
+  let consulta = admin.from('batalha_combatentes').select('*').eq('batalha_id', batalhaId)
+  if (!todaBatalha) consulta = consulta.in('id', alvoIds)
+  const { data: linhas, error: erroLinhas } = await consulta
+  if (erroLinhas || !linhas) {
+    console.error('Erro ao ler combatentes:', erroLinhas)
+    return Response.json({ erro: 'Não foi possível ler os combatentes — tente de novo' }, { status: 500 })
+  }
+  if (!todaBatalha && linhas.length !== alvoIds.length) {
+    return Response.json({ erro: 'Um ou mais alvos não pertencem a esta batalha' }, { status: 403 })
+  }
+
+  // Combatente com ficha: PV e espaços vêm de personagens, lidos agora. É
+  // por isso que este caminho não precisa da guarda do store — não existe
+  // cópia velha para empurrar de volta à ficha.
+  const personagemIds = [...new Set(linhas.map(c => c.personagem_id as string | null).filter((id): id is string => !!id))]
+  const mapaFichas = new Map<string, Record<string, unknown>>()
+  if (personagemIds.length > 0) {
+    const { data: fichas, error: erroFichas } = await admin
+      .from('personagens')
+      .select('id, pv_atual, pv_temporarios, pv_maximo, slots_magia')
+      .in('id', personagemIds)
+    if (erroFichas || !fichas || fichas.length !== personagemIds.length) {
+      console.error('Erro ao ler fichas dos alvos:', erroFichas)
+      return Response.json({ erro: 'Não foi possível ler a ficha dos alvos — tente de novo' }, { status: 500 })
+    }
+    fichas.forEach(f => mapaFichas.set(f.id as string, f))
+  }
+
+  // definir_pv_maximo é justamente o conserto de uma ficha com PV máximo
+  // quebrado; definir_espacos não depende dele. Os demais usam o máximo
+  // como teto e recusam ficha inválida, como o caminho de ator.
+  if (tipo !== 'definir_pv_maximo' && tipo !== 'definir_espacos') {
+    const quebrado = linhas.find(c => {
+      const pvMax = c.personagem_id ? mapaFichas.get(c.personagem_id as string)?.pv_maximo : c.pv_maximo
+      return !(typeof pvMax === 'number' && pvMax > 0)
+    })
+    if (quebrado) {
+      console.error('Combatente com PV máximo inválido:', quebrado.id)
+      return Response.json({ erro: `PV máximo inválido em ${quebrado.nome as string} — corrija o PV máximo antes` }, { status: 500 })
+    }
+  }
+
+  const combatentes = new Map(linhas.map(c => {
+    const ficha = c.personagem_id ? mapaFichas.get(c.personagem_id as string) : undefined
+    const mesclado = ficha
+      ? { ...c, pv_atual: ficha.pv_atual ?? 0, pv_temporarios: ficha.pv_temporarios ?? 0, pv_maximo: ficha.pv_maximo, slots_magia: ficha.slots_magia ?? {} }
+      : c
+    return [c.id as string, mesclado as Record<string, unknown>]
+  }))
+
+  const alvosResolvidos: { alvo: AlvoEstadoPayload; c: Record<string, unknown> }[] = todaBatalha
+    ? [...combatentes.values()].map(c => ({ alvo: { combatenteId: c.id as string }, c }))
+    : alvos.map(alvo => ({ alvo, c: combatentes.get(alvo.combatenteId)! }))
+
+  // =========================================================================
+  // Validação e cálculo — nada é gravado até todos os alvos passarem.
+  // =========================================================================
+
+  const efeitos: EfeitoEstado[] = []
+  let xpGanho = 0
+  const tipoDano = tipo === 'dano_ambiente' ? normalizarTipoDano(payload.tipoDano) : null
+
+  if (tipo === 'dano_ambiente' && !tipoDano) {
+    return Response.json({ erro: 'Escolha o tipo de dano — dano sem tipo não é aplicado' }, { status: 400 })
+  }
+
+  for (const { alvo, c } of alvosResolvidos) {
+    const nome = c.nome as string
+    const pvAtual = c.pv_atual as number
+    const pvTemp = c.pv_temporarios as number
+    const pvMax = c.pv_maximo as number
+
+    switch (tipo) {
+      case 'dano_ambiente': {
+        if (!ehInteiro(alvo.valor) || alvo.valor <= 0) {
+          return Response.json({ erro: `Valor de dano inválido para ${nome}` }, { status: 400 })
+        }
+        const { danoFinal, absorvidoTemporario, modificador } = calcularDano(alvo.valor, tipoDano, c as {
+          pv_temporarios: number; resistencias: TipoDano[]; imunidades: TipoDano[]; vulnerabilidades: TipoDano[]
+        })
+        const novoPvTemp = pvTemp - absorvidoTemporario
+        const novoPv = Math.max(0, pvAtual - (danoFinal - absorvidoTemporario))
+        const morreu = pvAtual > 0 && novoPv === 0
+        const ficha: Record<string, unknown> = {}
+        if (novoPv !== pvAtual) ficha.pv_atual = novoPv
+        if (novoPvTemp !== pvTemp) ficha.pv_temporarios = novoPvTemp
+        let descricao = `${nome}: ${danoFinal}`
+        if (modificador === MODIFICADOR_RESISTENCIA) descricao += ` (resistência: ${alvo.valor}→${danoFinal})`
+        else if (modificador === MODIFICADOR_VULNERABILIDADE) descricao += ` (vulnerabilidade: ${alvo.valor}→${danoFinal})`
+        else if (danoFinal === 0) descricao += ' (imune)'
+        if (morreu) descricao += ' — caiu! 💀'
+        efeitos.push({
+          combatente: c,
+          linha: {
+            pv_atual: novoPv,
+            pv_temporarios: novoPvTemp,
+            dano_total: (c.dano_total as number) + danoFinal,
+            ...(morreu ? { morto: false } : {}),
+          },
+          ficha,
+          descricao,
+          valor: danoFinal,
+          morreu,
+        })
+        if (morreu && c.tipo === 'monstro') {
+          const dadosMonstro = c.dados_monstro as { xp?: number } | null
+          if (dadosMonstro?.xp) xpGanho += dadosMonstro.xp
+        }
+        break
+      }
+
+      case 'cura_ambiente': {
+        if (!ehInteiro(alvo.valor) || alvo.valor <= 0) {
+          return Response.json({ erro: `Valor de cura inválido para ${nome}` }, { status: 400 })
+        }
+        const { pvFinal, curaEfetiva } = aplicarCura(alvo.valor, { pv_atual: pvAtual, pv_maximo: pvMax })
+        efeitos.push({
+          combatente: c,
+          linha: { pv_atual: pvFinal, cura_total: (c.cura_total as number) + alvo.valor },
+          ficha: pvFinal !== pvAtual ? { pv_atual: pvFinal } : {},
+          descricao: `${nome}: +${curaEfetiva}${curaEfetiva < alvo.valor ? ` (de ${alvo.valor}, no máximo)` : ''}`,
+          valor: alvo.valor,
+          morreu: false,
+        })
+        break
+      }
+
+      // Correção, não dano: valor absoluto, sem resistência, sem contadores.
+      case 'ajustar_pv': {
+        const temPv = alvo.valor !== undefined
+        const temTemp = alvo.pvTemporarios !== undefined
+        if (!temPv && !temTemp) {
+          return Response.json({ erro: `Informe o PV de ${nome}` }, { status: 400 })
+        }
+        if ((temPv && !ehInteiro(alvo.valor)) || (temTemp && (!ehInteiro(alvo.pvTemporarios) || alvo.pvTemporarios < 0))) {
+          return Response.json({ erro: `Valor de PV inválido para ${nome}` }, { status: 400 })
+        }
+        const linha: Record<string, unknown> = {}
+        const partes: string[] = []
+        if (temPv) {
+          const novoPv = Math.max(0, Math.min(pvMax, alvo.valor as number))
+          linha.pv_atual = novoPv
+          partes.push(`PV ${pvAtual} → ${novoPv}`)
+        }
+        if (temTemp) {
+          linha.pv_temporarios = alvo.pvTemporarios
+          partes.push(`PV temp. ${pvTemp} → ${alvo.pvTemporarios}`)
+        }
+        const ficha: Record<string, unknown> = {}
+        if (temPv && linha.pv_atual !== pvAtual) ficha.pv_atual = linha.pv_atual
+        if (temTemp && linha.pv_temporarios !== pvTemp) ficha.pv_temporarios = linha.pv_temporarios
+        efeitos.push({ combatente: c, linha, ficha, descricao: `${nome}: ${partes.join(', ')}`, valor: 0, morreu: false })
+        break
+      }
+
+      // Máximo abaixo do atual corta o atual — os dois no mesmo update, para
+      // a ficha nunca ficar com atual acima do máximo.
+      case 'definir_pv_maximo': {
+        if (!ehInteiro(alvo.pvMaximo) || alvo.pvMaximo <= 0) {
+          return Response.json({ erro: `PV máximo inválido para ${nome}` }, { status: 400 })
+        }
+        const novoMax = alvo.pvMaximo
+        const novoAtual = Math.min(pvAtual, novoMax)
+        const linha: Record<string, unknown> = { pv_maximo: novoMax }
+        const ficha: Record<string, unknown> = {}
+        if (novoMax !== pvMax) ficha.pv_maximo = novoMax
+        let descricao = `${nome}: PV máximo ${pvMax} → ${novoMax}`
+        if (novoAtual !== pvAtual) {
+          linha.pv_atual = novoAtual
+          ficha.pv_atual = novoAtual
+          descricao += ` (PV atual ${pvAtual} → ${novoAtual})`
+        }
+        efeitos.push({ combatente: c, linha, ficha, descricao, valor: 0, morreu: false })
+        break
+      }
+
+      case 'definir_espacos': {
+        const nivel = alvo.nivelMagia
+        if (!ehInteiro(nivel) || nivel < 1 || nivel > 9 || typeof alvo.usar !== 'boolean') {
+          return Response.json({ erro: `Nível de espaço inválido para ${nome}` }, { status: 400 })
+        }
+        const semEspaco = `Sem espaços de magia de ${nivel}º nível disponíveis — escolha outro nível ou espere um descanso.`
+        const nivelStr = String(nivel)
+        const verbo = alvo.usar ? 'gastou' : 'recuperou'
+        const descricao = `${nome}: ${verbo} 1 espaço de ${nivel}º nível`
+
+        if (c.personagem_id) {
+          const slots = (c.slots_magia ?? {}) as SlotsMagiaDb
+          let novos: SlotsMagiaDb
+          if (alvo.usar) {
+            const { novosEspacos, ok } = consumirEspaco(slots as EspacosMagiaBatalha, nivel)
+            if (!ok) return Response.json({ erro: semEspaco }, { status: 403 })
+            novos = novosEspacos as SlotsMagiaDb
+          } else {
+            const slot = slots[nivelStr]
+            if (!slot) return Response.json({ erro: `${nome} não tem espaços de ${nivel}º nível` }, { status: 400 })
+            novos = { ...slots, [nivelStr]: { ...slot, usados: Math.max(0, slot.usados - 1) } }
+          }
+          efeitos.push({ combatente: c, linha: { espacos_magia: novos }, ficha: { slots_magia: novos }, descricao, valor: 0, morreu: false })
+        } else {
+          const slots = (c.slots_monstro ?? {}) as Record<string, number>
+          const qtd = slots[nivelStr] ?? 0
+          if (alvo.usar && qtd <= 0) return Response.json({ erro: semEspaco }, { status: 403 })
+          const novos = { ...slots, [nivelStr]: alvo.usar ? qtd - 1 : qtd + 1 }
+          efeitos.push({ combatente: c, linha: { slots_monstro: novos }, ficha: {}, descricao, valor: 0, morreu: false })
+        }
+        break
+      }
+
+      // PV ao máximo, contadores zerados, morto desmarcado. Espaços de magia
+      // e PV temporários ficam como estão.
+      case 'zerar_contadores': {
+        efeitos.push({
+          combatente: c,
+          linha: { dano_total: 0, cura_total: 0, pv_atual: pvMax, morto: false },
+          ficha: pvAtual !== pvMax ? { pv_atual: pvMax } : {},
+          descricao: nome,
+          valor: 0,
+          morreu: false,
+        })
+        break
+      }
+
+      default:
+        return Response.json({ erro: 'Tipo de edição inválido' }, { status: 400 })
+    }
+  }
+
+  // =========================================================================
+  // Gravação — ficha primeiro (fonte da verdade), depois o espelho na linha
+  // da batalha, que as telas dos jogadores leem quando a ficha não chega.
+  // =========================================================================
+
+  for (const { combatente, linha, ficha } of efeitos) {
+    if (combatente.personagem_id && Object.keys(ficha).length > 0) {
+      const { error } = await admin.from('personagens').update(ficha).eq('id', combatente.personagem_id as string)
+      if (error) {
+        console.error('Erro ao gravar ficha (edição de estado):', error)
+        return Response.json({ erro: `Erro ao salvar a ficha de ${combatente.nome as string}` }, { status: 500 })
+      }
+    }
+    const { error } = await admin.from('batalha_combatentes').update(linha).eq('id', combatente.id as string)
+    if (error) {
+      console.error('Erro ao gravar combatente (edição de estado):', error)
+      return Response.json({ erro: `Erro ao salvar ${combatente.nome as string}` }, { status: 500 })
+    }
+  }
+
+  // Uma entrada por ação, mesmo em lote. Dano e cura entram como 'dano'/
+  // 'cura' (contam no diário, atribuídos ao ajuste do mestre); correções
+  // entram como 'sistema'.
+  const rotulos: Record<TipoAcaoEstado, string> = {
+    dano_ambiente: `💥 Dano (${tipoDano})`,
+    cura_ambiente: '💚 Cura',
+    ajustar_pv: '✏️ PV ajustado',
+    definir_pv_maximo: '✏️ PV máximo',
+    definir_espacos: '✨ Espaço de magia',
+    zerar_contadores: '🔄 Contadores zerados — PV ao máximo e mortos revividos',
+  }
+  const descricaoFinal = [
+    rotulos[tipo],
+    `— ${efeitos.map(e => e.descricao).join(', ')}`,
+    payload.motivo?.trim() ? `(${payload.motivo.trim()})` : '',
+  ].filter(Boolean).join(' ')
+  const tipoLog: TipoEntradaLog = tipo === 'dano_ambiente' ? 'dano' : tipo === 'cura_ambiente' ? 'cura' : 'sistema'
+  const somaValores = tipoLog === 'sistema' ? null : efeitos.reduce((soma, e) => soma + e.valor, 0)
+
+  const { data: logInserido, error: erroLog } = await admin
+    .from('batalha_log')
+    .insert({
+      batalha_id: batalhaId,
+      rodada: batalha.rodada_atual,
+      turno: null,
+      tipo: tipoLog,
+      autor_id: null,
+      autor_nome: ORIGEM_AJUSTE,
+      alvo_id: efeitos.length === 1 ? efeitos[0].combatente.id : null,
+      alvo_nome: todaBatalha ? 'Todos' : efeitos.map(e => e.combatente.nome as string).join(', '),
+      valor: somaValores,
+      tipo_dano: tipoDano,
+      descricao: descricaoFinal,
+      resumo: false,
+    })
+    .select()
+    .maybeSingle()
+  if (erroLog) {
+    console.error('Erro ao gravar log da edição de estado (efeito já aplicado):', erroLog)
+  }
+
+  return Response.json({
+    ok: true,
+    combatentesAfetados: efeitos.map(e => ({ id: e.combatente.id, nome: e.combatente.nome, valor: e.valor, morreu: e.morreu })),
+    xpGanho,
+    log: logInserido ?? null,
   })
 }
 
