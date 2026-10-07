@@ -12,7 +12,7 @@ import type { Combatente, TipoCondicao, DadosMonstroSimples } from '@/types/bata
 import { BarraVida } from './BarraVida'
 import { BotaoEspacosMagia } from './EspacosMagia'
 import { PopupCondicao } from './PopupCondicao'
-import { SeletorTipoDano } from './SeletorTipoDano'
+import { SeletorTipoDano, BotaoTipoDano } from './SeletorTipoDano'
 import { TooltipCombatente } from './TooltipCombatente'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -282,8 +282,8 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
       </td>
 
       {/* PV */}
-      <td className="px-2 py-1 min-w-28">
-        <div className="flex items-center gap-1">
+      <td className="px-2 py-1 w-24">
+        <div className="flex items-center gap-1 whitespace-nowrap">
           {editandoPV ? (
             <input
               type="number"
@@ -342,16 +342,11 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
             </button>
           )}
         </div>
-        <BarraVida atual={c.pv_atual} maximo={c.pv_maximo} temporarios={c.pv_temporarios} className="mt-0.5" />
+        <BarraVida atual={c.pv_atual} maximo={c.pv_maximo} temporarios={c.pv_temporarios} className="mt-0.5" fina />
       </td>
 
-      {/* Tipo de Dano */}
-      <td className="px-1 py-1 w-24">
-        <SeletorTipoDano valor={c.dano_tipo} onChange={(t) => setarTipoDano(c.id, t)} />
-      </td>
-
-      {/* Ajuste manual de PV */}
-      <td className="px-1 py-1 w-28">
+      {/* Ajuste manual de PV — valor e tipo são a entrada do lote (Danos/Cura da barra) */}
+      <td className="px-1 py-1 w-32">
         <div className="text-[8px] text-[var(--text3)] font-cinzel leading-none mb-0.5 opacity-50">ajuste</div>
         <div className="flex items-center gap-0.5">
           <input
@@ -367,6 +362,7 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
             placeholder="0"
             className="w-10 input-dd text-center text-xs opacity-80"
           />
+          <BotaoTipoDano valor={c.dano_tipo} onChange={(t) => setarTipoDano(c.id, t)} />
           <button
             onClick={() => {
               const v = parseInt(valorAcao)
