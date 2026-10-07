@@ -437,12 +437,6 @@ export interface InventarioItemDb {
   criado_em?: string
 }
 
-export interface EspacoMagia {
-  nivel: number
-  total: number
-  utilizados: number
-}
-
 export type ClasseConjuradora =
   | 'Bardo' | 'Clérigo' | 'Druida' | 'Feiticeiro'
   | 'Mago' | 'Paladino' | 'Patrulheiro' | 'Bruxo'

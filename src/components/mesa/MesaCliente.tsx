@@ -2033,7 +2033,7 @@ function CartaoPersonagemSessao({
         )}
       </div>
 
-      {Object.keys(personagem.slots_magia ?? {}).length > 0 && (
+      {Object.values(personagem.slots_magia ?? {}).some(e => e.total > 0) && (
         <div className="flex-shrink-0">
           <EspacosMagiaSessao
             slotsMagia={personagem.slots_magia}

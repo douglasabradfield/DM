@@ -56,7 +56,6 @@ export default async function PaginaConviteToken({
           <AceitarConviteEfetivo
             token={token}
             autenticado={!!user}
-            campanhaId={convite.campanha_id}
           />
         </div>
       </div>

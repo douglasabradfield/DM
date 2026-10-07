@@ -9,10 +9,9 @@ import Link from 'next/link'
 interface Props {
   token: string
   autenticado: boolean
-  campanhaId: string
 }
 
-export function AceitarConviteEfetivo({ token, autenticado, campanhaId }: Props) {
+export function AceitarConviteEfetivo({ token, autenticado }: Props) {
   const router = useRouter()
   const [aceitando, setAceitando] = useState(false)
 
@@ -33,12 +32,6 @@ export function AceitarConviteEfetivo({ token, autenticado, campanhaId }: Props)
         .eq('token_convite', token)
 
       if (error) { toast.error('Erro ao aceitar convite'); return }
-
-      // Sincronizar com campaign_members para que o sistema de roles funcione
-      await supabase.from('campaign_members').upsert(
-        { campanha_id: campanhaId, user_id: user.id, papel: 'jogador' },
-        { onConflict: 'campanha_id,user_id' }
-      )
 
       toast.success('Bem-vindo à campanha! ⚔️')
       router.push('/personagens')
