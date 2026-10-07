@@ -3,10 +3,14 @@ import { getClaudeClient, MODELO_CLAUDE } from '@/lib/claude/client'
 import { buildSystemPrompt } from '@/lib/claude/prompts'
 import { createClient } from '@/lib/supabase/server'
 import { LIMITES_IA, getLimiteIA } from '@/lib/ia/limites'
+import { ASSISTENTE_IA_ATIVO } from '@/lib/planos'
 
 export { LIMITES_IA }
 
 export async function POST(req: NextRequest) {
+  // Trava no servidor: esconder o link não impede o gasto da chave.
+  if (!ASSISTENTE_IA_ATIVO) return new Response('Não encontrado', { status: 404 })
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return new Response('Não autenticado', { status: 401 })

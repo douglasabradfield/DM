@@ -8,7 +8,8 @@ import { useBatalha } from '@/store/batalha'
 import { useCampanha } from '@/store/campanha'
 import { createClient } from '@/lib/supabase/client'
 import { getLimiteIA } from '@/lib/ia/limites'
-import { MODO_MESA_LIVRE } from '@/lib/planos'
+import { MODO_MESA_LIVRE, ASSISTENTE_IA_ATIVO } from '@/lib/planos'
+import { redirect } from 'next/navigation'
 import { AvisoDesktop } from '@/components/ui/AvisoDesktop'
 import { Bot, Send, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -23,6 +24,8 @@ interface Mensagem {
 // Assistente do mestre — fica atrás do aviso abaixo de md junto com as
 // outras ferramentas de mestre desta fase.
 export default function IAPage() {
+  // Aba desligada: quem tiver o endereço salvo volta para o painel.
+  if (!ASSISTENTE_IA_ATIVO) redirect('/batalha')
   return (
     <AvisoDesktop>
       <IAPageConteudo />

@@ -1,6 +1,10 @@
 // Desativa todas as travas de plano. Voltar a comercializar = false.
 export const MODO_MESA_LIVRE = true
 
+// Aba do Assistente IA (/ia e /api/ia/chat). Desligada: o chat não tem acesso
+// a regras nem livros e só consumia a chave da API. Religar = true.
+export const ASSISTENTE_IA_ATIVO = false
+
 export type PlanoId = 'free' | 'heroi' | 'solo' | 'mesa_pro' | 'guild_master' | 'dm_supremo'
 
 export interface LimitesPlano {

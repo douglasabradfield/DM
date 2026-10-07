@@ -4,6 +4,7 @@ import { BannerBatalhaAtiva } from '@/components/batalha/BannerBatalhaAtiva'
 import { FaixaOffline } from '@/components/layout/FaixaOffline'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { ASSISTENTE_IA_ATIVO } from '@/lib/planos'
 
 const titulos: Record<string, string> = {
   '/batalha': 'Tracker de Batalha',
@@ -13,7 +14,7 @@ const titulos: Record<string, string> = {
   '/itens': 'Itens & Armas',
   '/aventura': 'Aventura',
   '/diario': 'Diário de Campanha',
-  '/ia': 'Assistente IA',
+  ...(ASSISTENTE_IA_ATIVO ? { '/ia': 'Assistente IA' } : {}),
   '/configuracoes': 'Configurações',
 }
 

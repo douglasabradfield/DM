@@ -14,7 +14,7 @@ import {
   ChevronRight, Skull, ChevronDown, Plus, X, ImageIcon, Compass, ShieldCheck, Scroll, Lock, Menu,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { planoSuficiente, getPlano, type PlanoId } from '@/lib/planos'
+import { planoSuficiente, getPlano, ASSISTENTE_IA_ATIVO, type PlanoId } from '@/lib/planos'
 import { usePlanoEfetivo } from '@/hooks/usePlanoEfetivo'
 import { useControleSessao } from '@/hooks/useControleSessao'
 import { ModalIniciarSessao } from '@/components/campanha/ModalIniciarSessao'
@@ -35,7 +35,9 @@ const itensNav: ItemNav[] = [
   { href: '/diario',        icone: BookMarked,  label: 'Diário',        cor: '#f39c12',                planoMinimo: 'solo'  },
   { href: '/imagens',       icone: ImageIcon,   label: 'Imagens',       cor: '#e91e63',                planoMinimo: 'guild_master' },
   { href: '/mapas',         icone: Compass,     label: 'Mapas',         cor: '#00bcd4',                planoMinimo: 'guild_master' },
-  { href: '/ia',            icone: Bot,         label: 'Assistente IA', cor: '#1abc9c', dmOnly: true,  planoMinimo: 'solo'  },
+  ...(ASSISTENTE_IA_ATIVO ? [
+  { href: '/ia',            icone: Bot,         label: 'Assistente IA', cor: '#1abc9c', dmOnly: true,  planoMinimo: 'solo' as PlanoId },
+  ] : []),
   { href: '/campanhas',     icone: Scroll,      label: 'Campanhas',     cor: '#d4a843'                },
 ]
 
