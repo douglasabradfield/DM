@@ -130,6 +130,80 @@ function combatenteFromDB(row: CombatenteDB): Combatente {
   }
 }
 
+// Campos de personagens que são fonte da verdade para o combatente com ficha.
+export interface FichaBatalha {
+  pv_atual: number
+  pv_temporarios: number
+  pv_maximo: number
+  slots_magia: Record<string, { total: number; usados: number }> | null
+}
+
+type LinhaFicha = Partial<FichaBatalha> & { id: string }
+
+const COLUNAS_FICHA = 'id, pv_atual, pv_temporarios, pv_maximo, slots_magia'
+
+// Campo ausente na linha (ex.: payload de realtime parcial) mantém o valor
+// anterior em vez de virar zero.
+function fichaDaLinha(linha: LinhaFicha, anterior?: FichaBatalha): FichaBatalha {
+  return {
+    pv_atual: linha.pv_atual ?? anterior?.pv_atual ?? 0,
+    pv_temporarios: linha.pv_temporarios ?? anterior?.pv_temporarios ?? 0,
+    pv_maximo: linha.pv_maximo ?? anterior?.pv_maximo ?? 0,
+    slots_magia: linha.slots_magia !== undefined ? linha.slots_magia : anterior?.slots_magia ?? null,
+  }
+}
+
+function fichaDoCombatente(c: Combatente): FichaBatalha {
+  return {
+    pv_atual: c.pv_atual,
+    pv_temporarios: c.pv_temporarios,
+    pv_maximo: c.pv_maximo,
+    slots_magia: c.espacos_magia as Record<string, { total: number; usados: number }>,
+  }
+}
+
+// Ponto único de leitura de PV e espaços de magia do combatente com ficha:
+// substitui os campos da linha de batalha_combatentes pelos de personagens.
+// Sem personagem_id (monstro/NPC) ou sem ficha carregada (falha na busca, ou
+// ficha invisível ao jogador por RLS), a linha da batalha continua valendo.
+// Devolve o mesmo objeto quando nada muda, para não disparar render à toa.
+function aplicarFicha(c: Combatente, personagens: Record<string, FichaBatalha>): Combatente {
+  if (!c.personagem_id) return c
+  const ficha = personagens[c.personagem_id]
+  if (!ficha) return c
+  const espacos = (ficha.slots_magia ?? {}) as EspacosMagiaBatalha
+  if (
+    c.pv_atual === ficha.pv_atual
+    && c.pv_temporarios === ficha.pv_temporarios
+    && c.pv_maximo === ficha.pv_maximo
+    && jsonEstavel(c.espacos_magia) === jsonEstavel(espacos)
+  ) return c
+  return {
+    ...c,
+    pv_atual: ficha.pv_atual,
+    pv_temporarios: ficha.pv_temporarios,
+    pv_maximo: ficha.pv_maximo,
+    espacos_magia: espacos,
+  }
+}
+
+// Busca as fichas em uma query só. null = erro (já avisado com toast); o
+// chamador mantém os valores da linha de batalha como fallback. Ficha que o
+// usuário não pode ler (RLS) simplesmente não vem — não é erro.
+async function buscarFichas(ids: string[]): Promise<Record<string, FichaBatalha> | null> {
+  if (ids.length === 0) return {}
+  const { data, error } = await createClient()
+    .from('personagens')
+    .select(COLUNAS_FICHA)
+    .in('id', ids)
+  if (error) {
+    console.error('Erro ao ler fichas dos combatentes:', error)
+    toast.error('Não foi possível ler PV e espaços de magia das fichas — exibindo os valores salvos na batalha')
+    return null
+  }
+  return Object.fromEntries((data as LinhaFicha[] ?? []).map(p => [p.id, fichaDaLinha(p)]))
+}
+
 function logFromDB(row: LogDB): EntradaLog {
   return {
     id: row.id,
@@ -314,6 +388,11 @@ interface EstadoBatalhaStore {
   turnoCombatenteId: string | null
   ativa: boolean
   batalhaId: string | null
+  campanhaId: string | null
+  // Fonte da verdade de PV e espaços de magia para combatente com
+  // personagem_id. A linha de batalha_combatentes ainda guarda cópia desses
+  // campos (removida na etapa 3), mas ela não é mais lida.
+  personagensDaBatalha: Record<string, FichaBatalha>
   xpGanhoNaBatalha: number
   xpDistribuido: boolean
   marcarXPDistribuido: (xpPorJogador: number, nomes: string[]) => void
@@ -497,6 +576,72 @@ export const useBatalha = create<EstadoBatalhaStore>()(
     }
 
     // ---------------------------------------------------------------------
+    // Ficha (personagens) — fonte de PV e espaços do combatente com ficha
+    // ---------------------------------------------------------------------
+
+    function reaplicarFicha(personagemId: string) {
+      const { combatentes, personagensDaBatalha } = get()
+      const novos = combatentes.map(c => c.personagem_id === personagemId ? aplicarFicha(c, personagensDaBatalha) : c)
+      if (novos.every((c, i) => c === combatentes[i])) return
+      set(s => {
+        novos.forEach((c, i) => {
+          if (c !== combatentes[i] && s.combatentes[i]?.id === c.id) s.combatentes[i] = c
+        })
+      })
+    }
+
+    // Mutação local cuja gravação em personagens já é feita pelo chamador:
+    // espelha no mapa para que o eco de batalha_combatentes (lido através do
+    // mapa) não traga de volta o valor antigo antes do eco de personagens.
+    // Sem ficha no mapa (fallback), não cria entrada — a linha segue valendo.
+    // Devolve a ficha anterior, para reverter se a gravação falhar.
+    function espelharFicha(combatenteId: string): FichaBatalha | undefined {
+      const c = get().combatentes.find(x => x.id === combatenteId)
+      if (!c?.personagem_id) return
+      const pid = c.personagem_id
+      const anterior = get().personagensDaBatalha[pid]
+      if (!anterior) return
+      const ficha = fichaDoCombatente(c)
+      set(s => { s.personagensDaBatalha[pid] = ficha })
+      return anterior
+    }
+
+    // Gravação em personagens falhou: o eco não virá, então o mapa volta ao
+    // valor que o banco ainda tem — senão o próximo evento reaplicaria na
+    // tela um valor que só existe neste cliente.
+    function falhaGravarFicha(personagemId: string, nome: string, anterior: FichaBatalha | undefined, error: unknown) {
+      console.error('Sync PV/espaços batalha→ficha:', error)
+      if (!anterior) {
+        toast.error(`Erro ao salvar a ficha de ${nome}`)
+        return
+      }
+      toast.error(`Erro ao salvar a ficha de ${nome} — PV e espaços revertidos`)
+      set(s => { s.personagensDaBatalha[personagemId] = anterior })
+      reaplicarFicha(personagemId)
+    }
+
+    // Mutação local de PV/espaços que até aqui só ia para batalha_combatentes
+    // (e para a ficha apenas no encerramento). Como a leitura agora vem de
+    // personagens, sem esta gravação a mudança seria desfeita no próximo evento.
+    async function gravarFicha(combatenteId: string) {
+      const c = get().combatentes.find(x => x.id === combatenteId)
+      if (!c?.personagem_id) return
+      const pid = c.personagem_id
+      const anterior = espelharFicha(combatenteId)
+      const { error } = await createClient().from('personagens').update(fichaDoCombatente(c)).eq('id', pid)
+      if (error) falhaGravarFicha(pid, c.nome, anterior, error)
+    }
+
+    async function carregarFichas(ids: string[]) {
+      const fichas = await buscarFichas(ids)
+      if (!fichas) return
+      const encontrados = Object.keys(fichas)
+      if (encontrados.length === 0) return
+      set(s => { Object.assign(s.personagensDaBatalha, fichas) })
+      encontrados.forEach(reaplicarFicha)
+    }
+
+    // ---------------------------------------------------------------------
     // Realtime — assinatura única por batalha_id + reconciliação
     // ---------------------------------------------------------------------
 
@@ -540,7 +685,14 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       if (!linha?.id || linha.batalha_id !== state.batalhaId) return
 
       const atual = state.combatentes.find(c => c.id === linha.id)
-      const remoto = combatenteFromDB(linha)
+      // O evento atualiza iniciativa, ordem, condições etc., mas PV e espaços
+      // do combatente com ficha vêm do mapa — senão a cópia velha da linha
+      // volta à tela a cada evento.
+      const remoto = aplicarFicha(combatenteFromDB(linha), state.personagensDaBatalha)
+
+      if (!atual && remoto.personagem_id && !state.personagensDaBatalha[remoto.personagem_id]) {
+        carregarFichas([remoto.personagem_id])
+      }
 
       if (atual) {
         if (assinaturaCombatente(atual) === assinaturaCombatente(remoto)) return // eco do próprio cliente
@@ -563,19 +715,40 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       set(s => { s.log.push(logFromDB(linha)) })
     }
 
+    function reconciliarPersonagem(payload: RealtimePostgresChangesPayload<LinhaFicha>) {
+      const linha = payload.new as LinhaFicha | undefined
+      if (!linha?.id) return
+      const state = get()
+      if (!state.combatentes.some(c => c.personagem_id === linha.id)) return
+      const anterior = state.personagensDaBatalha[linha.id]
+      const ficha = fichaDaLinha(linha, anterior)
+      if (anterior && jsonEstavel(anterior) === jsonEstavel(ficha)) return // eco do próprio cliente
+      set(s => { s.personagensDaBatalha[linha.id] = ficha })
+      reaplicarFicha(linha.id)
+    }
+
     function assinarRealtime() {
-      const { batalhaId } = get()
+      const { batalhaId, campanhaId } = get()
       if (!batalhaId) return
       if (canalAtual && canalBatalhaId === batalhaId) return
       encerrarRealtime()
 
       const supabase = createClient()
-      const channel = supabase
+      let channel = supabase
         .channel(`batalha:${batalhaId}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'batalhas', filter: `id=eq.${batalhaId}` }, reconciliarBatalha)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'batalha_combatentes', filter: `batalha_id=eq.${batalhaId}` }, reconciliarCombatente)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'batalha_log', filter: `batalha_id=eq.${batalhaId}` }, reconciliarLog)
-        .subscribe()
+      if (campanhaId) {
+        channel = channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'personagens', filter: `campanha_id=eq.${campanhaId}` }, reconciliarPersonagem)
+      }
+      // A cada (re)conexão relê as fichas: eventos de personagens perdidos
+      // enquanto o canal esteve fora não são reenviados pelo realtime.
+      channel.subscribe(status => {
+        if (status !== 'SUBSCRIBED') return
+        const ids = [...new Set(get().combatentes.map(c => c.personagem_id).filter((id): id is string => !!id))]
+        carregarFichas(ids)
+      })
 
       canalAtual = channel
       canalBatalhaId = batalhaId
@@ -597,6 +770,8 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       turnoCombatenteId: null,
       ativa: false,
       batalhaId: null,
+      campanhaId: null,
+      personagensDaBatalha: {},
       xpGanhoNaBatalha: 0,
       xpDistribuido: false,
       sessaoId: null,
@@ -691,6 +866,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           state.statusBatalha = 'ativa'
           state.ativa = true
           state.batalhaId = batalha.id
+          state.campanhaId = campanhaId
           state.rodadaAtual = 1
           state.turnoCombatenteId = primeiroAtivoId
           state.turnoAtual = calcularIndiceTurno(state.combatentes, primeiroAtivoId)
@@ -842,12 +1018,21 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           supabase.from('batalha_log').select('*').eq('batalha_id', batalha.id).order('criado_em'),
         ])
 
-        const combatentes = (combatentesDb ?? []).map(combatenteFromDB)
+        const combatentesDaLinha = (combatentesDb ?? []).map(combatenteFromDB)
+        const idsDePersonagem = [...new Set(
+          combatentesDaLinha.map(c => c.personagem_id).filter((id): id is string => !!id)
+        )]
+        // Falha avisa com toast e mantém os valores da linha de batalha como
+        // fallback — seguir em silêncio poria jogador em combate com PV errado.
+        const personagensDaBatalha = await buscarFichas(idsDePersonagem) ?? {}
+        const combatentes = combatentesDaLinha.map(c => aplicarFicha(c, personagensDaBatalha))
         const log = (logDb ?? []).map(logFromDB)
         const turnoAtual = calcularIndiceTurno(combatentes, batalha.turno_combatente_id)
 
         set(state => {
           state.batalhaId = batalha.id
+          state.campanhaId = batalha.campanha_id
+          state.personagensDaBatalha = personagensDaBatalha
           state.sessaoId = batalha.sessao_id
           state.nomeBatalha = batalha.nome
           state.statusBatalha = batalha.status === 'pausada' ? 'pausada' : 'ativa'
@@ -875,6 +1060,8 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           state.turnoCombatenteId = null
           state.ativa = false
           state.batalhaId = null
+          state.campanhaId = null
+          state.personagensDaBatalha = {}
           state.xpGanhoNaBatalha = 0
           state.xpDistribuido = false
           state.sessaoId = null
@@ -926,6 +1113,14 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         }
         set(state => { state.combatentes.push(novo) })
 
+        // O combatente veio clonado da ficha; a ficha em si é relida para o
+        // mapa, que passa a responder por PV e espaços dele.
+        if (novo.personagem_id) {
+          const pid = novo.personagem_id
+          if (!state0.personagensDaBatalha[pid]) set(state => { state.personagensDaBatalha[pid] = fichaDoCombatente(novo) })
+          carregarFichas([pid])
+        }
+
         if (state0.batalhaId) {
           const linha = combatenteParaLinha(novo, state0.batalhaId)
           createClient().from('batalha_combatentes').insert(linha).then(({ error }) => {
@@ -963,15 +1158,21 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           if (idx !== -1) Object.assign(state.combatentes[idx], dados)
         })
         persistirCombatente(id, anterior)
+        // pv_maximo e espaços não tinham gravação na ficha; gravarFicha grava
+        // os quatro campos. PV puro segue pela gravação de sempre.
+        const tocaFicha = 'pv_maximo' in dados || 'espacos_magia' in dados
         if ('pv_atual' in dados || 'pv_temporarios' in dados) {
+          const fichaAnterior = tocaFicha ? undefined : espelharFicha(id)
           const c = get().combatentes.find(x => x.id === id)
           if (c?.personagem_id) {
+            const pid = c.personagem_id
             createClient().from('personagens')
               .update({ pv_atual: c.pv_atual, pv_temporarios: c.pv_temporarios })
-              .eq('id', c.personagem_id)
-              .then(({ error }) => { if (error) console.error('Sync PV batalha→ficha:', error) })
+              .eq('id', pid)
+              .then(({ error }) => { if (error) falhaGravarFicha(pid, c.nome, fichaAnterior, error) })
           }
         }
+        if (tocaFicha) gravarFicha(id)
       },
 
       definirIniciativa: (id, valor) => mutarCombatente(id, c => { c.iniciativa = valor }),
@@ -1077,6 +1278,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
         persistirCombatente(id, c)
         entradasLog.forEach(persistirLog)
+        const fichaAnterior = espelharFicha(id)
 
         if (c.personagem_id) {
           const pid = c.personagem_id
@@ -1084,7 +1286,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             createClient().from('personagens')
               .update({ pv_atual: novoPv, pv_temporarios: novoPvTemp })
               .eq('id', pid)
-              .then(({ error }) => { if (error) console.error('Sync PV batalha→ficha:', error) })
+              .then(({ error }) => { if (error) falhaGravarFicha(pid, c.nome, fichaAnterior, error) })
           }, 0)
         }
 
@@ -1126,6 +1328,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
         persistirCombatente(id, c)
         if (entrada) persistirLog(entrada)
+        const fichaAnterior = espelharFicha(id)
 
         if (c.personagem_id) {
           const pid = c.personagem_id
@@ -1134,7 +1337,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             createClient().from('personagens')
               .update({ pv_atual: novoPv, pv_temporarios: novoTemp })
               .eq('id', pid)
-              .then(({ error }) => { if (error) console.error('Sync PV batalha→ficha:', error) })
+              .then(({ error }) => { if (error) falhaGravarFicha(pid, c.nome, fichaAnterior, error) })
           }, 0)
         }
 
@@ -1150,19 +1353,24 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
       atualizarPV: (id, pvAtual) => {
         mutarCombatente(id, c => { c.pv_atual = Math.max(0, Math.min(c.pv_maximo, pvAtual)) })
+        const fichaAnterior = espelharFicha(id)
         const c = get().combatentes.find(x => x.id === id)
         if (c?.personagem_id) {
+          const pid = c.personagem_id
           createClient().from('personagens')
             .update({ pv_atual: c.pv_atual, pv_temporarios: c.pv_temporarios })
-            .eq('id', c.personagem_id)
-            .then(({ error }) => { if (error) console.error('Sync PV batalha→ficha:', error) })
+            .eq('id', pid)
+            .then(({ error }) => { if (error) falhaGravarFicha(pid, c.nome, fichaAnterior, error) })
         }
       },
 
-      atualizarPVMax: (id, pvMax) => mutarCombatente(id, c => {
-        c.pv_maximo = pvMax
-        c.pv_atual = Math.min(c.pv_atual, pvMax)
-      }),
+      atualizarPVMax: (id, pvMax) => {
+        mutarCombatente(id, c => {
+          c.pv_maximo = pvMax
+          c.pv_atual = Math.min(c.pv_atual, pvMax)
+        })
+        gravarFicha(id)
+      },
 
       setarDanoInput: (id, valor) => set(state => {
         const c = state.combatentes.find(c => c.id === id)
@@ -1218,6 +1426,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           state.log.push(entrada)
         })
         ids.forEach(id => persistirCombatente(id))
+        ids.forEach(id => gravarFicha(id))
         persistirLog(entrada)
       },
 
@@ -1266,15 +1475,23 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         persistirLog(entrada)
       },
 
-      usarEspaco: (id, nivel) => mutarCombatente(id, c => {
-        const { novosEspacos, ok } = consumirEspaco(c.espacos_magia, nivel)
-        if (ok) c.espacos_magia = novosEspacos
-      }),
+      usarEspaco: (id, nivel) => {
+        mutarCombatente(id, c => {
+          const { novosEspacos, ok } = consumirEspaco(c.espacos_magia, nivel)
+          if (ok) c.espacos_magia = novosEspacos
+        })
+        gravarFicha(id)
+      },
 
-      recuperarEspaco: (id, nivel) => mutarCombatente(id, c => {
-        const espaco = c.espacos_magia[nivel]
-        if (espaco && espaco.usados > 0) espaco.usados--
-      }),
+      // Substitui o objeto do nível em vez de mutar: espacos_magia pode ser a
+      // mesma referência guardada em personagensDaBatalha.
+      recuperarEspaco: (id, nivel) => {
+        mutarCombatente(id, c => {
+          const espaco = c.espacos_magia[nivel]
+          if (espaco && espaco.usados > 0) c.espacos_magia = { ...c.espacos_magia, [nivel]: { ...espaco, usados: espaco.usados - 1 } }
+        })
+        gravarFicha(id)
+      },
 
       proximoTurno: () => {
         const state0 = get()
@@ -1389,10 +1606,14 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
       toggleAusencia: (id) => mutarCombatente(id, c => { c.ausente = !c.ausente }),
 
-      toggleMorto: (id) => mutarCombatente(id, c => {
-        c.morto = !c.morto
-        if (c.morto) c.pv_atual = 0
-      }),
+      toggleMorto: (id) => {
+        const pvAntes = get().combatentes.find(x => x.id === id)?.pv_atual
+        mutarCombatente(id, c => {
+          c.morto = !c.morto
+          if (c.morto) c.pv_atual = 0
+        })
+        if (get().combatentes.find(x => x.id === id)?.pv_atual !== pvAntes) gravarFicha(id)
+      },
 
       reordenarCombatentes: (idAtivo, idSobre) => {
         const state0 = get()
@@ -1451,6 +1672,8 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           if (comb) Object.assign(comb, dados)
         })
         persistirCombatente(c.id, c)
+        // Chamado depois que a ficha já gravou em personagens.
+        espelharFicha(c.id)
       },
 
       usarInspiracao: (id) => {
