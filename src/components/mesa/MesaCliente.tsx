@@ -13,6 +13,7 @@ import { vantagemDerivada } from '@/lib/batalha/vantagem-por-condicao'
 import { getCondicao, TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
 import { TIPOS_DANO, normalizarTipoDano, resolverTipoDanoSRD, getTipoDano } from '@/lib/dados-dnd/tipos-dano'
 import { BarraVida } from '@/components/batalha/BarraVida'
+import { BotaoEspacosMagia, resumoEspacos } from '@/components/batalha/EspacosMagia'
 import { RecursosLeitura } from '@/components/personagem/RecursosClasse'
 import type { ArmaEmpunhada, Combatente, EntradaLog, TipoCondicao, EspacosMagiaBatalha, TipoEntradaLog } from '@/types/batalha'
 import type { InventarioItemDb, Personagem, Spell, TipoDano } from '@/types/dnd'
@@ -289,28 +290,6 @@ function Avatar({ nome, imagemUrl, tamanho = 44 }: { nome: string; imagemUrl?: s
           onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
         />
       )}
-    </div>
-  )
-}
-
-function EspacosMagiaLeitura({ espacos }: { espacos: EspacosMagiaBatalha }) {
-  const niveis = Object.entries(espacos)
-    .filter(([, e]) => e.total > 0)
-    .map(([n, e]) => ({ nivel: parseInt(n), ...e }))
-    .sort((a, b) => a.nivel - b.nivel)
-
-  if (niveis.length === 0) return null
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px]">
-      {niveis.map(({ nivel, total, usados }) => (
-        <div key={nivel} className="flex items-center gap-0.5">
-          <span className="text-[var(--text3)] font-cinzel">N{nivel}</span>
-          <span style={{ color: 'var(--accent2)' }}>
-            {'●'.repeat(Math.max(0, total - usados))}{'○'.repeat(Math.min(total, usados))}
-          </span>
-        </div>
-      ))}
     </div>
   )
 }
@@ -789,9 +768,10 @@ function CartaoPersonagem({
         </div>
       )}
 
-      {Object.keys(c.espacos_magia).length > 0 && (
+      {/* Resumo "4/17 espaços" com painel — só leitura aqui, como antes. */}
+      {resumoEspacos(c.espacos_magia) && (
         <div className="flex-shrink-0">
-          <EspacosMagiaLeitura espacos={c.espacos_magia} />
+          <BotaoEspacosMagia combatente={c} somenteLeitura grande />
         </div>
       )}
 

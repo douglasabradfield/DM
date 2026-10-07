@@ -10,14 +10,14 @@ import toast from 'react-hot-toast'
 import { useBatalha } from '@/store/batalha'
 import type { Combatente, TipoCondicao, DadosMonstroSimples } from '@/types/batalha'
 import { BarraVida } from './BarraVida'
-import { EspacosMagia } from './EspacosMagia'
+import { BotaoEspacosMagia } from './EspacosMagia'
 import { PopupCondicao } from './PopupCondicao'
 import { SeletorTipoDano } from './SeletorTipoDano'
 import { TooltipCombatente } from './TooltipCombatente'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
-import { Trash2, Plus, GripVertical, X, Pencil, Wand2, Eye, RotateCw } from 'lucide-react'
+import { Trash2, Plus, GripVertical, X, Pencil, Eye, RotateCw } from 'lucide-react'
 import type { TipoDano, Ataque } from '@/types/dnd'
 
 interface LinhaCombatenteProps {
@@ -50,9 +50,6 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
   const [valorAcao, setValorAcao] = useState('')
   const [modalMonstroAberto, setModalMonstroAberto] = useState(false)
   const [editandoNome, setEditandoNome] = useState(false)
-  const [mostraConjuracao, setMostraConjuracao] = useState(false)
-  const [posConjuracao, setPosConjuracao] = useState({ top: 0, left: 0 })
-  const btnConjuracaoRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (c.dano_input === 0) setValorAcao('')
@@ -211,6 +208,10 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
                   {c.nome}
                 </span>
               </TooltipCombatente>
+              <ControleVantagem
+                valor={c.vantagem ?? null}
+                onMudar={v => setVantagem(c.id, v)}
+              />
               <button
                 onClick={e => { e.stopPropagation(); setEditandoNome(true) }}
                 title="Editar nome"
@@ -257,30 +258,6 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
           onChange={e => definirIniciativa(c.id, parseInt(e.target.value) || 0)}
           className="w-12 input-dd text-center text-sm"
         />
-      </td>
-
-      {/* Vantagem / Desvantagem */}
-      <td className="px-1 py-1 w-16 text-center">
-        <div className="flex items-center justify-center gap-0.5">
-          <button
-            onClick={() => setVantagem(c.id, c.vantagem === 'vantagem' ? null : 'vantagem')}
-            title="Vantagem — rola 2d20 e usa o maior"
-            className={`w-6 h-6 rounded text-xs font-bold transition-all ${
-              c.vantagem === 'vantagem'
-                ? 'bg-[#27ae60] text-white border border-[#2ecc71]'
-                : 'bg-[var(--surface)] text-[var(--text3)] border border-[var(--border)] hover:border-[#27ae60] hover:text-[#27ae60]'
-            }`}
-          >▲</button>
-          <button
-            onClick={() => setVantagem(c.id, c.vantagem === 'desvantagem' ? null : 'desvantagem')}
-            title="Desvantagem — rola 2d20 e usa o menor"
-            className={`w-6 h-6 rounded text-xs font-bold transition-all ${
-              c.vantagem === 'desvantagem'
-                ? 'bg-[#e74c3c] text-white border border-[#c0392b]'
-                : 'bg-[var(--surface)] text-[var(--text3)] border border-[var(--border)] hover:border-[#e74c3c] hover:text-[#e74c3c]'
-            }`}
-          >▼</button>
-        </div>
       </td>
 
       {/* CA */}
@@ -417,11 +394,10 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
         </div>
       </td>
 
-      {/* Totais */}
-      <td className="px-1 py-1 w-16 text-center">
+      {/* Totais — dano · cura acumulados na batalha */}
+      <td className="px-1 py-1 w-16 text-center whitespace-nowrap" title={`Dano sofrido: ${c.dano_total} · Cura recebida: ${c.cura_total}`}>
         <span className="text-[var(--red2)] text-xs">{c.dano_total}</span>
-      </td>
-      <td className="px-1 py-1 w-16 text-center">
+        <span className="text-[var(--border)] text-xs mx-0.5">·</span>
         <span className="text-[#27ae60] text-xs">{c.cura_total}</span>
       </td>
 
@@ -476,72 +452,8 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
       </td>
 
       {/* Espaços de Magia */}
-      <td className="px-1 py-1 min-w-20">
-        {Object.keys(c.espacos_magia).length > 0 && (
-          <EspacosMagia combatenteId={c.id} espacos={c.espacos_magia} />
-        )}
-        {!c.personagem_id && (
-          <button
-            ref={btnConjuracaoRef}
-            onClick={() => {
-              const rect = btnConjuracaoRef.current?.getBoundingClientRect()
-              if (rect) {
-                setPosConjuracao({
-                  top: rect.bottom + 4,
-                  left: Math.min(rect.left, window.innerWidth - 272),
-                })
-              }
-              setMostraConjuracao(v => !v)
-            }}
-            title="Slots de conjuração"
-            className={`mt-0.5 p-0.5 rounded transition-colors ${mostraConjuracao ? 'text-[var(--accent2)]' : 'text-[var(--border)] hover:text-[var(--accent2)]'}`}
-          >
-            <Wand2 className="w-3 h-3" />
-          </button>
-        )}
-        {mostraConjuracao && typeof document !== 'undefined' && createPortal(
-          <>
-            <div className="fixed inset-0 z-[9995]" onClick={() => setMostraConjuracao(false)} />
-            <div
-              style={{ position: 'fixed', top: posConjuracao.top, left: posConjuracao.left, zIndex: 9996 }}
-              className="bg-[var(--bg2)] border border-[var(--border)] rounded-lg shadow-xl p-2.5 w-64"
-            >
-              <p className="text-[var(--text3)] text-[10px] font-cinzel uppercase tracking-wider mb-2">
-                Slots restantes — {c.nome}
-              </p>
-              <div className="grid grid-cols-3 gap-1.5">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => {
-                  const nStr = String(n)
-                  const val = (c.slots_monstro ?? {})[nStr] ?? 0
-                  return (
-                    <div key={n} className="text-center">
-                      <p className="text-[var(--text3)] text-[9px] font-cinzel mb-0.5">Nível {n}</p>
-                      <input
-                        type="number"
-                        min={0}
-                        max={20}
-                        value={val}
-                        onChange={e => {
-                          atualizarCombatente(c.id, {
-                            slots_monstro: {
-                              ...(c.slots_monstro ?? {}),
-                              [nStr]: parseInt(e.target.value) || 0,
-                            },
-                          })
-                        }}
-                        className="w-full input-dd text-center text-xs py-0.5 px-1"
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-              <p className="text-[var(--text3)] text-[9px] font-crimson mt-2 italic">
-                Edite os slots restantes disponíveis para este conjurador
-              </p>
-            </div>
-          </>,
-          document.body
-        )}
+      <td className="px-1 py-1 w-24">
+        <BotaoEspacosMagia combatente={c} />
       </td>
 
       {/* Ações */}
@@ -603,8 +515,8 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
 // Versão mobile (< 768px) — cartão empilhado em vez de linha de tabela,
 // elimina o scroll horizontal. É consulta + o essencial, não paridade
 // total com a tabela: sem drag-reorder, vantagem/desvantagem, seletor de
-// tipo de dano, totais acumulados ou slots de magia — isso continua só
-// no desktop. O popover de dano tem o próprio seletor de tipo (começa no
+// tipo de dano ou totais acumulados — isso continua só no desktop. Espaços
+// de magia usam o mesmo resumo com painel da tabela. O popover de dano tem o próprio seletor de tipo (começa no
 // c.dano_tipo da linha) — dano sem tipo é recusado, igual à tabela.
 export function CartaoCombatenteMobile({ combatente: c, ativo, condicoesDisponiveis }: {
   combatente: Combatente
@@ -672,6 +584,9 @@ export function CartaoCombatenteMobile({ combatente: c, ativo, condicoesDisponiv
         {c.condicoes.map(cond => (
           <PopupCondicao key={cond} condicao={cond} onRemover={() => removerCondicao(cond)} />
         ))}
+        <span className="ml-auto">
+          <BotaoEspacosMagia combatente={c} grande />
+        </span>
       </div>
 
       {/* Ações — alvos de toque de 44px */}
@@ -790,6 +705,31 @@ function PopoverValor({ titulo, pos, tipoDano, onFechar, onConfirmar }: {
         </div>
       </div>
     </>
+  )
+}
+
+// Três estados num botão do tamanho de um ícone: cada clique avança
+// normal → vantagem → desvantagem → normal.
+function ControleVantagem({ valor, onMudar }: {
+  valor: 'vantagem' | 'desvantagem' | null
+  onMudar: (v: 'vantagem' | 'desvantagem' | null) => void
+}) {
+  const proximo = valor === null ? 'vantagem' : valor === 'vantagem' ? 'desvantagem' : null
+  const rotulo = valor === 'vantagem' ? 'Vantagem' : valor === 'desvantagem' ? 'Desvantagem' : 'Normal'
+  const rotuloProximo = proximo === 'vantagem' ? 'vantagem' : proximo === 'desvantagem' ? 'desvantagem' : 'normal'
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onMudar(proximo) }}
+      title={`${rotulo} — clique para ${rotuloProximo}`}
+      className={cn(
+        'w-4 h-4 rounded flex-shrink-0 flex items-center justify-center text-[9px] font-bold leading-none border transition-colors',
+        valor === 'vantagem' && 'bg-[#27ae60] text-white border-[#2ecc71]',
+        valor === 'desvantagem' && 'bg-[#e74c3c] text-white border-[#c0392b]',
+        valor === null && 'bg-transparent text-[var(--border)] border-[var(--border)] hover:text-[var(--text3)] hover:border-[var(--text3)]',
+      )}
+    >
+      {valor === 'vantagem' ? '▲' : valor === 'desvantagem' ? '▼' : '–'}
+    </button>
   )
 }
 

@@ -538,15 +538,13 @@ export function TabelaCombate() {
                           <th className="px-1 py-1.5 text-center w-6">St</th>
                           <th className="px-2 py-1.5 text-left">Nome</th>
                           <th className="px-1 py-1.5 text-center w-14">Init</th>
-                          <th className="px-1 py-1.5 text-center w-16">Van/Des</th>
                           <th className="px-1 py-1.5 text-center w-12">CA</th>
                           <th className="px-2 py-1.5 text-left min-w-28">PV</th>
                           <th className="px-1 py-1.5 text-center w-24">Tipo Dano</th>
                           <th className="px-1 py-1.5 text-center w-28 opacity-60">Ajuste PV</th>
-                          <th className="px-1 py-1.5 text-center w-16">💥 Tot</th>
-                          <th className="px-1 py-1.5 text-center w-16">💊 Tot</th>
+                          <th className="px-1 py-1.5 text-center w-16" title="Dano sofrido · cura recebida nesta batalha">💥·💚 Tot</th>
                           <th className="px-1 py-1.5 text-left min-w-24">Condições</th>
-                          <th className="px-1 py-1.5 text-left min-w-20">Magia</th>
+                          <th className="px-1 py-1.5 text-left w-24">Magia</th>
                           <th className="px-1 py-1.5 text-center w-20">Ação</th>
                         </tr>
                       </thead>

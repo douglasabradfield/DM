@@ -378,6 +378,10 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       // aqui — itens agora vivem em inventario_itens, via API árbitro
       // (chamarInventarioApi) — a coluna fica congelada como estava.
       const { slots_magia: _ignorado, inventario: _inventarioLegado, ...dadosParaSalvar } = dados
+      // Mesma regra da API (/api/mesa/acao, definir_pv_maximo): máximo >= 1 e
+      // PV atual cortado ao novo máximo, no mesmo update.
+      const pvMaximo = Math.max(1, parseInt(String(dados.pv_maximo)) || 1)
+      const pvAtual = Math.min(Math.max(0, parseInt(String(dados.pv_atual)) || 0), pvMaximo)
       const { error } = await supabase.from('personagens').update({
         ...dadosParaSalvar,
         nivel: parseInt(String(dados.nivel)) || 1,
@@ -385,8 +389,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         pontos_experiencia: parseInt(String(dados.pontos_experiencia)) || 0,
         inspiracao: parseInt(String(dados.inspiracao)) || 0,
         ca: parseInt(String(dados.ca)) || 10,
-        pv_maximo: parseInt(String(dados.pv_maximo)) || 1,
-        pv_atual: parseInt(String(dados.pv_atual)) || 0,
+        pv_maximo: pvMaximo,
+        pv_atual: pvAtual,
         pv_temporarios: parseInt(String(dados.pv_temporarios)) || 0,
         imagem_url: dados.imagem_url ?? null,
         moedas: dados.moedas ? {
@@ -406,7 +410,9 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       }
       toast.success('Personagem salvo!')
       setAlterado(false)
-      onAtualizar?.(dados)
+      const dadosSalvos = { ...dados, pv_maximo: pvMaximo, pv_atual: pvAtual }
+      if (pvMaximo !== dados.pv_maximo || pvAtual !== dados.pv_atual) setDados(dadosSalvos)
+      onAtualizar?.(dadosSalvos)
 
       // Notificar DM sobre level-up (somente jogadores)
       if (!isDM && dados.nivel > nivelNotificado.current && campanhaAtiva?.dm_id) {
@@ -439,8 +445,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       // Sincroniza com a batalha se o personagem estiver em combate
       atualizarCombatentePorPersonagem(p.id, {
         ca: parseInt(String(dados.ca)) || 10,
-        pv_maximo: parseInt(String(dados.pv_maximo)) || 1,
-        pv_atual: parseInt(String(dados.pv_atual)) || 0,
+        pv_maximo: pvMaximo,
+        pv_atual: pvAtual,
         pv_temporarios: parseInt(String(dados.pv_temporarios)) || 0,
         inspiracao: parseInt(String(dados.inspiracao)) || 0,
         resistencias: dados.resistencias ?? [],
@@ -1123,6 +1129,11 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                 <div>
                   <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase block">PV Máx</label>
                   <CampoNumerico value={dados.pv_maximo} onChange={v => atualizar('pv_maximo', v)} min={1} disabled={!podeEditar} />
+                  {dados.pv_maximo < dados.pv_atual && (
+                    <p className="text-[#f39c12] text-[10px] font-crimson leading-tight mt-0.5">
+                      Ao salvar, o PV atual será ajustado para {dados.pv_maximo}.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase block">PV Atual</label>
@@ -2007,7 +2018,10 @@ function CampoNumerico({ value, onChange, min, max, step = 1, disabled, inputCla
         type="number"
         inputMode="numeric"
         value={value}
-        onChange={e => onChange(parseInt(e.target.value) || (min ?? 0))}
+        onChange={e => {
+          const v = parseInt(e.target.value) || (min ?? 0)
+          onChange(min !== undefined ? Math.max(min, v) : v)
+        }}
         onFocus={e => e.target.select()}
         disabled={disabled}
         className={inputClassName ?? 'w-full input-dd text-center'}
