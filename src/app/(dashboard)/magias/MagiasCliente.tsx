@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Spell } from '@/types/dnd'
 import type { TipoDano } from '@/types/dnd'
-import { TIPOS_DANO } from '@/lib/dados-dnd/tipos-dano'
+import { TIPOS_DANO, getTipoDano, normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoAdicionarPersonagem } from '@/components/ui/BotaoAdicionarPersonagem'
 import { BotaoReportar } from '@/components/ui/BotaoReportar'
@@ -87,12 +87,12 @@ const DANO_EN_MAP: Record<TipoDano, string> = {
 
 const SAVE_ABILITY_OPCOES_MAGIA = [
   { value: '', label: '— Nenhuma —' },
-  { value: 'for', label: 'Força' },
-  { value: 'des', label: 'Destreza' },
-  { value: 'con', label: 'Constituição' },
-  { value: 'int', label: 'Inteligência' },
-  { value: 'sab', label: 'Sabedoria' },
-  { value: 'car', label: 'Carisma' },
+  { value: 'FOR', label: 'Força' },
+  { value: 'DES', label: 'Destreza' },
+  { value: 'CON', label: 'Constituição' },
+  { value: 'INT', label: 'Inteligência' },
+  { value: 'SAB', label: 'Sabedoria' },
+  { value: 'CAR', label: 'Carisma' },
 ]
 
 const AOE_TIPOS_OPCOES = [
@@ -103,6 +103,8 @@ const AOE_TIPOS_OPCOES = [
   { value: 'line', label: 'Linha' },
   { value: 'cylinder', label: 'Cilindro' },
   { value: 'radius', label: 'Raio ao redor de si' },
+  { value: 'emanation', label: 'Emanação' },
+  { value: 'square', label: 'Quadrado' },
 ]
 
 // D&D 5e PT-BR: 1,5 m por 5 pés (arredondamento do livro do jogador, não a
@@ -188,6 +190,114 @@ const COR_ESCOLA: Record<string, string> = {
   'Transmutação': 'var(--green2)',
 }
 
+// ─── Painel de mecânica no detalhe ──────────────────────────────────────────
+
+const EFEITO_SALVAGUARDA: Record<string, string> = {
+  metade: 'metade do dano se passar',
+  nenhum: 'nada acontece se passar',
+  encerra: 'o teste encerra o efeito',
+}
+
+const TIPO_ATAQUE: Record<string, string> = {
+  corpo_a_corpo: 'Ataque corpo a corpo',
+  distancia: 'Ataque à distância',
+}
+
+const FORMA_AREA: Record<string, string> = {
+  cone: 'Cone', sphere: 'Esfera', cylinder: 'Cilindro', line: 'Linha',
+  cube: 'Cubo', square: 'Quadrado', emanation: 'Emanação', radius: 'Raio',
+}
+
+// Equivalência da regra: cada 5 pés são 1,5 m (cone de 60 pés = 18 m).
+function areaEmMetros(pes: number): string {
+  return (pes / 5 * 1.5).toLocaleString('pt-BR', { maximumFractionDigits: 1 })
+}
+
+function ParcelaDano({ dados, tipo }: { dados: string; tipo?: string | null }) {
+  const id = normalizarTipoDano(tipo)
+  const info = id ? getTipoDano(id) : null
+  return (
+    <span className="whitespace-nowrap">
+      <span className="text-[var(--text)]">{dados}</span>
+      {info ? (
+        <span style={{ color: info.cor }}> {info.icone} {info.nome}</span>
+      ) : tipo ? (
+        <span className="text-[var(--text2)]"> {tipo}</span>
+      ) : null}
+    </span>
+  )
+}
+
+function PainelMecanica({ magia }: { magia: Spell }) {
+  const linhas: { rotulo: string; valor: ReactNode }[] = []
+
+  if (magia.damage_dice) {
+    linhas.push({
+      rotulo: 'Dano',
+      valor: (
+        <>
+          <ParcelaDano dados={magia.damage_dice} tipo={magia.damage_type_pt} />
+          {magia.damage2_dice && (
+            <>
+              <span className="text-[var(--text3)]"> + </span>
+              <ParcelaDano dados={magia.damage2_dice} tipo={magia.damage2_type_pt} />
+            </>
+          )}
+        </>
+      ),
+    })
+  }
+  if (magia.heal_dice) {
+    linhas.push({ rotulo: 'Cura', valor: <span className="text-[var(--text)]">{magia.heal_dice}</span> })
+  }
+  if (magia.save_ability) {
+    const efeito = magia.save_effect ? (EFEITO_SALVAGUARDA[magia.save_effect] ?? magia.save_effect) : null
+    linhas.push({
+      rotulo: 'Salvaguarda',
+      valor: (
+        <span className="text-[var(--text)]">
+          {magia.save_ability.toUpperCase()}
+          {efeito && <span className="text-[var(--text2)]"> — {efeito}</span>}
+        </span>
+      ),
+    })
+  }
+  if (magia.attack_type) {
+    linhas.push({ rotulo: 'Ataque', valor: <span className="text-[var(--text)]">{TIPO_ATAQUE[magia.attack_type] ?? magia.attack_type}</span> })
+  }
+  if (magia.aoe_type || magia.aoe_size_ft) {
+    const forma = magia.aoe_type ? (FORMA_AREA[magia.aoe_type] ?? magia.aoe_type) : 'Área'
+    const tamanho = magia.aoe_size_ft ? ` de ${areaEmMetros(magia.aoe_size_ft)} m` : ''
+    linhas.push({ rotulo: 'Área', valor: <span className="text-[var(--text)]">{forma}{tamanho}</span> })
+  }
+  if (magia.conditions_applied_pt) {
+    linhas.push({ rotulo: 'Condição', valor: <span className="text-[var(--text)]">{magia.conditions_applied_pt}</span> })
+  }
+
+  if (linhas.length === 0 && !magia.upcast_dice) return null
+
+  return (
+    <PainelGrimorio compacto className="mb-3">
+      {linhas.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm font-crimson">
+          {linhas.map(l => (
+            <div key={l.rotulo} className="min-w-0 break-words">
+              <span className="text-[var(--text3)] font-cinzel text-xs">{l.rotulo}: </span>
+              {l.valor}
+            </div>
+          ))}
+        </div>
+      )}
+      {magia.upcast_dice && (
+        <div className={cn('text-sm font-crimson break-words', linhas.length > 0 && 'mt-2 pt-2 border-t border-[var(--border)]/50')}>
+          <span className="text-[var(--text3)] font-cinzel text-xs">Em níveis superiores: </span>
+          <span className="text-[var(--text2)]">{magia.upcast_dice}</span>
+        </div>
+      )}
+    </PainelGrimorio>
+  )
+}
+
 type SpellStub = Pick<Spell, 'id' | 'slug' | 'name_pt' | 'name_en' | 'level' | 'school_pt' | 'casting_time_pt' | 'classes_pt' | 'concentration' | 'ritual' | 'criado_por'>
 
 function ModalAdminEditarMagia({ modo, magia, criadoPor, campanhaId, onClose, onSaved }: {
@@ -215,7 +325,7 @@ function ModalAdminEditarMagia({ modo, magia, criadoPor, campanhaId, onClose, on
     damage_dice: magia.damage_dice ?? '', damage_type_pt: magia.damage_type_pt ?? '',
     damage2_dice: magia.damage2_dice ?? '', damage2_type_pt: magia.damage2_type_pt ?? '',
     heal_dice: magia.heal_dice ?? '',
-    save_ability: magia.save_ability ?? '', save_effect: magia.save_effect ?? '',
+    save_ability: (magia.save_ability ?? '').toUpperCase(), save_effect: magia.save_effect ?? '',
     attack_type: magia.attack_type ?? '', roller: magia.roller ?? '',
     conditions_applied_pt: magia.conditions_applied_pt ?? '',
     aoe_type: magia.aoe_type ?? '',
@@ -921,6 +1031,8 @@ export function MagiasCliente() {
                       <div><span className="text-[var(--text3)] font-cinzel text-xs">Duração: </span><span className="text-[var(--text)]">{selecionada.duration_pt}</span></div>
                     </div>
                   </PainelGrimorio>
+
+                  <PainelMecanica magia={selecionada} />
 
                   <PainelGrimorio titulo="Descrição" compacto className="mb-3">
                     <p className="text-[var(--text2)] font-crimson whitespace-pre-wrap leading-relaxed">{selecionada.description_pt}</p>
