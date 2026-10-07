@@ -639,14 +639,20 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       reaplicarFicha(personagemId)
     }
 
-    // Mutação local de PV/espaços que até aqui só ia para batalha_combatentes
-    // (e para a ficha apenas no encerramento). Como a leitura agora vem de
-    // personagens, sem esta gravação a mudança seria desfeita no próximo evento.
+    // Mutação local de PV/espaços: como a leitura vem de personagens, sem esta
+    // gravação a mudança seria desfeita no próximo evento.
     // Grava apenas os `campos` declarados pelo chamador — obrigatório.
+    // Sem ficha no mapa (fallback, ou ficha que este usuário não lê por RLS),
+    // o combatente só tem a cópia de batalha_combatentes: gravar a partir dela
+    // sobrescreveria a ficha real com dado velho. Aborta e avisa.
     async function gravarFicha(combatenteId: string, campos: CampoFicha[]) {
       const c = get().combatentes.find(x => x.id === combatenteId)
       if (!c?.personagem_id || campos.length === 0) return
       const pid = c.personagem_id
+      if (!get().personagensDaBatalha[pid]) {
+        toast.error(`Alteração não salva na ficha de ${c.nome} — a ficha não foi carregada nesta batalha`)
+        return
+      }
       const anterior = espelharFicha(combatenteId, campos)
       const { error } = await createClient().from('personagens').update(fichaParcial(c, campos)).eq('id', pid)
       if (error) falhaGravarFicha(pid, c.nome, anterior, error)
@@ -930,21 +936,6 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         const { data: { user } } = await supabase.auth.getUser()
 
         const conteudo = montarConteudoDiario({ nomeBatalha, rodadaAtual, iniciadaEm, log, combatentes })
-
-        // Cobre a lacuna de sincronização em tempo real: espaços de magia usados
-        // durante a batalha (EspacosMagia.tsx -> usarEspaco) só existem em
-        // batalha_combatentes até este ponto — nunca voltaram para a ficha.
-        // PV/PV temp já são sincronizados a cada aplicarDano/aplicarCura, mas
-        // regravamos aqui também para garantir consistência no encerramento.
-        await Promise.all(
-          combatentes
-            .filter(c => c.personagem_id)
-            .map(c => supabase.from('personagens').update({
-              pv_atual: c.pv_atual,
-              pv_temporarios: c.pv_temporarios,
-              slots_magia: c.espacos_magia,
-            }).eq('id', c.personagem_id as string))
-        ).catch(err => console.error('Erro ao sincronizar fichas ao encerrar batalha:', err))
 
         // sessoes não é mais tocado aqui — a sessão é um estado independente
         // da batalha (pode continuar ativa com outras batalhas depois), só

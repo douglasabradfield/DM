@@ -251,6 +251,27 @@ async function tratarAcaoBatalha(
     if (combatentesAlvo.length !== alvoIds.length) {
       return Response.json({ erro: 'Um ou mais alvos não pertencem a esta batalha' }, { status: 403 })
     }
+
+    // Alvo com ficha: PV vem de personagens, não da cópia em batalha_combatentes.
+    // Sem a ficha, recusa — calcular sobre dado velho é pior do que não agir.
+    const personagemIds = [...new Set(combatentesAlvo.map(c => c.personagem_id as string | null).filter((id): id is string => !!id))]
+    if (personagemIds.length > 0) {
+      const { data: fichas, error: erroFichas } = await admin
+        .from('personagens')
+        .select('id, pv_atual, pv_temporarios, pv_maximo')
+        .in('id', personagemIds)
+      if (erroFichas || !fichas || fichas.length !== personagemIds.length) {
+        console.error('Erro ao ler fichas dos alvos:', erroFichas)
+        return Response.json({ erro: 'Não foi possível ler a ficha dos alvos — tente de novo' }, { status: 500 })
+      }
+      const mapaFichas = new Map(fichas.map(f => [f.id as string, f]))
+      combatentesAlvo = combatentesAlvo.map(c => {
+        const ficha = c.personagem_id ? mapaFichas.get(c.personagem_id as string) : undefined
+        return ficha
+          ? { ...c, pv_atual: ficha.pv_atual ?? 0, pv_temporarios: ficha.pv_temporarios ?? 0, pv_maximo: ficha.pv_maximo ?? 0 }
+          : c
+      })
+    }
   }
 
   // Espaço de magia disponível no nível informado
