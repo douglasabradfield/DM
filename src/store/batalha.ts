@@ -153,14 +153,31 @@ function fichaDaLinha(linha: LinhaFicha, anterior?: FichaBatalha): FichaBatalha 
   }
 }
 
-function fichaDoCombatente(c: Combatente): FichaBatalha {
-  return {
-    pv_atual: c.pv_atual,
-    pv_temporarios: c.pv_temporarios,
-    pv_maximo: c.pv_maximo,
-    slots_magia: c.espacos_magia as Record<string, { total: number; usados: number }>,
+type CampoFicha = 'pv_atual' | 'pv_temporarios' | 'pv_maximo' | 'slots_magia'
+
+// Só os campos pedidos, lidos do combatente. Nunca os quatro por padrão: cada
+// ação da batalha mexe em um campo, e gravar os outros empurraria para a ficha
+// uma cópia possivelmente velha de PV máximo ou espaços.
+function fichaParcial(c: Combatente, campos: CampoFicha[]): Partial<FichaBatalha> {
+  const patch: Partial<FichaBatalha> = {}
+  for (const campo of campos) {
+    if (campo === 'slots_magia') patch.slots_magia = c.espacos_magia as Record<string, { total: number; usados: number }>
+    else patch[campo] = c[campo]
   }
+  return patch
 }
+
+// Campos de Partial<Combatente> que correspondem a campos da ficha.
+function camposFichaEm(dados: Partial<Combatente>): CampoFicha[] {
+  const campos: CampoFicha[] = []
+  if ('pv_atual' in dados) campos.push('pv_atual')
+  if ('pv_temporarios' in dados) campos.push('pv_temporarios')
+  if ('pv_maximo' in dados) campos.push('pv_maximo')
+  if ('espacos_magia' in dados) campos.push('slots_magia')
+  return campos
+}
+
+const CAMPOS_PV: CampoFicha[] = ['pv_atual', 'pv_temporarios']
 
 // Ponto único de leitura de PV e espaços de magia do combatente com ficha:
 // substitui os campos da linha de batalha_combatentes pelos de personagens.
@@ -594,14 +611,16 @@ export const useBatalha = create<EstadoBatalhaStore>()(
     // espelha no mapa para que o eco de batalha_combatentes (lido através do
     // mapa) não traga de volta o valor antigo antes do eco de personagens.
     // Sem ficha no mapa (fallback), não cria entrada — a linha segue valendo.
-    // Devolve a ficha anterior, para reverter se a gravação falhar.
-    function espelharFicha(combatenteId: string): FichaBatalha | undefined {
+    // Mescla só os `campos` sobre a entrada existente e devolve a entrada
+    // anterior completa, para reverter se a gravação falhar.
+    function espelharFicha(combatenteId: string, campos: CampoFicha[]): FichaBatalha | undefined {
       const c = get().combatentes.find(x => x.id === combatenteId)
       if (!c?.personagem_id) return
       const pid = c.personagem_id
       const anterior = get().personagensDaBatalha[pid]
       if (!anterior) return
-      const ficha = fichaDoCombatente(c)
+      if (campos.length === 0) return anterior
+      const ficha = { ...anterior, ...fichaParcial(c, campos) }
       set(s => { s.personagensDaBatalha[pid] = ficha })
       return anterior
     }
@@ -623,12 +642,13 @@ export const useBatalha = create<EstadoBatalhaStore>()(
     // Mutação local de PV/espaços que até aqui só ia para batalha_combatentes
     // (e para a ficha apenas no encerramento). Como a leitura agora vem de
     // personagens, sem esta gravação a mudança seria desfeita no próximo evento.
-    async function gravarFicha(combatenteId: string) {
+    // Grava apenas os `campos` declarados pelo chamador — obrigatório.
+    async function gravarFicha(combatenteId: string, campos: CampoFicha[]) {
       const c = get().combatentes.find(x => x.id === combatenteId)
-      if (!c?.personagem_id) return
+      if (!c?.personagem_id || campos.length === 0) return
       const pid = c.personagem_id
-      const anterior = espelharFicha(combatenteId)
-      const { error } = await createClient().from('personagens').update(fichaDoCombatente(c)).eq('id', pid)
+      const anterior = espelharFicha(combatenteId, campos)
+      const { error } = await createClient().from('personagens').update(fichaParcial(c, campos)).eq('id', pid)
       if (error) falhaGravarFicha(pid, c.nome, anterior, error)
     }
 
@@ -1113,13 +1133,12 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         }
         set(state => { state.combatentes.push(novo) })
 
-        // O combatente veio clonado da ficha; a ficha em si é relida para o
-        // mapa, que passa a responder por PV e espaços dele.
-        if (novo.personagem_id) {
-          const pid = novo.personagem_id
-          if (!state0.personagensDaBatalha[pid]) set(state => { state.personagensDaBatalha[pid] = fichaDoCombatente(novo) })
-          carregarFichas([pid])
-        }
+        // A ficha é lida para o mapa, que passa a responder por PV e espaços.
+        // Até a leitura responder, o combatente fica SEM entrada no mapa e
+        // aplicarFicha cai para a linha da batalha. Não semear o mapa a partir
+        // do combatente: isso inverte a fonte da verdade e, se a leitura da
+        // ficha falhar, a batalha passa a ditar o PV máximo e os espaços.
+        if (novo.personagem_id) carregarFichas([novo.personagem_id])
 
         if (state0.batalhaId) {
           const linha = combatenteParaLinha(novo, state0.batalhaId)
@@ -1158,11 +1177,10 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           if (idx !== -1) Object.assign(state.combatentes[idx], dados)
         })
         persistirCombatente(id, anterior)
-        // pv_maximo e espaços não tinham gravação na ficha; gravarFicha grava
-        // os quatro campos. PV puro segue pela gravação de sempre.
-        const tocaFicha = 'pv_maximo' in dados || 'espacos_magia' in dados
+        // PV segue pela gravação de sempre; pv_maximo e espaços não tinham
+        // gravação na ficha e vão por gravarFicha, só os que vieram em dados.
         if ('pv_atual' in dados || 'pv_temporarios' in dados) {
-          const fichaAnterior = tocaFicha ? undefined : espelharFicha(id)
+          const fichaAnterior = espelharFicha(id, CAMPOS_PV)
           const c = get().combatentes.find(x => x.id === id)
           if (c?.personagem_id) {
             const pid = c.personagem_id
@@ -1172,7 +1190,10 @@ export const useBatalha = create<EstadoBatalhaStore>()(
               .then(({ error }) => { if (error) falhaGravarFicha(pid, c.nome, fichaAnterior, error) })
           }
         }
-        if (tocaFicha) gravarFicha(id)
+        const camposFicha: CampoFicha[] = []
+        if ('pv_maximo' in dados) camposFicha.push('pv_maximo')
+        if ('espacos_magia' in dados) camposFicha.push('slots_magia')
+        if (camposFicha.length > 0) gravarFicha(id, camposFicha)
       },
 
       definirIniciativa: (id, valor) => mutarCombatente(id, c => { c.iniciativa = valor }),
@@ -1278,7 +1299,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
         persistirCombatente(id, c)
         entradasLog.forEach(persistirLog)
-        const fichaAnterior = espelharFicha(id)
+        const fichaAnterior = espelharFicha(id, CAMPOS_PV)
 
         if (c.personagem_id) {
           const pid = c.personagem_id
@@ -1328,7 +1349,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
         persistirCombatente(id, c)
         if (entrada) persistirLog(entrada)
-        const fichaAnterior = espelharFicha(id)
+        const fichaAnterior = espelharFicha(id, CAMPOS_PV)
 
         if (c.personagem_id) {
           const pid = c.personagem_id
@@ -1353,7 +1374,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
       atualizarPV: (id, pvAtual) => {
         mutarCombatente(id, c => { c.pv_atual = Math.max(0, Math.min(c.pv_maximo, pvAtual)) })
-        const fichaAnterior = espelharFicha(id)
+        const fichaAnterior = espelharFicha(id, CAMPOS_PV)
         const c = get().combatentes.find(x => x.id === id)
         if (c?.personagem_id) {
           const pid = c.personagem_id
@@ -1365,11 +1386,15 @@ export const useBatalha = create<EstadoBatalhaStore>()(
       },
 
       atualizarPVMax: (id, pvMax) => {
+        const pvAntes = get().combatentes.find(x => x.id === id)?.pv_atual
         mutarCombatente(id, c => {
           c.pv_maximo = pvMax
           c.pv_atual = Math.min(c.pv_atual, pvMax)
         })
-        gravarFicha(id)
+        // pv_atual só entra se o corte pelo novo máximo o alterou — senão a
+        // ficha ficaria com PV atual acima do máximo.
+        const cortou = get().combatentes.find(x => x.id === id)?.pv_atual !== pvAntes
+        gravarFicha(id, cortou ? ['pv_maximo', 'pv_atual'] : ['pv_maximo'])
       },
 
       setarDanoInput: (id, valor) => set(state => {
@@ -1426,7 +1451,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           state.log.push(entrada)
         })
         ids.forEach(id => persistirCombatente(id))
-        ids.forEach(id => gravarFicha(id))
+        ids.forEach(id => gravarFicha(id, ['pv_atual']))
         persistirLog(entrada)
       },
 
@@ -1480,7 +1505,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           const { novosEspacos, ok } = consumirEspaco(c.espacos_magia, nivel)
           if (ok) c.espacos_magia = novosEspacos
         })
-        gravarFicha(id)
+        gravarFicha(id, ['slots_magia'])
       },
 
       // Substitui o objeto do nível em vez de mutar: espacos_magia pode ser a
@@ -1490,7 +1515,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           const espaco = c.espacos_magia[nivel]
           if (espaco && espaco.usados > 0) c.espacos_magia = { ...c.espacos_magia, [nivel]: { ...espaco, usados: espaco.usados - 1 } }
         })
-        gravarFicha(id)
+        gravarFicha(id, ['slots_magia'])
       },
 
       proximoTurno: () => {
@@ -1612,7 +1637,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           c.morto = !c.morto
           if (c.morto) c.pv_atual = 0
         })
-        if (get().combatentes.find(x => x.id === id)?.pv_atual !== pvAntes) gravarFicha(id)
+        if (get().combatentes.find(x => x.id === id)?.pv_atual !== pvAntes) gravarFicha(id, ['pv_atual'])
       },
 
       reordenarCombatentes: (idAtivo, idSobre) => {
@@ -1673,7 +1698,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         })
         persistirCombatente(c.id, c)
         // Chamado depois que a ficha já gravou em personagens.
-        espelharFicha(c.id)
+        espelharFicha(c.id, camposFichaEm(dados))
       },
 
       usarInspiracao: (id) => {
