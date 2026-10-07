@@ -30,10 +30,9 @@ interface LinhaCombatenteProps {
 export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponiveis }: LinhaCombatenteProps) {
   const router = useRouter()
   const {
-    toggleMorto, removerCombatente,
+    removerCombatente,
     editarEstado, atualizarCombatente,
     setarDanoInput, setarTipoDano,
-    adicionarCondicao, removerCondicao,
     definirIniciativa, setVantagem, usarInspiracao,
     togglePvRevelado, definirTurnoPara,
   } = useBatalha()
@@ -77,9 +76,15 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
     }
   }
 
+  // Só tira a marca de morto: o PV não sobe sozinho (dar PV é ajuste de PV).
   function reviverCombatente() {
-    atualizarCombatente(c.id, { pv_atual: 1, morto: false })
+    editarEstado({ tipo: 'definir_morto', alvos: [{ combatenteId: c.id, morto: false }] })
   }
+
+  const adicionarCondicao = (condicao: TipoCondicao) =>
+    editarEstado({ tipo: 'aplicar_condicao', alvos: [{ combatenteId: c.id, condicao }] })
+  const removerCondicao = (condicao: TipoCondicao) =>
+    editarEstado({ tipo: 'remover_condicao', alvos: [{ combatenteId: c.id, condicao }] })
 
   const [atualizandoFicha, setAtualizandoFicha] = useState(false)
 
@@ -427,7 +432,7 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
             <PopupCondicao
               key={cond}
               condicao={cond}
-              onRemover={() => removerCondicao(c.id, cond)}
+              onRemover={() => removerCondicao(cond)}
             />
           ))}
           <div className="relative">
@@ -456,7 +461,7 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
                   {condicoesDisponiveis.filter(cond => !c.condicoes.includes(cond as TipoCondicao)).map(cond => (
                     <button
                       key={cond}
-                      onClick={() => { adicionarCondicao(c.id, cond as TipoCondicao); setMostraCondicoes(false) }}
+                      onClick={() => { adicionarCondicao(cond as TipoCondicao); setMostraCondicoes(false) }}
                       className="w-full text-left px-2 py-1 text-xs text-[var(--text2)] hover:bg-[var(--bg3)] hover:text-[var(--text)] transition-colors"
                     >
                       {cond}
@@ -556,13 +561,13 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
             <button
               onClick={reviverCombatente}
               className="text-xs px-1.5 py-0.5 rounded bg-[#1a6b3a]/30 border border-[#27ae60]/40 text-[#27ae60] hover:bg-[#27ae60]/20 transition-colors font-cinzel"
-              title="Reviver com 1 PV"
+              title="Desmarcar morto (o PV não muda)"
             >
               💊
             </button>
           ) : (
             <button
-              onClick={() => toggleMorto(c.id)}
+              onClick={() => editarEstado({ tipo: 'definir_morto', alvos: [{ combatenteId: c.id, morto: true }] })}
               className="text-xs p-1 rounded text-[var(--text3)] hover:text-[var(--red2)] transition-colors"
               title="Matar"
             >
@@ -606,7 +611,11 @@ export function CartaoCombatenteMobile({ combatente: c, ativo, condicoesDisponiv
   ativo: boolean
   condicoesDisponiveis: string[]
 }) {
-  const { editarEstado, setarTipoDano, adicionarCondicao, removerCondicao, togglePvRevelado } = useBatalha()
+  const { editarEstado, setarTipoDano, togglePvRevelado } = useBatalha()
+  const adicionarCondicao = (condicao: TipoCondicao) =>
+    editarEstado({ tipo: 'aplicar_condicao', alvos: [{ combatenteId: c.id, condicao }] })
+  const removerCondicao = (condicao: TipoCondicao) =>
+    editarEstado({ tipo: 'remover_condicao', alvos: [{ combatenteId: c.id, condicao }] })
   const pausada = useBatalha(s => s.statusBatalha === 'pausada')
   const revelacaoPv = useBatalha(s => s.revelacaoPv)
 
@@ -661,7 +670,7 @@ export function CartaoCombatenteMobile({ combatente: c, ativo, condicoesDisponiv
         <span className="text-[var(--text3)]">CA <span className="text-[var(--text2)] font-bold">{c.ca}</span></span>
         <span className="text-[var(--text3)]">Init <span className="text-[var(--text2)] font-bold">{c.iniciativa}</span></span>
         {c.condicoes.map(cond => (
-          <PopupCondicao key={cond} condicao={cond} onRemover={() => removerCondicao(c.id, cond)} />
+          <PopupCondicao key={cond} condicao={cond} onRemover={() => removerCondicao(cond)} />
         ))}
       </div>
 
@@ -720,7 +729,7 @@ export function CartaoCombatenteMobile({ combatente: c, ativo, condicoesDisponiv
             {condicoesDisponiveis.filter(cond => !c.condicoes.includes(cond as TipoCondicao)).map(cond => (
               <button
                 key={cond}
-                onClick={() => { adicionarCondicao(c.id, cond as TipoCondicao); setPopoverAberto(null) }}
+                onClick={() => { adicionarCondicao(cond as TipoCondicao); setPopoverAberto(null) }}
                 className="w-full text-left px-3 py-2 text-sm text-[var(--text2)] hover:bg-[var(--bg3)] hover:text-[var(--text)] transition-colors"
               >
                 {cond}

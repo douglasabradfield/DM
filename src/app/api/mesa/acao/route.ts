@@ -3,6 +3,8 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { calcularDano, aplicarCura, consumirEspaco } from '@/lib/batalha/motor'
 import { normalizarTipoDano, MODIFICADOR_RESISTENCIA, MODIFICADOR_VULNERABILIDADE } from '@/lib/dados-dnd/tipos-dano'
 import { ehPactoArcano } from '@/lib/dados-dnd/espacos-magia'
+import { TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
+import { ORIGEM_AJUSTE } from '@/lib/batalha/acao-api'
 import type { TipoDano } from '@/types/dnd'
 import type { TipoCondicao, TipoEntradaLog, EspacosMagiaBatalha } from '@/types/batalha'
 
@@ -112,6 +114,7 @@ interface AcaoInventarioPayload {
 type TipoAcaoEstado =
   | 'dano_ambiente' | 'cura_ambiente' | 'ajustar_pv'
   | 'definir_pv_maximo' | 'definir_espacos' | 'zerar_contadores'
+  | 'definir_morto' | 'aplicar_condicao' | 'remover_condicao'
 
 interface AlvoEstadoPayload {
   combatenteId: string
@@ -120,6 +123,8 @@ interface AlvoEstadoPayload {
   pvMaximo?: number
   nivelMagia?: number
   usar?: boolean
+  morto?: boolean
+  condicao?: TipoCondicao
 }
 
 interface AcaoEstadoPayload {
@@ -132,7 +137,12 @@ interface AcaoEstadoPayload {
 
 const TIPOS_ESTADO = new Set<string>([
   'dano_ambiente', 'cura_ambiente', 'ajustar_pv', 'definir_pv_maximo', 'definir_espacos', 'zerar_contadores',
+  'definir_morto', 'aplicar_condicao', 'remover_condicao',
 ])
+
+// Vocabulário único de condições para sessão e batalha — o mesmo que as
+// telas oferecem (e idêntico à tabela `condicoes`).
+const CONDICOES_VALIDAS = new Set<string>(TODAS_CONDICOES)
 
 const TIPOS_INVENTARIO = new Set<string>([
   'usar_item', 'equipar_item', 'descartar_item', 'adicionar_item', 'definir_item',
@@ -527,8 +537,6 @@ async function tratarAcaoBatalha(
 // personagens. Sem validação de turno: corrigir um número não é ação de turno.
 // =============================================================================
 
-const ORIGEM_AJUSTE = 'DM (ajuste)'
-
 const ehInteiro = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v)
 
 // O que uma edição faz num combatente: patch da linha da batalha (espelho) e
@@ -594,7 +602,7 @@ async function tratarAcaoEstado(
   if (personagemIds.length > 0) {
     const { data: fichas, error: erroFichas } = await admin
       .from('personagens')
-      .select('id, pv_atual, pv_temporarios, pv_maximo, slots_magia')
+      .select('id, pv_atual, pv_temporarios, pv_maximo, slots_magia, condicoes')
       .in('id', personagemIds)
     if (erroFichas || !fichas || fichas.length !== personagemIds.length) {
       console.error('Erro ao ler fichas dos alvos:', erroFichas)
@@ -604,9 +612,10 @@ async function tratarAcaoEstado(
   }
 
   // definir_pv_maximo é justamente o conserto de uma ficha com PV máximo
-  // quebrado; definir_espacos não depende dele. Os demais usam o máximo
-  // como teto e recusam ficha inválida, como o caminho de ator.
-  if (tipo !== 'definir_pv_maximo' && tipo !== 'definir_espacos') {
+  // quebrado; espaços, morto e condições não dependem dele. Os demais usam
+  // o máximo como teto e recusam ficha inválida, como o caminho de ator.
+  const usaPvMaximo = ['dano_ambiente', 'cura_ambiente', 'ajustar_pv', 'zerar_contadores'].includes(tipo)
+  if (usaPvMaximo) {
     const quebrado = linhas.find(c => {
       const pvMax = c.personagem_id ? mapaFichas.get(c.personagem_id as string)?.pv_maximo : c.pv_maximo
       return !(typeof pvMax === 'number' && pvMax > 0)
@@ -620,7 +629,14 @@ async function tratarAcaoEstado(
   const combatentes = new Map(linhas.map(c => {
     const ficha = c.personagem_id ? mapaFichas.get(c.personagem_id as string) : undefined
     const mesclado = ficha
-      ? { ...c, pv_atual: ficha.pv_atual ?? 0, pv_temporarios: ficha.pv_temporarios ?? 0, pv_maximo: ficha.pv_maximo, slots_magia: ficha.slots_magia ?? {} }
+      ? {
+          ...c,
+          pv_atual: ficha.pv_atual ?? 0,
+          pv_temporarios: ficha.pv_temporarios ?? 0,
+          pv_maximo: ficha.pv_maximo,
+          slots_magia: ficha.slots_magia ?? {},
+          condicoes_ficha: ficha.condicoes ?? [],
+        }
       : c
     return [c.id as string, mesclado as Record<string, unknown>]
   }))
@@ -636,6 +652,11 @@ async function tratarAcaoEstado(
   const efeitos: EfeitoEstado[] = []
   let xpGanho = 0
   const tipoDano = tipo === 'dano_ambiente' ? normalizarTipoDano(payload.tipoDano) : null
+
+  // Marcar e desmarcar são ações diferentes (e entradas de log diferentes).
+  if (tipo === 'definir_morto' && new Set(alvos.map(a => a.morto)).size > 1) {
+    return Response.json({ erro: 'Marque ou desmarque morto, não os dois na mesma ação' }, { status: 400 })
+  }
 
   if (tipo === 'dano_ambiente' && !tipoDano) {
     return Response.json({ erro: 'Escolha o tipo de dano — dano sem tipo não é aplicado' }, { status: 400 })
@@ -798,9 +819,67 @@ async function tratarAcaoEstado(
         break
       }
 
+      // Marcar morto leva o PV a zero nos dois lugares, no mesmo update.
+      // Desmarcar (💊 Reviver) só tira a marca: PV não sobe sozinho — dar PV
+      // é ajustar_pv. Já no estado pedido = nada a fazer, sem erro.
+      case 'definir_morto': {
+        if (typeof alvo.morto !== 'boolean') {
+          return Response.json({ erro: `Informe se ${nome} está morto` }, { status: 400 })
+        }
+        if (alvo.morto) {
+          if (c.morto === true && pvAtual === 0) break
+          efeitos.push({
+            combatente: c,
+            linha: { morto: true, pv_atual: 0 },
+            ficha: pvAtual !== 0 ? { pv_atual: 0 } : {},
+            descricao: nome,
+            valor: 0,
+            morreu: true,
+          })
+        } else {
+          if (c.morto !== true) break
+          efeitos.push({ combatente: c, linha: { morto: false }, ficha: {}, descricao: nome, valor: 0, morreu: false })
+        }
+        break
+      }
+
+      // A condição vai para a linha da batalha e, com ficha, para
+      // personagens.condicoes — senão sai do combate e some da ficha. Cada
+      // lado é conferido em separado; já aplicada (ou já removida) nos dois =
+      // nada a fazer, sem erro.
+      case 'aplicar_condicao':
+      case 'remover_condicao': {
+        const condicao = alvo.condicao
+        if (!condicao || !CONDICOES_VALIDAS.has(condicao)) {
+          return Response.json({ erro: `Condição inválida para ${nome}` }, { status: 400 })
+        }
+        const aplicar = tipo === 'aplicar_condicao'
+        const alterar = (lista: string[]) => aplicar
+          ? (lista.includes(condicao) ? null : [...lista, condicao])
+          : (lista.includes(condicao) ? lista.filter(x => x !== condicao) : null)
+        const novaLinha = alterar((c.condicoes ?? []) as string[])
+        const novaFicha = c.personagem_id ? alterar((c.condicoes_ficha ?? []) as string[]) : null
+        if (!novaLinha && !novaFicha) break
+        efeitos.push({
+          combatente: c,
+          linha: novaLinha ? { condicoes: novaLinha } : {},
+          ficha: novaFicha ? { condicoes: novaFicha } : {},
+          descricao: aplicar ? `${nome} ficou ${condicao}` : `${nome} não está mais ${condicao}`,
+          valor: 0,
+          morreu: false,
+        })
+        break
+      }
+
       default:
         return Response.json({ erro: 'Tipo de edição inválido' }, { status: 400 })
     }
+  }
+
+  // Tudo já no estado pedido (condição repetida, morto já morto): sucesso
+  // sem gravar nada e sem poluir o log.
+  if (efeitos.length === 0) {
+    return Response.json({ ok: true, combatentesAfetados: [], xpGanho: 0, log: null })
   }
 
   // =========================================================================
@@ -816,6 +895,7 @@ async function tratarAcaoEstado(
         return Response.json({ erro: `Erro ao salvar a ficha de ${combatente.nome as string}` }, { status: 500 })
       }
     }
+    if (Object.keys(linha).length === 0) continue
     const { error } = await admin.from('batalha_combatentes').update(linha).eq('id', combatente.id as string)
     if (error) {
       console.error('Erro ao gravar combatente (edição de estado):', error)
@@ -823,9 +903,10 @@ async function tratarAcaoEstado(
     }
   }
 
-  // Uma entrada por ação, mesmo em lote. Dano e cura entram como 'dano'/
-  // 'cura' (contam no diário, atribuídos ao ajuste do mestre); correções
-  // entram como 'sistema'.
+  // Uma entrada narrativa por ação, mesmo em lote — é a que o log mostra.
+  // Dano e cura entram como 'dano'/'cura', com a origem de ajuste; marcar
+  // morto entra como 'morte' (o diário conta baixa); condições como
+  // 'condicao'; correções como 'sistema'.
   const rotulos: Record<TipoAcaoEstado, string> = {
     dano_ambiente: `💥 Dano (${tipoDano})`,
     cura_ambiente: '💚 Cura',
@@ -833,33 +914,63 @@ async function tratarAcaoEstado(
     definir_pv_maximo: '✏️ PV máximo',
     definir_espacos: '✨ Espaço de magia',
     zerar_contadores: '🔄 Contadores zerados — PV ao máximo e mortos revividos',
+    definir_morto: efeitos[0].morreu ? '💀 Marcado como morto' : '💊 Morte desmarcada',
+    aplicar_condicao: '🔮 Condição',
+    remover_condicao: '🔮 Condição removida',
   }
   const descricaoFinal = [
     rotulos[tipo],
     `— ${efeitos.map(e => e.descricao).join(', ')}`,
     payload.motivo?.trim() ? `(${payload.motivo.trim()})` : '',
   ].filter(Boolean).join(' ')
-  const tipoLog: TipoEntradaLog = tipo === 'dano_ambiente' ? 'dano' : tipo === 'cura_ambiente' ? 'cura' : 'sistema'
-  const somaValores = tipoLog === 'sistema' ? null : efeitos.reduce((soma, e) => soma + e.valor, 0)
+  const tiposLog: Record<TipoAcaoEstado, TipoEntradaLog> = {
+    dano_ambiente: 'dano',
+    cura_ambiente: 'cura',
+    ajustar_pv: 'sistema',
+    definir_pv_maximo: 'sistema',
+    definir_espacos: 'sistema',
+    zerar_contadores: 'sistema',
+    definir_morto: efeitos[0].morreu ? 'morte' : 'sistema',
+    aplicar_condicao: 'condicao',
+    remover_condicao: 'condicao',
+  }
+  const tipoLog = tiposLog[tipo]
+  const contabil = tipoLog === 'dano' || tipoLog === 'cura'
+  const somaValores = contabil ? efeitos.reduce((soma, e) => soma + e.valor, 0) : null
+
+  const linhaNarrativa = {
+    batalha_id: batalhaId,
+    rodada: batalha.rodada_atual,
+    turno: null,
+    tipo: tipoLog,
+    autor_id: null,
+    autor_nome: ORIGEM_AJUSTE,
+    alvo_id: efeitos.length === 1 ? efeitos[0].combatente.id : null,
+    alvo_nome: todaBatalha ? 'Todos' : efeitos.map(e => e.combatente.nome as string).join(', '),
+    valor: somaValores,
+    tipo_dano: tipoDano,
+    descricao: descricaoFinal,
+    resumo: false,
+  }
+
+  // Dano e cura levam também uma entrada contábil por alvo (resumo=true,
+  // escondida do log ao vivo), como o caminho de ator: é delas, e só delas,
+  // que o diário soma totais por atacante e por alvo.
+  const linhasContabeis = contabil
+    ? efeitos.map(e => ({
+        ...linhaNarrativa,
+        alvo_id: e.combatente.id,
+        alvo_nome: e.combatente.nome,
+        valor: e.valor,
+        descricao: `${ORIGEM_AJUSTE} → ${e.descricao}`,
+        resumo: true,
+      }))
+    : []
 
   const { data: logInserido, error: erroLog } = await admin
     .from('batalha_log')
-    .insert({
-      batalha_id: batalhaId,
-      rodada: batalha.rodada_atual,
-      turno: null,
-      tipo: tipoLog,
-      autor_id: null,
-      autor_nome: ORIGEM_AJUSTE,
-      alvo_id: efeitos.length === 1 ? efeitos[0].combatente.id : null,
-      alvo_nome: todaBatalha ? 'Todos' : efeitos.map(e => e.combatente.nome as string).join(', '),
-      valor: somaValores,
-      tipo_dano: tipoDano,
-      descricao: descricaoFinal,
-      resumo: false,
-    })
+    .insert([linhaNarrativa, ...linhasContabeis])
     .select()
-    .maybeSingle()
   if (erroLog) {
     console.error('Erro ao gravar log da edição de estado (efeito já aplicado):', erroLog)
   }
@@ -868,7 +979,7 @@ async function tratarAcaoEstado(
     ok: true,
     combatentesAfetados: efeitos.map(e => ({ id: e.combatente.id, nome: e.combatente.nome, valor: e.valor, morreu: e.morreu })),
     xpGanho,
-    log: logInserido ?? null,
+    log: logInserido?.find(l => !l.resumo) ?? null,
   })
 }
 
@@ -984,7 +1095,9 @@ async function tratarAcaoSessao(
       break
     }
     case 'condicao_aplicada': {
-      if (!payload.condicao) return Response.json({ erro: 'Condição não informada' }, { status: 400 })
+      if (!payload.condicao || !CONDICOES_VALIDAS.has(payload.condicao)) {
+        return Response.json({ erro: 'Condição inválida' }, { status: 400 })
+      }
       const atuais = (personagem.condicoes ?? []) as string[]
       if (!atuais.includes(payload.condicao)) {
         patch.condicoes = [...atuais, payload.condicao]
@@ -993,7 +1106,9 @@ async function tratarAcaoSessao(
       break
     }
     case 'condicao_removida': {
-      if (!payload.condicao) return Response.json({ erro: 'Condição não informada' }, { status: 400 })
+      if (!payload.condicao || !CONDICOES_VALIDAS.has(payload.condicao)) {
+        return Response.json({ erro: 'Condição inválida' }, { status: 400 })
+      }
       const atuais = (personagem.condicoes ?? []) as string[]
       patch.condicoes = atuais.filter(c => c !== payload.condicao)
       descricao = `${personagem.nome} não está mais ${payload.condicao}`

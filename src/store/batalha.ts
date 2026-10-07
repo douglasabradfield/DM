@@ -9,7 +9,7 @@ import type { TipoDano } from '@/types/dnd'
 import { calcularDano, aplicarCura as calcularCura, consumirEspaco } from '@/lib/batalha/motor'
 import type { ModoRevelacao } from '@/lib/batalha/visibilidade-pv'
 import { createClient } from '@/lib/supabase/client'
-import { chamarAcaoApi, type PayloadAcaoEstado, type TipoAcaoEstado } from '@/lib/batalha/acao-api'
+import { chamarAcaoApi, ORIGEM_AJUSTE, type PayloadAcaoEstado, type TipoAcaoEstado } from '@/lib/batalha/acao-api'
 import toast from 'react-hot-toast'
 
 // =============================================================================
@@ -263,16 +263,24 @@ function montarConteudoDiario(params: {
 
   const danoPorAtacante = new Map<string, { total: number; acertos: number }>()
   const curaPorAtacante = new Map<string, number>()
+  const danoPorAlvo = new Map<string, number>()
   const baixas: { nome: string; rodada: number }[] = []
 
+  // Dano e cura somam só das entradas contábeis (resumo, uma por alvo): a
+  // narrativa da mesma ação repete o total, e somar as duas contaria em
+  // dobro. O ajuste do mestre (dano de ambiente, cura sem conjurador) entra
+  // no dano sofrido, mas não no ranking de quem causou ou curou.
   log.forEach(l => {
-    if (l.tipo === 'dano' && l.valor != null) {
-      const atual = danoPorAtacante.get(l.origem) ?? { total: 0, acertos: 0 }
-      atual.total += l.valor
-      if (l.valor > 0) atual.acertos++
-      danoPorAtacante.set(l.origem, atual)
+    if (l.tipo === 'dano' && l.resumo && l.valor != null) {
+      danoPorAlvo.set(l.alvo, (danoPorAlvo.get(l.alvo) ?? 0) + l.valor)
+      if (l.origem !== ORIGEM_AJUSTE) {
+        const atual = danoPorAtacante.get(l.origem) ?? { total: 0, acertos: 0 }
+        atual.total += l.valor
+        if (l.valor > 0) atual.acertos++
+        danoPorAtacante.set(l.origem, atual)
+      }
     }
-    if (l.tipo === 'cura' && l.valor != null) {
+    if (l.tipo === 'cura' && l.resumo && l.valor != null && l.origem !== ORIGEM_AJUSTE) {
       curaPorAtacante.set(l.origem, (curaPorAtacante.get(l.origem) ?? 0) + l.valor)
     }
     if (l.tipo === 'morte') {
@@ -295,6 +303,17 @@ function montarConteudoDiario(params: {
       ...[...danoPorAtacante.entries()]
         .sort((a, b) => b[1].total - a[1].total)
         .map(([nome, d]) => `- ${nome}: ${d.total} (${d.acertos} acerto${d.acertos !== 1 ? 's' : ''})`),
+    ].join('\n'))
+  }
+
+  if (danoPorAlvo.size > 0) {
+    const total = [...danoPorAlvo.values()].reduce((soma, v) => soma + v, 0)
+    secoes.push([
+      '### Dano sofrido',
+      ...[...danoPorAlvo.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([nome, valor]) => `- ${nome}: ${valor}`),
+      `- **Total: ${total}**`,
     ].join('\n'))
   }
 
@@ -451,10 +470,6 @@ interface EstadoBatalhaStore {
   setarTipoDano: (id: string, tipo: TipoDano | null) => void
   adicionarEntradaLog: (entrada: Omit<EntradaLog, 'id' | 'rodada' | 'turno' | 'criado_em' | 'resumo'> & { resumo?: boolean }) => void
 
-  // Condições
-  adicionarCondicao: (id: string, condicao: TipoCondicao) => void
-  removerCondicao: (id: string, condicao: TipoCondicao) => void
-
   // Turnos
   proximoTurno: () => void
   turnoAnterior: () => void
@@ -465,7 +480,6 @@ interface EstadoBatalhaStore {
 
   // Presença
   toggleAusencia: (id: string) => void
-  toggleMorto: (id: string) => void
 
   // Reordenação manual
   reordenarCombatentes: (idAtivo: string, idSobre: string) => void
@@ -493,10 +507,21 @@ interface EstadoBatalhaStore {
 //   definir_pv_maximo: valor é o novo máximo
 //   definir_espacos: nivelMagia + usar
 //   zerar: alvos são os combatentes a zerar
+//   definir_morto: morto (true zera o PV; false só tira a marca)
+//   aplicar_condicao / remover_condicao: condicao
 export interface PreviaAcao {
   atorId?: string
   efeito: 'dano' | 'cura' | 'ajustar_pv' | 'definir_pv_maximo' | 'definir_espacos' | 'zerar'
-  alvos: { combatenteId: string; valor?: number; tipoDano?: TipoDano; nivelMagia?: number; usar?: boolean }[]
+    | 'definir_morto' | 'aplicar_condicao' | 'remover_condicao'
+  alvos: {
+    combatenteId: string
+    valor?: number
+    tipoDano?: TipoDano
+    nivelMagia?: number
+    usar?: boolean
+    morto?: boolean
+    condicao?: TipoCondicao
+  }[]
   nivelMagia?: number
   reacao?: boolean
   marcarEfeitoAtivo?: string
@@ -509,6 +534,9 @@ const EFEITO_PREVIA: Record<TipoAcaoEstado, PreviaAcao['efeito']> = {
   definir_pv_maximo: 'definir_pv_maximo',
   definir_espacos: 'definir_espacos',
   zerar_contadores: 'zerar',
+  definir_morto: 'definir_morto',
+  aplicar_condicao: 'aplicar_condicao',
+  remover_condicao: 'remover_condicao',
 }
 
 // Mesmas recusas determinísticas da API, checadas antes da prévia para o
@@ -1283,44 +1311,6 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         persistirLog(nova)
       },
 
-      adicionarCondicao: (id, condicao) => {
-        const state0 = get()
-        const c = state0.combatentes.find(x => x.id === id)
-        if (!c || c.condicoes.includes(condicao)) return
-        const entrada = novaEntradaLog(state0.rodadaAtual, state0.turnoAtual, {
-          tipo: 'condicao', origem: 'DM', alvo: c.nome, valor: null, tipo_dano: null,
-          descricao: `${c.nome} ficou ${condicao}`,
-        })
-        set(state => {
-          const comb = state.combatentes.find(x => x.id === id)
-          if (comb && !comb.condicoes.includes(condicao)) {
-            comb.condicoes.push(condicao)
-            state.log.push(entrada)
-          }
-        })
-        persistirCombatente(id, c)
-        persistirLog(entrada)
-      },
-
-      removerCondicao: (id, condicao) => {
-        const state0 = get()
-        const c = state0.combatentes.find(x => x.id === id)
-        if (!c) return
-        const entrada = novaEntradaLog(state0.rodadaAtual, state0.turnoAtual, {
-          tipo: 'condicao', origem: 'DM', alvo: c.nome, valor: null, tipo_dano: null,
-          descricao: `${c.nome} não está mais ${condicao}`,
-        })
-        set(state => {
-          const comb = state.combatentes.find(x => x.id === id)
-          if (comb) {
-            comb.condicoes = comb.condicoes.filter(x => x !== condicao)
-            state.log.push(entrada)
-          }
-        })
-        persistirCombatente(id, c)
-        persistirLog(entrada)
-      },
-
       proximoTurno: () => {
         const state0 = get()
         const anterior = { turnoAtual: state0.turnoAtual, turnoCombatenteId: state0.turnoCombatenteId, rodadaAtual: state0.rodadaAtual }
@@ -1434,15 +1424,6 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
       toggleAusencia: (id) => mutarCombatente(id, c => { c.ausente = !c.ausente }),
 
-      toggleMorto: (id) => {
-        const pvAntes = get().combatentes.find(x => x.id === id)?.pv_atual
-        mutarCombatente(id, c => {
-          c.morto = !c.morto
-          if (c.morto) c.pv_atual = 0
-        })
-        if (get().combatentes.find(x => x.id === id)?.pv_atual !== pvAntes) gravarFicha(id, ['pv_atual'])
-      },
-
       reordenarCombatentes: (idAtivo, idSobre) => {
         const state0 = get()
         const anteriores = state0.combatentes.map(c => ({ id: c.id, ordem: c.ordem }))
@@ -1521,6 +1502,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             dano_total: c.dano_total,
             cura_total: c.cura_total,
             morto: c.morto,
+            condicoes: c.condicoes,
             espacos_magia: c.espacos_magia,
             slots_monstro: c.slots_monstro,
             reacao_usada: c.reacao_usada,
@@ -1587,6 +1569,16 @@ export const useBatalha = create<EstadoBatalhaStore>()(
                 c.cura_total = 0
                 c.pv_atual = c.pv_maximo
                 c.morto = false
+                break
+              case 'definir_morto':
+                c.morto = !!alvo.morto
+                if (alvo.morto) c.pv_atual = 0
+                break
+              case 'aplicar_condicao':
+                if (alvo.condicao && !c.condicoes.includes(alvo.condicao)) c.condicoes = [...c.condicoes, alvo.condicao]
+                break
+              case 'remover_condicao':
+                if (alvo.condicao) c.condicoes = c.condicoes.filter(x => x !== alvo.condicao)
                 break
             }
           }
@@ -1659,6 +1651,8 @@ export const useBatalha = create<EstadoBatalhaStore>()(
             tipoDano: edicao.tipoDano,
             nivelMagia: a.nivelMagia,
             usar: a.usar,
+            morto: a.morto,
+            condicao: a.condicao,
           })),
         }
         // Zerar sem alvos = a batalha inteira, igual à API.
