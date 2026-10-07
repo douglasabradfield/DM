@@ -39,11 +39,11 @@ export function consumirEspaco(
   nivel: number
 ): { novosEspacos: EspacosMagiaBatalha; ok: boolean } {
   const espaco = espacos[nivel]
-  if (!espaco || espaco.utilizados >= espaco.total) {
+  if (!espaco || espaco.usados >= espaco.total) {
     return { novosEspacos: espacos, ok: false }
   }
   return {
-    novosEspacos: { ...espacos, [nivel]: { ...espaco, utilizados: espaco.utilizados + 1 } },
+    novosEspacos: { ...espacos, [nivel]: { ...espaco, usados: espaco.usados + 1 } },
     ok: true,
   }
 }

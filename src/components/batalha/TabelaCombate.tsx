@@ -10,7 +10,7 @@ import {
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useBatalha } from '@/store/batalha'
 import { useCampanha } from '@/store/campanha'
-import type { Combatente, EntradaLog } from '@/types/batalha'
+import type { Combatente, EntradaLog, EspacosMagiaBatalha } from '@/types/batalha'
 import { LinhaCombatente, CartaoCombatenteMobile } from './LinhaCombatente'
 import { LogBatalha } from './LogBatalha'
 import { DadosVirtuais } from './DadosVirtuais'
@@ -1018,14 +1018,14 @@ function ModalCarregarPersonagens({ campanhaId, onFechar }: { campanhaId: string
     escolhidos.forEach(p => {
       // A ficha é a fonte dos espaços de magia. A tabela por classe serve apenas
       // de semente para os totais quando a ficha ainda não tem o nível gravado.
-      const espacos: Record<number, { total: number; utilizados: number }> = {}
+      const espacos: EspacosMagiaBatalha = {}
       const slotsFicha = (p.slots_magia ?? {}) as Record<string, { total: number; usados: number }>
       const seed = getEspacosMagiaPorClasse(p.classe, p.nivel)
       seed.forEach((totalTabela, idx) => {
         const nivel = idx + 1
         const daFicha = slotsFicha[String(nivel)]
         const total = daFicha?.total ?? totalTabela
-        if (total > 0) espacos[nivel] = { total, utilizados: daFicha?.usados ?? 0 }
+        if (total > 0) espacos[nivel] = { total, usados: daFicha?.usados ?? 0 }
       })
 
       adicionarCombatente({
@@ -1411,11 +1411,7 @@ function ModalRegistrarAcao({
         const novosSlots = { ...slotsDb, [nivelStr]: { ...slotNivel, usados: slotNivel.usados + 1 } }
         await supabase.from('personagens').update({ slots_magia: novosSlots }).eq('id', origemCombatente.personagem_id)
 
-        const espacosBatalha: Record<number, { total: number; utilizados: number }> = {}
-        for (const [k, v] of Object.entries(novosSlots)) {
-          espacosBatalha[parseInt(k)] = { total: v.total, utilizados: v.usados }
-        }
-        atualizarCombatentePorPersonagem(origemCombatente.personagem_id, { espacos_magia: espacosBatalha })
+        atualizarCombatentePorPersonagem(origemCombatente.personagem_id, { espacos_magia: novosSlots })
         setSalvando(false)
       } else {
         // Monstro/NPC sem ficha — verificar slots_monstro local

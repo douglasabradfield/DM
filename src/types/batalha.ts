@@ -10,7 +10,7 @@ export type TipoCondicao =
   | 'Surdo' | 'Desacordado'
 
 export interface EspacosMagiaBatalha {
-  [nivel: number]: { total: number; utilizados: number }
+  [nivel: number]: { total: number; usados: number }
 }
 
 export interface ArmaEmpunhada {

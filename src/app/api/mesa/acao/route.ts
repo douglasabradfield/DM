@@ -365,9 +365,7 @@ async function tratarAcaoBatalha(
       const novosSlots = { ...slotsDb, [nivelStr]: { ...slotNivel, usados: slotNivel.usados + 1 } }
       await admin.from('personagens').update({ slots_magia: novosSlots }).eq('id', ator.personagem_id)
 
-      const espacosBatalha: Record<string, { total: number; utilizados: number }> = {}
-      for (const [k, v] of Object.entries(novosSlots)) espacosBatalha[k] = { total: v.total, utilizados: v.usados }
-      await admin.from('batalha_combatentes').update({ espacos_magia: espacosBatalha }).eq('id', ator.id)
+      await admin.from('batalha_combatentes').update({ espacos_magia: novosSlots }).eq('id', ator.id)
     } else {
       const slotsLocal = (ator.slots_monstro ?? {}) as Record<string, number>
       const qtd = slotsLocal[nivelStr] ?? 0

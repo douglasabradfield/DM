@@ -335,11 +335,11 @@ function EspacosMagiaLeitura({ espacos }: { espacos: EspacosMagiaBatalha }) {
 
   return (
     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px]">
-      {niveis.map(({ nivel, total, utilizados }) => (
+      {niveis.map(({ nivel, total, usados }) => (
         <div key={nivel} className="flex items-center gap-0.5">
           <span className="text-[var(--text3)] font-cinzel">N{nivel}</span>
           <span style={{ color: 'var(--accent2)' }}>
-            {'●'.repeat(Math.max(0, total - utilizados))}{'○'.repeat(Math.min(total, utilizados))}
+            {'●'.repeat(Math.max(0, total - usados))}{'○'.repeat(Math.min(total, usados))}
           </span>
         </div>
       ))}
@@ -1096,7 +1096,7 @@ function niveisDisponiveisParaMagia(
   return Array.from({ length: 9 - nivelBase + 1 }, (_, i) => nivelBase + i)
     .map(nivel => {
       const espaco = espacosMagia[nivel]
-      return espaco ? { nivel, disponivel: espaco.total - espaco.utilizados, total: espaco.total } : null
+      return espaco ? { nivel, disponivel: espaco.total - espaco.usados, total: espaco.total } : null
     })
     .filter((x): x is { nivel: number; disponivel: number; total: number } => !!x && x.disponivel > 0)
 }
@@ -3255,12 +3255,7 @@ export function MesaCliente() {
 
   // Modo sessão — sem batalha ativa: cartão editável do PJ, sem turno.
   if (emModoSessao) {
-    const espacosMagiaSessaoConvertidos: EspacosMagiaBatalha = {}
-    if (personagemOperadoSessao?.slots_magia) {
-      for (const [nivel, slot] of Object.entries(personagemOperadoSessao.slots_magia)) {
-        espacosMagiaSessaoConvertidos[parseInt(nivel)] = { total: slot.total, utilizados: slot.usados }
-      }
-    }
+    const espacosMagiaSessao: EspacosMagiaBatalha = personagemOperadoSessao?.slots_magia ?? {}
 
     return (
       <div className="flex flex-col h-full overflow-hidden">
@@ -3323,7 +3318,7 @@ export function MesaCliente() {
           <ModalMagias
             personagemId={personagemOperadoSessao.id}
             personagemNome={personagemOperadoSessao.nome}
-            espacosMagia={espacosMagiaSessaoConvertidos}
+            espacosMagia={espacosMagiaSessao}
             onConjurar={conjurarMagiaSessao}
             onFechar={() => setModalMagiaSessaoAberto(false)}
           />

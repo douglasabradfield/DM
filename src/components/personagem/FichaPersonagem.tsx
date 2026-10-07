@@ -334,7 +334,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const [buscaMagia, setBuscaMagia] = useState('')
   const [resultadosBusca, setResultadosBusca] = useState<Spell[]>([])
   const [buscandoMagia, setBuscandoMagia] = useState(false)
-  const [espacosUtilizados, setEspacosUtilizados] = useState<Record<number, number>>(() => {
+  const [espacosUsados, setEspacosUsados] = useState<Record<number, number>>(() => {
     const raw = p.slots_magia
     if (!raw) return {}
     return Object.fromEntries(Object.entries(raw).map(([k, v]) => [parseInt(k), v?.usados ?? 0]))
@@ -483,39 +483,37 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
   function toggleEspaco(nivel: number, indice: number) {
     if (!podeEditar) return
-    const utilizados = espacosUtilizados[nivel] ?? 0
+    const usados = espacosUsados[nivel] ?? 0
     const total = espacosTotais[nivel] ?? 0
-    let novoUtilizados: number
-    if (indice < utilizados) {
-      novoUtilizados = utilizados - 1
-    } else if (utilizados < total) {
-      novoUtilizados = utilizados + 1
+    let novoUsados: number
+    if (indice < usados) {
+      novoUsados = usados - 1
+    } else if (usados < total) {
+      novoUsados = usados + 1
     } else {
       return
     }
-    const novos = { ...espacosUtilizados, [nivel]: novoUtilizados }
-    setEspacosUtilizados(novos)
+    const novos = { ...espacosUsados, [nivel]: novoUsados }
+    setEspacosUsados(novos)
     salvarSlotsDb(novos)
   }
 
-  async function salvarSlotsDb(usados: Record<number, number> = espacosUtilizados, totais: Record<number, number> = espacosTotais) {
+  async function salvarSlotsDb(usados: Record<number, number> = espacosUsados, totais: Record<number, number> = espacosTotais) {
     const slotsDb: Record<string, { total: number; usados: number }> = {}
-    const espacosBatalha: Record<number, { total: number; utilizados: number }> = {}
     for (let n = 1; n <= 9; n++) {
       const total = totais[n] ?? 0
       const u = usados[n] ?? 0
       slotsDb[String(n)] = { total, usados: u }
-      if (total > 0) espacosBatalha[n] = { total, utilizados: u }
     }
     const supabase = createClient()
     const { error } = await supabase.from('personagens').update({ slots_magia: slotsDb }).eq('id', p.id)
     if (error) console.error('Sync slots_magia:', error)
-    atualizarCombatentePorPersonagem(p.id, { espacos_magia: espacosBatalha })
+    atualizarCombatentePorPersonagem(p.id, { espacos_magia: slotsDb })
   }
 
   function descansarLongo() {
     const vazios: Record<number, number> = {}
-    setEspacosUtilizados(vazios)
+    setEspacosUsados(vazios)
     salvarSlotsDb(vazios)
     toast.success('Descanso longo! Espaços de magia recuperados.')
   }
@@ -526,9 +524,9 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
 
   function salvarTotalNivel(nivel: number) {
     const total = espacosTotais[nivel] ?? 0
-    const usadosAtual = espacosUtilizados[nivel] ?? 0
-    const novosUsados = usadosAtual > total ? { ...espacosUtilizados, [nivel]: total } : espacosUtilizados
-    if (novosUsados !== espacosUtilizados) setEspacosUtilizados(novosUsados)
+    const usadosAtual = espacosUsados[nivel] ?? 0
+    const novosUsados = usadosAtual > total ? { ...espacosUsados, [nivel]: total } : espacosUsados
+    if (novosUsados !== espacosUsados) setEspacosUsados(novosUsados)
     salvarSlotsDb(novosUsados, espacosTotais)
   }
 
@@ -552,10 +550,10 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     const novosTotais = Object.fromEntries(seed.map((total, idx) => [idx + 1, total]))
     const novosUsados: Record<number, number> = {}
     for (let n = 1; n <= 9; n++) {
-      novosUsados[n] = Math.min(espacosUtilizados[n] ?? 0, novosTotais[n] ?? 0)
+      novosUsados[n] = Math.min(espacosUsados[n] ?? 0, novosTotais[n] ?? 0)
     }
     setEspacosTotais(novosTotais)
-    setEspacosUtilizados(novosUsados)
+    setEspacosUsados(novosUsados)
     salvarSlotsDb(novosUsados, novosTotais)
   }
 
@@ -1470,7 +1468,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                   const nivel = idx + 1
                   const total = espacosTotais[nivel] ?? 0
                   if (!modoAjuste && total === 0) return null
-                  const utilizados = espacosUtilizados[nivel] ?? 0
+                  const usados = espacosUsados[nivel] ?? 0
                   return (
                     <div key={nivel} className="bg-[var(--bg3)] rounded p-2">
                       <div className="text-[var(--text3)] text-[9px] font-cinzel uppercase mb-1">Nível {nivel}</div>
@@ -1495,15 +1493,15 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                                 onClick={() => toggleEspaco(nivel, i)}
                                 disabled={!podeEditar || emCombate}
                                 className={`text-base transition-colors ${
-                                  i < utilizados ? 'text-[var(--text3)]/40' : 'text-[var(--accent)]'
+                                  i < usados ? 'text-[var(--text3)]/40' : 'text-[var(--accent)]'
                                 } hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed`}
-                                title={i < utilizados ? 'Espaço usado' : 'Espaço disponível'}
+                                title={i < usados ? 'Espaço usado' : 'Espaço disponível'}
                               >
-                                {i < utilizados ? '○' : '●'}
+                                {i < usados ? '○' : '●'}
                               </button>
                             ))}
                           </div>
-                          <div className="text-[var(--border)] text-[9px] mt-1">{utilizados}/{total} usados</div>
+                          <div className="text-[var(--border)] text-[9px] mt-1">{usados}/{total} usados</div>
                         </>
                       )}
                     </div>

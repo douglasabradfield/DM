@@ -19,12 +19,12 @@ export function EspacosMagia({ combatenteId, espacos }: EspacosMagiaProps) {
 
   return (
     <div className="space-y-1">
-      {niveisComEspacos.map(({ nivel, total, utilizados }) => (
+      {niveisComEspacos.map(({ nivel, total, usados }) => (
         <div key={nivel} className="flex items-center gap-1">
           <span className="text-[#8870a8] text-[10px] w-4 text-center font-cinzel">{nivel}</span>
           <div className="flex gap-0.5">
             {Array.from({ length: total }).map((_, i) => {
-              const usado = i < utilizados
+              const usado = i < usados
               return (
                 <button
                   key={i}
@@ -34,7 +34,7 @@ export function EspacosMagia({ combatenteId, espacos }: EspacosMagiaProps) {
                       ? 'bg-transparent border-[#4a3060]'
                       : 'bg-[#9b59b6] border-[#c39bd3]'
                   } hover:scale-125`}
-                  title={`Nível ${nivel}: ${total - utilizados}/${total} disponíveis`}
+                  title={`Nível ${nivel}: ${total - usados}/${total} disponíveis`}
                 />
               )
             })}

@@ -3,7 +3,7 @@ import { immer } from 'zustand/middleware/immer'
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import type {
   Combatente, EntradaLog, TipoCondicao, TipoCombatente,
-  CombatenteDB, LogDB, BatalhaDB, ArmaEmpunhada,
+  CombatenteDB, LogDB, BatalhaDB, ArmaEmpunhada, EspacosMagiaBatalha,
 } from '@/types/batalha'
 import type { TipoDano } from '@/types/dnd'
 import { calcularDano, aplicarCura as calcularCura, consumirEspaco } from '@/lib/batalha/motor'
@@ -72,6 +72,23 @@ function assinaturaCombatente(c: Combatente): string {
   return jsonEstavel(combatenteParaLinha(c, c.batalha_id))
 }
 
+// Antes da unificação com personagens.slots_magia, a chave dos espaços gastos
+// no combatente era `utilizados`. As 103 linhas históricas de
+// batalha_combatentes com esse nome estão todas em batalhas encerradas, que
+// nunca são relidas (carregarBatalhaAtiva filtra status != 'encerrada' e
+// /api/mesa/acao exige status 'ativa'). A leitura tolerante fica aqui por
+// segurança e é o único ponto que conhece o nome antigo; a gravação
+// (combatenteParaLinha) usa apenas `usados`.
+function normalizarEspacosMagia(raw: unknown): EspacosMagiaBatalha {
+  const espacos: EspacosMagiaBatalha = {}
+  if (!raw || typeof raw !== 'object') return espacos
+  for (const [nivel, e] of Object.entries(raw as Record<string, { total?: number; usados?: number; utilizados?: number }>)) {
+    if (!e) continue
+    espacos[parseInt(nivel)] = { total: e.total ?? 0, usados: e.usados ?? e.utilizados ?? 0 }
+  }
+  return espacos
+}
+
 function combatenteFromDB(row: CombatenteDB): Combatente {
   return {
     id: row.id,
@@ -90,7 +107,7 @@ function combatenteFromDB(row: CombatenteDB): Combatente {
     resistencias: row.resistencias,
     imunidades: row.imunidades,
     vulnerabilidades: row.vulnerabilidades,
-    espacos_magia: row.espacos_magia,
+    espacos_magia: normalizarEspacosMagia(row.espacos_magia),
     notas: row.notas ?? '',
     pv_revelado: row.pv_revelado,
     arma_esquerda: row.arma_esquerda,
@@ -726,17 +743,11 @@ export const useBatalha = create<EstadoBatalhaStore>()(
         await Promise.all(
           combatentes
             .filter(c => c.personagem_id)
-            .map(c => {
-              const slotsMagia: Record<string, { total: number; usados: number }> = {}
-              Object.entries(c.espacos_magia).forEach(([nivel, espaco]) => {
-                slotsMagia[nivel] = { total: espaco.total, usados: espaco.utilizados }
-              })
-              return supabase.from('personagens').update({
-                pv_atual: c.pv_atual,
-                pv_temporarios: c.pv_temporarios,
-                slots_magia: slotsMagia,
-              }).eq('id', c.personagem_id as string)
-            })
+            .map(c => supabase.from('personagens').update({
+              pv_atual: c.pv_atual,
+              pv_temporarios: c.pv_temporarios,
+              slots_magia: c.espacos_magia,
+            }).eq('id', c.personagem_id as string))
         ).catch(err => console.error('Erro ao sincronizar fichas ao encerrar batalha:', err))
 
         // sessoes não é mais tocado aqui — a sessão é um estado independente
@@ -1262,7 +1273,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
       recuperarEspaco: (id, nivel) => mutarCombatente(id, c => {
         const espaco = c.espacos_magia[nivel]
-        if (espaco && espaco.utilizados > 0) espaco.utilizados--
+        if (espaco && espaco.usados > 0) espaco.usados--
       }),
 
       proximoTurno: () => {
