@@ -1168,19 +1168,9 @@ export const useBatalha = create<EstadoBatalhaStore>()(
           if (idx !== -1) Object.assign(state.combatentes[idx], dados)
         })
         persistirCombatente(id, anterior)
-        // PV segue pela gravação de sempre; pv_maximo e espaços não tinham
-        // gravação na ficha e vão por gravarFicha, só os que vieram em dados.
-        if ('pv_atual' in dados || 'pv_temporarios' in dados) {
-          const fichaAnterior = espelharFicha(id, CAMPOS_PV)
-          const c = get().combatentes.find(x => x.id === id)
-          if (c?.personagem_id) {
-            const pid = c.personagem_id
-            createClient().from('personagens')
-              .update({ pv_atual: c.pv_atual, pv_temporarios: c.pv_temporarios })
-              .eq('id', pid)
-              .then(({ error }) => { if (error) falhaGravarFicha(pid, c.nome, fichaAnterior, error) })
-          }
-        }
+        // PV vai como par (atual + temporário), como sempre foi; pv_maximo e
+        // espaços só se vieram em dados.
+        if ('pv_atual' in dados || 'pv_temporarios' in dados) gravarFicha(id, CAMPOS_PV)
         const camposFicha: CampoFicha[] = []
         if ('pv_maximo' in dados) camposFicha.push('pv_maximo')
         if ('espacos_magia' in dados) camposFicha.push('slots_magia')
@@ -1290,17 +1280,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
         persistirCombatente(id, c)
         entradasLog.forEach(persistirLog)
-        const fichaAnterior = espelharFicha(id, CAMPOS_PV)
-
-        if (c.personagem_id) {
-          const pid = c.personagem_id
-          setTimeout(() => {
-            createClient().from('personagens')
-              .update({ pv_atual: novoPv, pv_temporarios: novoPvTemp })
-              .eq('id', pid)
-              .then(({ error }) => { if (error) falhaGravarFicha(pid, c.nome, fichaAnterior, error) })
-          }, 0)
-        }
+        gravarFicha(id, CAMPOS_PV)
 
         setTimeout(() => {
           set(s => {
@@ -1340,18 +1320,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
         persistirCombatente(id, c)
         if (entrada) persistirLog(entrada)
-        const fichaAnterior = espelharFicha(id, CAMPOS_PV)
-
-        if (c.personagem_id) {
-          const pid = c.personagem_id
-          const novoTemp = c.pv_temporarios
-          setTimeout(() => {
-            createClient().from('personagens')
-              .update({ pv_atual: novoPv, pv_temporarios: novoTemp })
-              .eq('id', pid)
-              .then(({ error }) => { if (error) falhaGravarFicha(pid, c.nome, fichaAnterior, error) })
-          }, 0)
-        }
+        gravarFicha(id, CAMPOS_PV)
 
         setTimeout(() => {
           set(s => {
@@ -1365,15 +1334,7 @@ export const useBatalha = create<EstadoBatalhaStore>()(
 
       atualizarPV: (id, pvAtual) => {
         mutarCombatente(id, c => { c.pv_atual = Math.max(0, Math.min(c.pv_maximo, pvAtual)) })
-        const fichaAnterior = espelharFicha(id, CAMPOS_PV)
-        const c = get().combatentes.find(x => x.id === id)
-        if (c?.personagem_id) {
-          const pid = c.personagem_id
-          createClient().from('personagens')
-            .update({ pv_atual: c.pv_atual, pv_temporarios: c.pv_temporarios })
-            .eq('id', pid)
-            .then(({ error }) => { if (error) falhaGravarFicha(pid, c.nome, fichaAnterior, error) })
-        }
+        gravarFicha(id, CAMPOS_PV)
       },
 
       atualizarPVMax: (id, pvMax) => {

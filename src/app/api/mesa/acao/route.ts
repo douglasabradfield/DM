@@ -265,10 +265,20 @@ async function tratarAcaoBatalha(
         return Response.json({ erro: 'Não foi possível ler a ficha dos alvos — tente de novo' }, { status: 500 })
       }
       const mapaFichas = new Map(fichas.map(f => [f.id as string, f]))
+      // PV máximo é teto da cura: zero ou ausente zeraria o alvo. Ficha
+      // quebrada aparece como erro, sem cair no valor da linha da batalha.
+      const quebrado = combatentesAlvo.find(c => {
+        const pvMax = mapaFichas.get(c.personagem_id as string)?.pv_maximo
+        return c.personagem_id && !(typeof pvMax === 'number' && pvMax > 0)
+      })
+      if (quebrado) {
+        console.error('Ficha com PV máximo inválido:', quebrado.personagem_id)
+        return Response.json({ erro: `Não foi possível ler a ficha de ${quebrado.nome as string} — PV máximo inválido` }, { status: 500 })
+      }
       combatentesAlvo = combatentesAlvo.map(c => {
         const ficha = c.personagem_id ? mapaFichas.get(c.personagem_id as string) : undefined
         return ficha
-          ? { ...c, pv_atual: ficha.pv_atual ?? 0, pv_temporarios: ficha.pv_temporarios ?? 0, pv_maximo: ficha.pv_maximo ?? 0 }
+          ? { ...c, pv_atual: ficha.pv_atual ?? 0, pv_temporarios: ficha.pv_temporarios ?? 0, pv_maximo: ficha.pv_maximo }
           : c
       })
     }
