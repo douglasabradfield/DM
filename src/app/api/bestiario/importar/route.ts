@@ -34,8 +34,8 @@ Caso contrário, retorne APENAS um JSON válido (sem markdown, sem texto extra) 
   "armor_class": number, "hit_points": number, "hit_dice": string (ex.: "4d8+4") ou null,
   "challenge_rating": string (ex.: "1/4", "5"), "xp": number, "proficiency_bonus": string (ex.: "+2"),
   "str_score": number, "dex_score": number, "con_score": number, "int_score": number, "wis_score": number, "cha_score": number,
-  "speed_pt": string (texto como no livro, em metros, ex.: "9 m, escalada 6 m"),
-  "senses_pt": string (texto como no livro, em metros) ou "",
+  "speed_pt": string (sempre em metros, ex.: "9 m, escalada 6 m"),
+  "senses_pt": string (sempre em metros) ou "",
   "languages_pt": string ou "",
   "passive_perception": number ou null,
   "darkvision_ft": number ou null, "blindsight_ft": number ou null, "tremorsense_ft": number ou null, "truesight_ft": number ou null,
@@ -67,9 +67,11 @@ VALORES PERMITIDOS — use exatamente estes, nada fora destas listas:
 - condition_en: ${CONDICOES_EN.join(' | ')}
 
 UNIDADES:
-- O texto está em metros; os campos terminados em _ft são em PÉS. Converta pela regra do jogo: 1,5 m = 5 pés (multiplique os metros por 10/3 e arredonde). Ex.: 1,5 m → 5; 3 m → 10; 9 m → 30; 18 m → 60; 36 m → 120.
-- Alcance corpo a corpo vai em reach_ft. Distância "x/y m" de ataque à distância vai em range_normal_ft / range_long_ft.
-- speed_pt e senses_pt ficam como texto em metros, do jeito que estão no livro.
+- Os campos terminados em _ft são SEMPRE em PÉS. A unidade de origem NÃO é fixa: detecte-a pela marcação de cada medida no texto.
+- Medida marcada em metros ("m", "metro", "metros"): converta para pés pela regra do jogo, 1,5 m = 5 pés (multiplique os metros por 10/3 e arredonde). Ex.: 1,5 m → 5; 3 m → 10; 9 m → 30; 18 m → 60; 36 m → 120.
+- Medida marcada em pés ("ft", "ft.", "feet", "foot", "-foot", "pés"): mantenha o número como está, SEM conversão. Ex.: "5 ft." → 5; "reach 10 ft." → 10; "20-foot radius" → 20; "120 feet" → 120; "range 80/320 ft." → 80 e 320.
+- Alcance corpo a corpo vai em reach_ft. Distância "x/y" de ataque à distância vai em range_normal_ft / range_long_ft.
+- speed_pt e senses_pt são texto SEMPRE em metros, no formato do livro em português. Se a origem estiver em pés, converta pela mesma regra (5 pés = 1,5 m) e escreva em português. Ex.: "30 ft., climb 30 ft." → "9 m, escalada 9 m"; "darkvision 60 ft., passive Perception 10" → "visão no escuro 18 m, Percepção passiva 10". Se já estiver em metros, mantenha como está.
 
 AÇÕES:
 - Cada traço passivo (ex.: "Resistência à Magia", "Faro Aguçado") vira uma ação com action_type "trait" e o texto em description_pt.

@@ -203,6 +203,37 @@ const TIPO_ATAQUE: Record<string, string> = {
   distancia: 'Ataque à distância',
 }
 
+// Não aparece no painel, mas o formulário precisa do vocabulário — mesmo
+// formato dos mapas acima para os selects lerem de um lugar só.
+const ROLADOR: Record<string, string> = {
+  conjurador: 'Conjurador (rola ataque)',
+  alvo: 'Alvo (rola resistência)',
+}
+
+// Select montado a partir de um dos mapas de vocabulário. Valor gravado fora
+// da convenção aparece como opção extra marcada, em vez de sumir do select
+// (e ser apagado sem querer ao salvar).
+function SelectVocabulario({ valor, mapa, onChange, className }: {
+  valor: string
+  mapa: Record<string, string>
+  onChange: (v: string) => void
+  className: string
+}) {
+  const foraDaConvencao = valor !== '' && !(valor in mapa)
+  return (
+    <>
+      <select className={cn(className, foraDaConvencao && 'border-[var(--red2)]')} value={valor} onChange={e => onChange(e.target.value)}>
+        <option value="">— Não se aplica —</option>
+        {Object.entries(mapa).map(([v, rotulo]) => <option key={v} value={v}>{rotulo}</option>)}
+        {foraDaConvencao && <option value={valor}>⚠ {valor} (revisar)</option>}
+      </select>
+      {foraDaConvencao && (
+        <p className="text-[var(--red2)] text-[10px] font-cinzel mt-0.5">Valor fora da convenção — escolha uma opção da lista.</p>
+      )}
+    </>
+  )
+}
+
 const FORMA_AREA: Record<string, string> = {
   cone: 'Cone', sphere: 'Esfera', cylinder: 'Cilindro', line: 'Linha',
   cube: 'Cubo', square: 'Quadrado', emanation: 'Emanação', radius: 'Raio',
@@ -627,11 +658,20 @@ function ModalAdminEditarMagia({ modo, magia, criadoPor, campanhaId, onClose, on
                       {SAVE_ABILITY_OPCOES_MAGIA.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
-                  <div><label className={lbl}>Efeito da Resistência</label><input className={inp} value={basico.save_effect} onChange={e => setBasico(b => ({ ...b, save_effect: e.target.value }))} placeholder="Metade do dano no sucesso" /></div>
+                  <div>
+                    <label className={lbl}>Efeito da Resistência</label>
+                    <SelectVocabulario className={inp} mapa={EFEITO_SALVAGUARDA} valor={basico.save_effect} onChange={v => setBasico(b => ({ ...b, save_effect: v }))} />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className={lbl}>Tipo de Ataque</label><input className={inp} value={basico.attack_type} onChange={e => setBasico(b => ({ ...b, attack_type: e.target.value }))} placeholder="ranged_spell" /></div>
-                  <div><label className={lbl}>Roller</label><input className={inp} value={basico.roller} onChange={e => setBasico(b => ({ ...b, roller: e.target.value }))} /></div>
+                  <div>
+                    <label className={lbl}>Tipo de Ataque</label>
+                    <SelectVocabulario className={inp} mapa={TIPO_ATAQUE} valor={basico.attack_type} onChange={v => setBasico(b => ({ ...b, attack_type: v }))} />
+                  </div>
+                  <div>
+                    <label className={lbl}>Quem Rola</label>
+                    <SelectVocabulario className={inp} mapa={ROLADOR} valor={basico.roller} onChange={v => setBasico(b => ({ ...b, roller: v }))} />
+                  </div>
                 </div>
                 <div><label className={lbl}>Condições Aplicadas</label><input className={inp} value={basico.conditions_applied_pt} onChange={e => setBasico(b => ({ ...b, conditions_applied_pt: e.target.value }))} placeholder="Amedrontado" /></div>
                 <div className="grid grid-cols-2 gap-3">
