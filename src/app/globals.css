@@ -350,7 +350,7 @@ body::before {
   body.imprimindo-ficha nav,
   body.imprimindo-ficha .fixed,
   body.imprimindo-ficha .no-print,
-  body.imprimindo-ficha button {
+  body.imprimindo-ficha button:not(.print-visivel) {
     display: none !important;
   }
 
@@ -383,8 +383,63 @@ body::before {
     page-break-after: avoid;
   }
 
-  /* Cores essenciais: barras de progresso/PV */
-  body.imprimindo-ficha .overflow-hidden > [style*="width"] {
+  /* Texto: tudo preto (cobre cores por variável e por classe Tailwind) */
+  body.imprimindo-ficha main * {
+    color: #000 !important;
+    -webkit-text-fill-color: #000 !important;
+  }
+  /* Exceções: moedas, testes de morte, espaços de magia usados */
+  body.imprimindo-ficha main label[class*="text-[#cd7f32]"] { color: #cd7f32 !important; -webkit-text-fill-color: #cd7f32 !important; }
+  body.imprimindo-ficha main label[class*="text-[#c0c0c0]"] { color: #808080 !important; -webkit-text-fill-color: #808080 !important; }
+  body.imprimindo-ficha main label[class*="text-[var(--green2)]"] { color: #1e7a3c !important; -webkit-text-fill-color: #1e7a3c !important; }
+  body.imprimindo-ficha main span.w-12[class*="text-[var(--green)]"] { color: #1e7a3c !important; -webkit-text-fill-color: #1e7a3c !important; }
+  body.imprimindo-ficha main span.w-12[class*="text-[var(--red2)]"] { color: #b00020 !important; -webkit-text-fill-color: #b00020 !important; }
+  body.imprimindo-ficha main button[title="Espaço usado"] { color: #999 !important; -webkit-text-fill-color: #999 !important; }
+
+  /* Campos: valor preto, opacidade total, sem aparência de placeholder */
+  body.imprimindo-ficha main input,
+  body.imprimindo-ficha main textarea,
+  body.imprimindo-ficha main select {
+    background: #fff !important;
+    border: 1px solid #999 !important;
+    opacity: 1 !important;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  body.imprimindo-ficha main input[type="checkbox"] {
+    appearance: auto;
+    -webkit-appearance: checkbox;
+    accent-color: #000;
+  }
+  body.imprimindo-ficha main ::placeholder { color: transparent !important; opacity: 0 !important; }
+  body.imprimindo-ficha main textarea {
+    height: auto;
+    overflow: visible !important;
+    resize: none;
+    field-sizing: content;
+  }
+
+  /* Sem rolagem interna nem truncamento */
+  body.imprimindo-ficha main .overflow-y-auto,
+  body.imprimindo-ficha main [class*="max-h-"] {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  body.imprimindo-ficha main .truncate {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+
+  /* Caixas de teste de morte e cores essenciais (PV/XP) */
+  body.imprimindo-ficha main button.print-visivel.rounded-full {
+    border: 1.5px solid #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body.imprimindo-ficha main button.print-visivel.rounded-full[class*="bg-["] { background-color: #000 !important; }
+  body.imprimindo-ficha main .overflow-hidden > [style*="width"] {
+    background-image: linear-gradient(to right, #7b3fa0, #b8860b) !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }

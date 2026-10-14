@@ -68,6 +68,13 @@ interface FichaPersonagemProps {
   onAtualizar?: (p: Partial<Personagem>) => void
 }
 
+function restaurarTextareas() {
+  document.querySelectorAll<HTMLTextAreaElement>('main textarea[data-altura-original]').forEach(t => {
+    t.style.height = t.dataset.alturaOriginal ?? ''
+    delete t.dataset.alturaOriginal
+  })
+}
+
 export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemProps) {
   const router = useRouter()
   const atualizarCombatentePorPersonagem = useBatalha(s => s.atualizarCombatentePorPersonagem)
@@ -105,12 +112,18 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     document.title = `Ficha - ${nomeImpressaoRef.current || 'Personagem'}`
     document.body.classList.add('imprimindo-ficha')
     flushSync(() => setImprimindo(true))
+    // textareas sem rolagem interna: altura = conteúdo (restaurada no afterprint)
+    document.querySelectorAll<HTMLTextAreaElement>('main textarea').forEach(t => {
+      t.dataset.alturaOriginal = t.style.height
+      t.style.height = `${t.scrollHeight}px`
+    })
   }, [])
 
   const encerrarImpressao = useCallback(() => {
     if (tituloOriginalRef.current !== null) document.title = tituloOriginalRef.current
     tituloOriginalRef.current = null
     document.body.classList.remove('imprimindo-ficha')
+    restaurarTextareas()
     setImprimindo(false)
   }, [])
 
@@ -122,6 +135,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       window.removeEventListener('afterprint', encerrarImpressao)
       if (tituloOriginalRef.current !== null) document.title = tituloOriginalRef.current
       document.body.classList.remove('imprimindo-ficha')
+      restaurarTextareas()
     }
   }, [prepararImpressao, encerrarImpressao])
 
@@ -1164,13 +1178,13 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                     <div className="flex items-center gap-1 mb-1">
                       <span className="text-[var(--green)] text-[9px] font-cinzel w-12">Sucesso</span>
                       {[0, 1, 2].map(i => (
-                        <button key={i} onClick={() => setTesteMorte(prev => ({ ...prev, sucessos: prev.sucessos === i + 1 ? i : i + 1 }))} className={`w-4 h-4 rounded-full border transition-colors ${testeMorte.sucessos > i ? 'bg-[var(--green)] border-[var(--green)]' : 'border-[var(--border)] hover:border-[var(--green)]'}`} />
+                        <button key={i} onClick={() => setTesteMorte(prev => ({ ...prev, sucessos: prev.sucessos === i + 1 ? i : i + 1 }))} className={`print-visivel w-4 h-4 rounded-full border transition-colors ${testeMorte.sucessos > i ? 'bg-[var(--green)] border-[var(--green)]' : 'border-[var(--border)] hover:border-[var(--green)]'}`} />
                       ))}
                     </div>
                     <div className="flex items-center gap-1">
                       <span className="text-[var(--red2)] text-[9px] font-cinzel w-12">Falha</span>
                       {[0, 1, 2].map(i => (
-                        <button key={i} onClick={() => setTesteMorte(prev => ({ ...prev, falhas: prev.falhas === i + 1 ? i : i + 1 }))} className={`w-4 h-4 rounded-full border transition-colors ${testeMorte.falhas > i ? 'bg-[var(--red2)] border-[var(--red2)]' : 'border-[var(--border)] hover:border-[var(--red2)]'}`} />
+                        <button key={i} onClick={() => setTesteMorte(prev => ({ ...prev, falhas: prev.falhas === i + 1 ? i : i + 1 }))} className={`print-visivel w-4 h-4 rounded-full border transition-colors ${testeMorte.falhas > i ? 'bg-[var(--red2)] border-[var(--red2)]' : 'border-[var(--border)] hover:border-[var(--red2)]'}`} />
                       ))}
                     </div>
                   </div>
@@ -1263,7 +1277,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                       if (buscaInventario && !item.nome.toLowerCase().includes(buscaInventario.toLowerCase())) return null
                       return (
                         <div key={item.id} className="flex items-center gap-2 px-2 py-1 bg-[var(--bg3)] rounded">
-                          <button onClick={() => setItemPopup(item)} className="flex-1 text-left min-w-0">
+                          <button onClick={() => setItemPopup(item)} className="print-visivel flex-1 text-left min-w-0">
                             <span className="text-[var(--text)] text-sm font-crimson truncate block">
                               {item.nome}{item.equipado && <span className="text-[var(--accent2)] text-[10px] ml-1">(equipado)</span>}
                             </span>
@@ -1510,7 +1524,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                                 key={i}
                                 onClick={() => toggleEspaco(nivel, i)}
                                 disabled={!podeEditar || emCombate}
-                                className={`text-base transition-colors ${
+                                className={`print-visivel text-base transition-colors ${
                                   i < usados ? 'text-[var(--text3)]/40' : 'text-[var(--accent)]'
                                 } hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed`}
                                 title={i < usados ? 'Espaço usado' : 'Espaço disponível'}
@@ -1630,7 +1644,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                             )}
                             <button
                               onClick={() => setMagiaPopup(m.spell)}
-                              className="flex-1 text-left min-w-0"
+                              className="print-visivel flex-1 text-left min-w-0"
                             >
                               <span className="text-[var(--text2)] text-sm font-crimson group-hover:text-[var(--gold)] transition-colors">{m.spell.name_pt}</span>
                               <span className="text-[var(--border)] text-[10px] ml-1.5 group-hover:text-[var(--text3)]">
@@ -1986,7 +2000,7 @@ function InspiracaoHeroica({ valor, onChange, disabled }: { valor: number; onCha
             onClick={() => onChange(valor === i ? i - 1 : i)}
             disabled={disabled}
             title={disabled ? 'Em combate — altere pela tela de mesa' : i <= valor ? `Usar inspiração (${valor} restante${valor !== 1 ? 's' : ''})` : `${i} inspiração`}
-            className="text-xl transition-all hover:scale-110 leading-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+            className="print-visivel text-xl transition-all hover:scale-110 leading-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
             {i <= valor ? '⭐' : '☆'}
           </button>
