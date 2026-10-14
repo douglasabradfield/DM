@@ -317,3 +317,75 @@ body::before {
 @media (max-width: 768px) {
   button, [role="button"] { min-height: 44px; }
 }
+
+/* Impressão da ficha de personagem (classe .imprimindo-ficha no body, definida
+   por FichaPersonagem.tsx durante "Exportar PDF"). */
+@page {
+  size: A4;
+  margin: 15mm;
+}
+
+@media print {
+  body.imprimindo-ficha {
+    --bg: #fff; --bg2: #fff; --bg3: #eee;
+    --surface: #fff; --surface2: #f5f5f5;
+    --border: #999; --border2: #666;
+    --text: #000; --text2: #111; --text3: #333;
+    --gold: #000; --accent: #000; --accent2: #000;
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 11pt;
+  }
+  body.imprimindo-ficha::before { display: none; }
+  body.imprimindo-ficha * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Navegação, cabeçalho, barras fixas e elementos interativos */
+  body.imprimindo-ficha aside,
+  body.imprimindo-ficha header,
+  body.imprimindo-ficha nav,
+  body.imprimindo-ficha .fixed,
+  body.imprimindo-ficha .no-print,
+  body.imprimindo-ficha button {
+    display: none !important;
+  }
+
+  /* Layout do dashboard usa h-dvh + overflow-hidden: libera para várias páginas */
+  body.imprimindo-ficha,
+  body.imprimindo-ficha div.h-dvh,
+  body.imprimindo-ficha div.h-dvh > div,
+  body.imprimindo-ficha main {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding-bottom: 0 !important;
+  }
+
+  /* Blocos que não podem quebrar no meio */
+  body.imprimindo-ficha .rounded,
+  body.imprimindo-ficha .rounded-lg,
+  body.imprimindo-ficha .rounded-xl,
+  body.imprimindo-ficha li,
+  body.imprimindo-ficha tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  body.imprimindo-ficha h1,
+  body.imprimindo-ficha h2,
+  body.imprimindo-ficha h3,
+  body.imprimindo-ficha h4 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* Cores essenciais: barras de progresso/PV */
+  body.imprimindo-ficha .overflow-hidden > [style*="width"] {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

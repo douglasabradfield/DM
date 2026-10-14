@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useCampanha } from '@/store/campanha'
 import type { Personagem, Spell, InventarioItemDb } from '@/types/dnd'
@@ -95,6 +95,41 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   }, [])
 
   const [pagina, setPagina] = useState(1)
+  // Modo impressão: renderiza as 3 páginas da ficha de uma vez e ativa o CSS de @media print
+  const [imprimindo, setImprimindo] = useState(false)
+  const tituloOriginalRef = useRef<string | null>(null)
+  const nomeImpressaoRef = useRef('')
+
+  const prepararImpressao = useCallback(() => {
+    if (tituloOriginalRef.current === null) tituloOriginalRef.current = document.title
+    document.title = `Ficha - ${nomeImpressaoRef.current || 'Personagem'}`
+    document.body.classList.add('imprimindo-ficha')
+    flushSync(() => setImprimindo(true))
+  }, [])
+
+  const encerrarImpressao = useCallback(() => {
+    if (tituloOriginalRef.current !== null) document.title = tituloOriginalRef.current
+    tituloOriginalRef.current = null
+    document.body.classList.remove('imprimindo-ficha')
+    setImprimindo(false)
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('beforeprint', prepararImpressao)
+    window.addEventListener('afterprint', encerrarImpressao)
+    return () => {
+      window.removeEventListener('beforeprint', prepararImpressao)
+      window.removeEventListener('afterprint', encerrarImpressao)
+      if (tituloOriginalRef.current !== null) document.title = tituloOriginalRef.current
+      document.body.classList.remove('imprimindo-ficha')
+    }
+  }, [prepararImpressao, encerrarImpressao])
+
+  function exportarPdf() {
+    prepararImpressao()
+    // aguarda o commit do React antes de abrir o diálogo (Safari iOS)
+    setTimeout(() => window.print(), 100)
+  }
   // Ataques criados antes de abrir a ficha (índice < qtdAtaquesIniciais) são
   // "legados" — podem ficar sem tipo de dano sem bloquear o salvamento
   // (dados antigos do grupo). Ataques adicionados nesta sessão de edição
@@ -108,6 +143,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     bonus_proficiencia: p.bonus_proficiencia ?? 2,
     moedas: p.moedas ?? { pc: 0, pp: 0, po: 0, pe: 0, pl: 0, custom: 0 },
   })
+  useEffect(() => { nomeImpressaoRef.current = dados.nome ?? '' }, [dados.nome])
   const [salvando, setSalvando] = useState(false)
   const [alterado, setAlterado] = useState(false)
   const alteradoRef = useRef(false)
@@ -740,6 +776,12 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const dropdownMenu = menuAberto && (
     <div className="absolute right-0 top-full mt-1 bg-[var(--bg2)] border border-[var(--border)] rounded shadow-xl z-50 min-w-[160px]">
       <button
+        onClick={() => { setMenuAberto(false); exportarPdf() }}
+        className="md:hidden w-full text-left px-3 py-2 text-xs font-cinzel text-[var(--text3)] hover:bg-[var(--surface)] hover:text-[var(--gold)] transition-colors"
+      >
+        Exportar PDF
+      </button>
+      <button
         onClick={() => { setMenuAberto(false); abrirModalCopiar() }}
         className="w-full text-left px-3 py-2 text-xs font-cinzel text-[var(--text3)] hover:bg-[var(--surface)] hover:text-[var(--gold)] transition-colors"
       >
@@ -762,7 +804,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     <div className="max-w-4xl mx-auto pb-32 md:pb-0">
       {/* Banner de aprovação pendente */}
       {!dados.ativo && isDM && (
-        <div className="mb-4 p-4 bg-[var(--accent2)]/10 border border-[var(--accent2)]/40 rounded-xl flex items-center justify-between gap-4">
+        <div className="no-print mb-4 p-4 bg-[var(--accent2)]/10 border border-[var(--accent2)]/40 rounded-xl flex items-center justify-between gap-4">
           <div>
             <p className="font-cinzel text-[var(--accent2)] text-sm font-bold">⏳ Personagem Aguardando Aprovação</p>
             <p className="text-[var(--text2)] text-sm font-crimson mt-0.5">
@@ -779,17 +821,17 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         </div>
       )}
       {!dados.ativo && !isDM && (
-        <div className="mb-4 p-3 bg-[var(--accent2)]/10 border border-[var(--accent2)]/40 rounded-xl">
+        <div className="no-print mb-4 p-3 bg-[var(--accent2)]/10 border border-[var(--accent2)]/40 rounded-xl">
           <p className="font-cinzel text-[var(--accent2)] text-sm">⏳ Aguardando aprovação do Mestre</p>
         </div>
       )}
       {ehJogador && !podeEditar && (
-        <div className="mb-4 p-3 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-center">
+        <div className="no-print mb-4 p-3 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-center">
           <p className="text-[var(--text3)] text-sm font-cinzel">👁️ Você está visualizando este personagem em modo leitura</p>
         </div>
       )}
       {emCombate && (
-        <div className="mb-4 p-3 bg-[var(--red2)]/10 border border-[var(--red2)]/40 rounded-xl text-center">
+        <div className="no-print mb-4 p-3 bg-[var(--red2)]/10 border border-[var(--red2)]/40 rounded-xl text-center">
           <p className="text-[var(--red2)] text-sm font-cinzel">⚔️ Em combate — altere pela tela de mesa</p>
         </div>
       )}
@@ -802,7 +844,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           </div>
 
           {/* Desktop: inalterado */}
-          <div className="hidden md:flex items-center gap-2 flex-shrink-0">
+          <div className="no-print hidden md:flex items-center gap-2 flex-shrink-0">
             {[1, 2, 3].map(n => (
               <button
                 key={n}
@@ -824,6 +866,12 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               {dropdownMenu}
             </div>
             <button
+              onClick={exportarPdf}
+              className="font-cinzel text-xs px-3 py-1.5 rounded border border-[var(--border)] text-[var(--text3)] hover:border-[var(--border2)] transition-colors"
+            >
+              Exportar PDF
+            </button>
+            <button
               onClick={voltar}
               className="font-cinzel text-xs px-3 py-1.5 rounded border border-[var(--border)] text-[var(--text3)] hover:border-[var(--border2)] transition-colors"
             >
@@ -835,7 +883,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
           </div>
 
           {/* Mobile: só o essencial — o resto some para a barra de abas e o rodapé fixo */}
-          <div className="flex md:hidden items-center gap-1.5 flex-shrink-0">
+          <div className="no-print flex md:hidden items-center gap-1.5 flex-shrink-0">
             <div className="relative">
               <button
                 onClick={() => setMenuAberto(v => !v)}
@@ -855,7 +903,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         </div>
 
         {/* Mobile: seletor de página compacto, substitui as abas de desktop */}
-        <div className="flex md:hidden gap-1 mt-3">
+        <div className="no-print flex md:hidden gap-1 mt-3">
           {PAGINAS_LABEL.map(([n, label]) => (
             <button
               key={n}
@@ -870,7 +918,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         </div>
       </div>
 
-      {pagina === 1 && (
+      {(pagina === 1 || imprimindo) && (
         <div className="space-y-3">
           {/* Header linha 1: Nome | Classe+Nível | Antecedente | Jogador */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -1302,7 +1350,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         </div>
       )}
 
-      {pagina === 2 && (
+      {(pagina === 2 || imprimindo) && (
         <div className="space-y-3">
           {/* Header: 6 atributos físicos em grid 3×2 */}
           <div className="grid grid-cols-3 gap-2">
@@ -1363,7 +1411,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         </div>
       )}
 
-      {pagina === 3 && (
+      {(pagina === 3 || imprimindo) && (
         <div className="space-y-4">
           <PainelGrimorio titulo="Conjuração" ornamentado>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -1608,7 +1656,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       )}
 
       {/* Mobile: Salvar sempre alcançável, sem depender do fim do scroll */}
-      <div className="above-bottomnav fixed inset-x-0 md:hidden z-40 px-4 pt-2 pb-3 bg-[var(--bg2)] border-t border-[var(--border)]">
+      <div className="no-print above-bottomnav fixed inset-x-0 md:hidden z-40 px-4 pt-2 pb-3 bg-[var(--bg2)] border-t border-[var(--border)]">
         <BotaoRunico variante="ouro" tamanho="sm" onClick={salvar} carregando={salvando} disabled={!podeEditar || !online} className="w-full" title={!online ? 'Sem conexão' : undefined}>
           Salvar
         </BotaoRunico>
