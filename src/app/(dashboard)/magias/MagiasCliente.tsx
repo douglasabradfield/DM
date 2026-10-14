@@ -329,7 +329,7 @@ function PainelMecanica({ magia }: { magia: Spell }) {
   )
 }
 
-type SpellStub = Pick<Spell, 'id' | 'slug' | 'name_pt' | 'name_en' | 'level' | 'school_pt' | 'casting_time_pt' | 'classes_pt' | 'concentration' | 'ritual' | 'criado_por'>
+type SpellStub = Pick<Spell, 'id' | 'slug' | 'name_pt' | 'name_en' | 'level' | 'school_pt' | 'casting_time_pt' | 'classes_pt' | 'concentration' | 'ritual' | 'criado_por' | 'revisada'>
 
 function ModalAdminEditarMagia({ modo, magia, criadoPor, campanhaId, onClose, onSaved }: {
   modo: 'criar' | 'editar'
@@ -466,6 +466,7 @@ function ModalAdminEditarMagia({ modo, magia, criadoPor, campanhaId, onClose, on
         ...payload,
         slug: slugGerado,
         criado_por: criadoPor,
+        revisada: true, // o default da coluna é false (só o importador gera pendência)
         campanha_id: campanhaId,
         visivel_jogadores: visivelJogadores,
       }
@@ -727,6 +728,7 @@ export function MagiasCliente() {
   const [filtroNivel, setFiltroNivel] = useState<number | ''>('')
   const [filtroEscola, setFiltroEscola] = useState('')
   const [filtroClasse, setFiltroClasse] = useState('')
+  const [soPendentes, setSoPendentes] = useState(false)
   const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   const [modalMagiaAberto, setModalMagiaAberto] = useState<'criar' | 'editar' | null>(null)
   const [nomesAutores, setNomesAutores] = useState<Record<string, string>>({})
@@ -755,10 +757,13 @@ export function MagiasCliente() {
       const supabase = createClient()
       let query = supabase
         .from('spells')
-        .select('id, slug, name_pt, name_en, level, school_pt, casting_time_pt, classes_pt, concentration, ritual, criado_por')
+        .select('id, slug, name_pt, name_en, level, school_pt, casting_time_pt, classes_pt, concentration, ritual, criado_por, revisada')
         .order('level')
         .order('name_pt')
-      if (!campanhaAtiva?.id) {
+      if (isAdmin && soPendentes) {
+        // Admin revisa as pendentes de qualquer campanha
+        query = query.eq('revisada', false)
+      } else if (!campanhaAtiva?.id) {
         query = query.is('criado_por', null)
       } else if (ehDM) {
         query = query.or(`criado_por.is.null,campanha_id.eq.${campanhaAtiva.id}`)
@@ -770,7 +775,30 @@ export function MagiasCliente() {
       setCarregando(false)
     }
     carregar()
-  }, [userPlano, campanhaAtiva?.id, ehDM])
+  }, [userPlano, campanhaAtiva?.id, ehDM, isAdmin, soPendentes])
+
+  // Link de notificação: /magias?magia=<id> abre a magia mesmo fora da lista atual
+  useEffect(() => {
+    if (!userPlano || !getPlano(userPlano).limites.magias_itens) return
+    const id = new URLSearchParams(window.location.search).get('magia')
+    if (!id) return
+    createClient().from('spells').select('*').eq('id', id).maybeSingle().then(({ data }) => {
+      if (!data) return
+      setSelecionada(data as Spell)
+      setVisao('detalhe')
+    })
+  }, [userPlano])
+
+  async function marcarRevisada(m: Spell) {
+    const supabase = createClient()
+    const { data, error } = await supabase.from('spells').update({ revisada: true }).eq('id', m.id).select('*').single()
+    if (error) { toast.error(error.message); return }
+    toast.success(`"${m.name_pt}" marcada como revisada`)
+    setSelecionada(data as Spell)
+    setLista(prev => soPendentes
+      ? prev.filter(p => p.id !== m.id)
+      : prev.map(p => p.id === m.id ? { ...p, revisada: true } : p))
+  }
 
   useEffect(() => {
     const idsAutores = Array.from(new Set(lista.map(m => m.criado_por).filter((id): id is string => !!id)))
@@ -802,6 +830,7 @@ export function MagiasCliente() {
       level: m.level, school_pt: m.school_pt, casting_time_pt: m.casting_time_pt,
       classes_pt: m.classes_pt, concentration: m.concentration, ritual: m.ritual,
       criado_por: m.criado_por ?? null,
+      revisada: m.revisada,
     }
     setLista(prev => {
       const existe = prev.some(p => p.id === m.id)
@@ -872,6 +901,12 @@ export function MagiasCliente() {
         <option value="">Todas as classes</option>
         {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
       </select>
+      {isAdmin && (
+        <label className="flex items-center gap-2 text-xs text-[var(--text2)] font-cinzel">
+          <input type="checkbox" checked={soPendentes} onChange={e => setSoPendentes(e.target.checked)} className="accent-[var(--accent)]" />
+          Pendentes de revisão
+        </label>
+      )}
     </>
   )
 
@@ -950,6 +985,9 @@ export function MagiasCliente() {
                               ✦
                             </span>
                           )}
+                          {isAdmin && m.revisada === false && (
+                            <span className="text-[9px] px-1 border border-[var(--red2)]/50 text-[var(--red2)] rounded font-cinzel flex-shrink-0">Pendente</span>
+                          )}
                         </div>
                         <span className="text-xs text-[var(--dd-text2)] truncate">
                           {m.school_pt} · Nível {m.level}
@@ -1016,6 +1054,11 @@ export function MagiasCliente() {
                             ✦ Criado por {nomesAutores[selecionada.criado_por] ?? 'Mestre'}
                           </span>
                         )}
+                        {isAdmin && selecionada.revisada === false && (
+                          <span className="text-[9px] px-1.5 py-0.5 border border-[var(--red2)]/50 text-[var(--red2)] rounded font-cinzel">
+                            Pendente de revisão
+                          </span>
+                        )}
                       </div>
                       <p className="text-[var(--border)] text-sm italic">{selecionada.name_en}</p>
                       <p className="text-[var(--text2)] text-sm mt-1">
@@ -1032,6 +1075,14 @@ export function MagiasCliente() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {isAdmin && selecionada.revisada === false && (
+                        <button
+                          onClick={() => marcarRevisada(selecionada)}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-[var(--accent)]/10 border border-[var(--accent)]/40 text-[var(--accent)] rounded text-sm font-cinzel hover:bg-[var(--accent)]/20 transition-colors"
+                        >
+                          Marcar como revisada
+                        </button>
+                      )}
                       {isAdmin && selecionada.criado_por && (
                         <button
                           onClick={() => tornarPadrao(selecionada)}

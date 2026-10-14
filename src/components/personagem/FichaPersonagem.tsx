@@ -9,6 +9,7 @@ import { calcularModificadorAtributo, formatarModificador, cn } from '@/lib/util
 import { DivisorOrnamentado } from '@/components/ui/DivisorOrnamentado'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
+import { ImportadorMagia } from '@/components/personagem/ImportadorMagia'
 import { ModalLevelUp } from '@/components/personagem/ModalLevelUp'
 import { ModalCompendioItens, type ItemCompendioEscolhido } from '@/components/personagem/ModalCompendioItens'
 import { RecursosClasse } from '@/components/personagem/RecursosClasse'
@@ -1587,6 +1588,10 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
             subtitulo={magiasPersonagem.some(m => m.spell.level > 0) ? `${magiasPersonagem.filter(m => m.spell.level > 0 && m.preparada).length} preparada(s)` : undefined}
             compacto
           >
+            {podeEditar && (
+              <ImportadorMagia campanhaId={p.campanha_id} onAdicionarAFicha={adicionarMagia} />
+            )}
+
             {/* Busca */}
             <div className="relative mb-3">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text3)]" />

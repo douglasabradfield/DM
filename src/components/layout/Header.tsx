@@ -67,7 +67,23 @@ export function Header({ titulo, usuario }: HeaderProps) {
   useEffect(() => {
     buscarNotificacoes()
     const interval = setInterval(buscarNotificacoes, 30000)
-    return () => clearInterval(interval)
+
+    // Realtime: novas notificações aparecem sem esperar o polling (que fica de reserva)
+    const supabase = createClient()
+    let canal: ReturnType<typeof supabase.channel> | null = null
+    let ativo = true
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user || !ativo) return
+      canal = supabase
+        .channel(`notificacoes-${user.id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'notificacoes', filter: `user_id=eq.${user.id}` }, () => buscarNotificacoes())
+        .subscribe()
+    })
+    return () => {
+      ativo = false
+      clearInterval(interval)
+      if (canal) supabase.removeChannel(canal)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

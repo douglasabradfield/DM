@@ -230,6 +230,9 @@ export interface Spell {
   criado_por?: string | null
   campanha_id?: string | null
   visivel_jogadores?: boolean
+  origem?: string | null
+  importada_por?: string | null
+  revisada?: boolean
 }
 
 export interface MagicItem {
