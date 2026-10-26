@@ -16,6 +16,9 @@ import type { AcaoPendente, AlvoSelecionado, AtaqueDisponivel, ConjuracaoEscolhi
 import { OPCOES_REACAO } from './constantes'
 import { ataquesDoCombatente, classificarMagia, mensagemToast, ordenarPorNome } from './helpers'
 import { chamarAcaoInventario, chamarAcaoSessaoApi } from './api'
+import { useMesaUi } from '@/store/mesa-ui'
+import { cn } from '@/lib/utils'
+import { PainelAbasMesa } from './PainelAbasMesa'
 import { ModalItem } from './modais/ModalItem'
 import { ModalMagias } from './modais/ModalMagias'
 import { BandejaAlvos } from './combate/BandejaAlvos'
@@ -60,6 +63,9 @@ export function MesaCliente() {
   const { campanhaAtiva, sessaoAtiva, sessaoCarregando } = useCampanha()
   const { ehDM } = usePermissao()
   const online = useOnline()
+  const abaAtiva = useMesaUi(s => s.abaAtiva)
+  // Abaixo de md, fora da aba Personagem a árvore fica só escondida (CSS), nunca desmontada.
+  const classeArvore = cn('flex flex-col h-full overflow-hidden', abaAtiva !== 'personagem' && 'max-md:hidden')
 
   const [userId, setUserId] = useState<string | null>(null)
   const [infoPersonagens, setInfoPersonagens] = useState<Record<string, InfoPersonagem>>({})
@@ -637,12 +643,33 @@ export function MesaCliente() {
     )
   }
 
+  // Painéis das abas do celular — um só, acima das duas árvores, para não
+  // remontar na troca sessão/combate. Combate usa os flags/modais do combate
+  // (Magias/Itens) e os de sessão para Preparar/Ouro/Distribuir.
+  const personagemCombate = combatenteOperado?.personagem_id
+    ? personagensSessao.find(p => p.id === combatenteOperado.personagem_id) ?? null
+    : null
+  const painelAbas = (
+    <PainelAbasMesa
+      podeAgir={emModoSessao ? !enviandoSessao && online : podeAgirOperado}
+      temPersonagem={emModoSessao ? !!personagemOperadoSessao : !!combatenteOperado?.personagem_id}
+      ehDM={ehDM}
+      onConjurar={() => (emModoSessao ? setModalMagiaSessaoAberto(true) : setModalMagiaAberto(true))}
+      onPreparar={() => setModalPrepararSessaoAberto(true)}
+      onItens={() => (emModoSessao ? setModalItemSessaoAberto(true) : setModalItemAberto(true))}
+      onOuro={() => setModalOuroAberto(true)}
+      onDistribuir={() => setModalDistribuirAberto(true)}
+    />
+  )
+
   // Modo sessão — sem batalha ativa: cartão editável do PJ, sem turno.
   if (emModoSessao) {
     const espacosMagiaSessao: EspacosMagiaBatalha = personagemOperadoSessao?.slots_magia ?? {}
 
     return (
-      <div className="flex flex-col h-full overflow-hidden">
+      <>
+        {painelAbas}
+        <div className={classeArvore}>
         <BarraParticipantesSessao
           personagens={personagensPresentes}
           meuPersonagemIds={meusPersonagemIdsSessao}
@@ -692,8 +719,8 @@ export function MesaCliente() {
             onAbrirOuro={() => setModalOuroAberto(true)}
             onAbrirDescanso={() => setModalDescansoAberto(true)}
             botoesDM={ehDM ? [
-              { label: '🎁 Distribuir', onClick: () => setModalDistribuirAberto(true) },
-              { label: '⭐ Inspiração', onClick: concederInspiracao },
+              { label: '🎁 Distribuir', onClick: () => setModalDistribuirAberto(true), grupo: 'mochila' },
+              { label: '⭐ Inspiração', onClick: concederInspiracao, grupo: 'personagem' },
             ] : undefined}
           />
         )}
@@ -757,12 +784,15 @@ export function MesaCliente() {
             onFechar={() => setModalDistribuirAberto(false)}
           />
         )}
-      </div>
+        </div>
+      </>
     )
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <>
+    {painelAbas}
+    <div className={classeArvore}>
       <BarraParticipantes
         aliados={aliadosBarra}
         inimigos={inimigosBarra}
@@ -878,6 +908,34 @@ export function MesaCliente() {
         />
       )}
 
+      {modalPrepararSessaoAberto && combatenteOperado?.personagem_id && (
+        <ModalPrepararMagias
+          personagemId={combatenteOperado.personagem_id}
+          personagemNome={combatenteOperado.nome}
+          onFechar={() => setModalPrepararSessaoAberto(false)}
+        />
+      )}
+
+      {modalOuroAberto && personagemCombate && sessaoAtiva && (
+        <ModalOuro
+          personagem={personagemCombate}
+          sessaoId={sessaoAtiva.id}
+          destinatarios={personagensSessao
+            .filter(p => p.id !== personagemCombate.id)
+            .map(p => ({ id: p.id, nome: p.nome, imagemUrl: p.imagem_url }))}
+          onFechar={() => setModalOuroAberto(false)}
+        />
+      )}
+
+      {modalDistribuirAberto && ehDM && sessaoAtiva && campanhaAtiva && (
+        <ModalDistribuirTesouro
+          sessaoId={sessaoAtiva.id}
+          campanhaId={campanhaAtiva.id}
+          personagens={personagensPresentes}
+          onFechar={() => setModalDistribuirAberto(false)}
+        />
+      )}
+
       {acaoPendente?.precisaAlvo && !modalValorAberto && (
         <BandejaAlvos
           acao={acaoPendente}
@@ -898,5 +956,6 @@ export function MesaCliente() {
         />
       )}
     </div>
+    </>
   )
 }
