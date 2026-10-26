@@ -1,7 +1,7 @@
 'use client'
 
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useCampanha } from '@/store/campanha'
 import { getTemaAtual, aplicarTema, type NomeTema, TEMAS } from '@/lib/tema'
@@ -10,11 +10,13 @@ import { useState, useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import { useControleSessao } from '@/hooks/useControleSessao'
 import { ModalIniciarSessao } from '@/components/campanha/ModalIniciarSessao'
+import { MenuMesa } from '@/components/layout/Sidebar'
 import { InstalarApp } from '@/components/layout/InstalarApp'
 
 interface HeaderProps {
   titulo: string
   usuario?: { nome: string | null; email: string; username?: string | null }
+  isAdmin?: boolean
 }
 
 interface Notificacao {
@@ -26,8 +28,10 @@ interface Notificacao {
   lida: boolean
 }
 
-export function Header({ titulo, usuario }: HeaderProps) {
+export function Header({ titulo, usuario, isAdmin }: HeaderProps) {
   const router = useRouter()
+  const pathname = usePathname()
+  const naMesa = pathname === '/mesa' || pathname.startsWith('/mesa/')
   const { campanhaAtiva, campanhas, setCampanhaAtiva, papelPorCampanha } = useCampanha()
   const [menuAberto, setMenuAberto] = useState(false)
   const [temaMenuAberto, setTemaMenuAberto] = useState(false)
@@ -132,7 +136,9 @@ export function Header({ titulo, usuario }: HeaderProps) {
 
       {/* Mobile: logo (ícone) + seletor de campanha compacto */}
       <div className="flex md:hidden items-center gap-2 min-w-0 flex-1">
-        <Shield className="w-5 h-5 text-[var(--gold)] flex-shrink-0" />
+        {naMesa
+          ? <MenuMesa isAdmin={isAdmin} />
+          : <Shield className="w-5 h-5 text-[var(--gold)] flex-shrink-0" />}
         <button
           onClick={() => setSeletorCampanhaAberto(true)}
           className="flex items-center gap-1 min-w-0 px-2 py-1 rounded text-xs font-cinzel

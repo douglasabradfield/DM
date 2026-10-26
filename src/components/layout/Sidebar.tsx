@@ -562,6 +562,110 @@ function ModalPresenca({
   )
 }
 
+// Folha inferior com a lista de destinos do app + Admin + Feedback.
+// Usada pelo "Mais" do BottomNav e pelo hambúrguer da /mesa.
+function MenuApp({ titulo, itens, isAdmin, aoFechar }: {
+  titulo: string
+  itens: ItemNav[]
+  isAdmin?: boolean
+  aoFechar: () => void
+}) {
+  const pathname = usePathname()
+  const planoEfetivo = usePlanoEfetivo()
+  const fechar = aoFechar
+
+  function renderItemLista(item: ItemNav) {
+    const ativo = pathname === item.href || pathname.startsWith(item.href + '/')
+    const bloqueado = !!item.planoMinimo && !planoSuficiente(planoEfetivo, item.planoMinimo)
+    const Icone = item.icone
+    if (bloqueado) {
+      return (
+        <div key={item.href} className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-crimson opacity-40">
+          <Icone className="w-4 h-4 flex-shrink-0" />
+          <span>{item.label}</span>
+          <Lock className="w-3 h-3 ml-auto" />
+        </div>
+      )
+    }
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={fechar}
+        className={cn(
+          'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-crimson transition-colors',
+          ativo ? 'text-[var(--dd-gold)]' : 'text-[var(--dd-text3)] hover:text-[var(--dd-text2)]'
+        )}
+      >
+        <Icone className="w-4 h-4 flex-shrink-0" />
+        <span>{item.label}</span>
+      </Link>
+    )
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[60] bg-black/60 md:hidden" onClick={fechar} />
+      <div className="fixed inset-x-0 bottom-0 z-[61] md:hidden bg-[var(--surface)] border-t border-[var(--border)] rounded-t-xl shadow-2xl max-h-[75vh] overflow-y-auto safe-area-pb">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] sticky top-0 bg-[var(--surface)]">
+          <span className="font-cinzel text-xs text-[var(--text3)] uppercase tracking-wider">{titulo}</span>
+          <button onClick={fechar} className="text-[var(--text3)] hover:text-[var(--text)]">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-2 space-y-0.5">
+          {itens.map(renderItemLista)}
+          {isAdmin && (
+            <Link
+              href="/admin"
+              onClick={fechar}
+              className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-crimson text-[var(--dd-text3)] hover:text-[var(--dd-text2)] transition-colors"
+            >
+              <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+              <span>Admin</span>
+            </Link>
+          )}
+          <Link
+            href="/feedback"
+            onClick={fechar}
+            className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-crimson text-[var(--dd-text3)] hover:text-[var(--dd-text2)] transition-colors"
+          >
+            <span>💬</span>
+            <span>Feedback & Sugestões</span>
+          </Link>
+          <p className="text-center text-[10px] text-[var(--dd-text3)] opacity-60 pt-2">
+            v1.0 · {process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev'}
+          </p>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// Hambúrguer do Header na /mesa (celular): abre o app inteiro.
+export function MenuMesa({ isAdmin }: { isAdmin?: boolean }) {
+  const { campanhaAtiva, papelPorCampanha } = useCampanha()
+  const [aberto, setAberto] = useState(false)
+  const ehJogador = campanhaAtiva ? papelPorCampanha[campanhaAtiva.id] === 'jogador' : false
+  const itens = itensNav.filter(item => !item.dmOnly || !ehJogador)
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Abrir menu"
+        onClick={() => setAberto(true)}
+        className="flex items-center justify-center w-11 h-11 -ml-1 flex-shrink-0 text-[var(--gold)]"
+      >
+        <Menu size={22} />
+      </button>
+      {aberto && (
+        <MenuApp titulo="Menu" itens={itens} isAdmin={isAdmin} aoFechar={() => setAberto(false)} />
+      )}
+    </>
+  )
+}
+
 // Destinos mais usados na barra fixa; o resto vai para a folha "Mais".
 const HREFS_PRIMARIOS_DM = ['/mesa', '/batalha', '/personagens', '/bestiario', '/magias']
 const HREFS_PRIMARIOS_JOGADOR = ['/mesa', '/personagens', '/magias', '/itens', '/diario']
@@ -612,34 +716,8 @@ export function BottomNav({ isAdmin }: { isAdmin?: boolean; plano?: string }) {
     )
   }
 
-  function renderItemLista(item: ItemNav) {
-    const ativo = pathname === item.href || pathname.startsWith(item.href + '/')
-    const bloqueado = !!item.planoMinimo && !planoSuficiente(planoEfetivo, item.planoMinimo)
-    const Icone = item.icone
-    if (bloqueado) {
-      return (
-        <div key={item.href} className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-crimson opacity-40">
-          <Icone className="w-4 h-4 flex-shrink-0" />
-          <span>{item.label}</span>
-          <Lock className="w-3 h-3 ml-auto" />
-        </div>
-      )
-    }
-    return (
-      <Link
-        key={item.href}
-        href={item.href}
-        onClick={fechar}
-        className={cn(
-          'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-crimson transition-colors',
-          ativo ? 'text-[var(--dd-gold)]' : 'text-[var(--dd-text3)] hover:text-[var(--dd-text2)]'
-        )}
-      >
-        <Icone className="w-4 h-4 flex-shrink-0" />
-        <span>{item.label}</span>
-      </Link>
-    )
-  }
+  // Na /mesa a barra de abas da própria mesa (BarraAbasMesa) ocupa o lugar.
+  if (pathname === '/mesa' || pathname.startsWith('/mesa/')) return null
 
   return (
     <>
@@ -660,41 +738,12 @@ export function BottomNav({ isAdmin }: { isAdmin?: boolean; plano?: string }) {
       </nav>
 
       {maisAberto && (
-        <>
-          <div className="fixed inset-0 z-[60] bg-black/60 md:hidden" onClick={fechar} />
-          <div className="fixed inset-x-0 bottom-0 z-[61] md:hidden bg-[var(--surface)] border-t border-[var(--border)] rounded-t-xl shadow-2xl max-h-[75vh] overflow-y-auto safe-area-pb">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] sticky top-0 bg-[var(--surface)]">
-              <span className="font-cinzel text-xs text-[var(--text3)] uppercase tracking-wider">Mais opções</span>
-              <button onClick={fechar} className="text-[var(--text3)] hover:text-[var(--text)]">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-2 space-y-0.5">
-              {itensSecundarios.map(renderItemLista)}
-              {isAdmin && (
-                <Link
-                  href="/admin"
-                  onClick={fechar}
-                  className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-crimson text-[var(--dd-text3)] hover:text-[var(--dd-text2)] transition-colors"
-                >
-                  <ShieldCheck className="w-4 h-4 flex-shrink-0" />
-                  <span>Admin</span>
-                </Link>
-              )}
-              <Link
-                href="/feedback"
-                onClick={fechar}
-                className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-crimson text-[var(--dd-text3)] hover:text-[var(--dd-text2)] transition-colors"
-              >
-                <span>💬</span>
-                <span>Feedback & Sugestões</span>
-              </Link>
-              <p className="text-center text-[10px] text-[var(--dd-text3)] opacity-60 pt-2">
-                v1.0 · {process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev'}
-              </p>
-            </div>
-          </div>
-        </>
+        <MenuApp
+          titulo="Mais opções"
+          itens={itensSecundarios}
+          isAdmin={isAdmin}
+          aoFechar={fechar}
+        />
       )}
     </>
   )
