@@ -652,7 +652,11 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       .eq('personagem_id', p.id)
       .order('nivel')
     if (error) console.error('Erro ao carregar magias:', error)
-    if (data) setMagiasPersonagem(data as unknown as MagiaPersonagem[])
+    if (data) {
+      // Linhas legadas (só magia_id, sem spell_id) voltam com spell: null — ignora para não quebrar a ficha
+      const linhas = data as unknown as (Omit<MagiaPersonagem, 'spell'> & { spell: Spell | null })[]
+      setMagiasPersonagem(linhas.filter((m): m is MagiaPersonagem => m.spell !== null))
+    }
   }, [p.id])
 
   useEffect(() => { carregarMagias() }, [carregarMagias])
