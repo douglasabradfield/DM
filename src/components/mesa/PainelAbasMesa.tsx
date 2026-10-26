@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { useMesaUi } from '@/store/mesa-ui'
@@ -22,7 +23,7 @@ const CLASSE_BOTAO = cn(
 // de sessão/combate é que se esconde por CSS quando a aba não é Personagem.
 export function PainelAbasMesa({
   podeAgir, temPersonagem, ehDM,
-  onConjurar, onPreparar, onItens, onOuro, onDistribuir,
+  abaMagias, onItens, onOuro, onDistribuir,
   semSessao, personagemFichaId,
 }: {
   semSessao?: boolean
@@ -30,8 +31,7 @@ export function PainelAbasMesa({
   podeAgir: boolean
   temPersonagem: boolean
   ehDM: boolean
-  onConjurar: () => void
-  onPreparar: () => void
+  abaMagias?: ReactNode
   onItens: () => void
   onOuro: () => void
   onDistribuir: () => void
@@ -39,11 +39,7 @@ export function PainelAbasMesa({
   const abaAtiva = useMesaUi(s => s.abaAtiva)
   const usavel = podeAgir && temPersonagem
 
-  const paineis: Record<'magias' | 'mochila' | 'mapa', Botao[]> = {
-    magias: [
-      { rotulo: '✨ Conjurar', descricao: 'Lançar uma magia', onClick: onConjurar, desabilitado: !usavel },
-      { rotulo: '📖 Preparar magias', descricao: 'Escolher as magias preparadas', onClick: onPreparar, desabilitado: !usavel },
-    ],
+  const paineis: Record<'mochila' | 'mapa', Botao[]> = {
     mochila: [
       { rotulo: '🎒 Itens', descricao: 'Inventário e uso de itens', onClick: onItens, desabilitado: !usavel },
       { rotulo: '💰 Ouro', descricao: 'Moedas e transferências', onClick: onOuro, desabilitado: !usavel },
@@ -64,7 +60,8 @@ export function PainelAbasMesa({
           {personagemFichaId && <BotaoFichaCompleta personagemId={personagemFichaId} rotulo="Abrir ficha completa" />}
         </div>
       )}
-      {abaAtiva !== 'personagem' && !semSessao && (
+      {abaAtiva === 'magias' && !semSessao && abaMagias}
+      {abaAtiva !== 'personagem' && abaAtiva !== 'magias' && !semSessao && (
         <div className="grid grid-cols-1 gap-3">
           {paineis[abaAtiva].map(b => b.href ? (
             <Link key={b.rotulo} href={b.href} className={CLASSE_BOTAO}>

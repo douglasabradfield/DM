@@ -1,18 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { createClient } from '@/lib/supabase/client'
-import toast from 'react-hot-toast'
 import { X } from 'lucide-react'
-import type { Spell } from '@/types/dnd'
-import type { MagiaPreparavel } from '../tipos'
+import { useMagiasPersonagem } from '../magias/useMagiasPersonagem'
 
-// 📖 Preparar magias — fora de combate, antes da sessão. Mesma tabela que a
-// Ficha edita (magias_personagem.preparada), escrita direta (não é estado
-// de jogo/PV, é gerenciamento de ficha — mesmo padrão de adicionar/remover
-// magia na Ficha). Truques (nível 0) não têm preparação em D&D 5e — não
-// entram na lista.
+// 📖 Preparar magias — fora de combate, antes da sessão. Leitura e gravação
+// no hook compartilhado com a aba Magias do celular. Truques (nível 0) não
+// têm preparação em D&D 5e — não entram na lista.
 export function ModalPrepararMagias({
   personagemId, personagemNome, onFechar,
 }: {
@@ -20,36 +14,8 @@ export function ModalPrepararMagias({
   personagemNome: string
   onFechar: () => void
 }) {
-  const [carregando, setCarregando] = useState(true)
-  const [magias, setMagias] = useState<MagiaPreparavel[]>([])
-
-  const carregar = useCallback(() => {
-    createClient()
-      .from('magias_personagem')
-      .select('id, preparada, nivel, spell:spells!spell_id(name_pt)')
-      .eq('personagem_id', personagemId)
-      .gt('nivel', 0)
-      .order('nivel')
-      .then(({ data }) => {
-        type Linha = { id: string; preparada: boolean; nivel: number; spell: Pick<Spell, 'name_pt'> | null }
-        const linhas = (data ?? []) as unknown as Linha[]
-        setMagias(linhas.map(m => ({ id: m.id, nome: m.spell?.name_pt ?? '(sem nome)', nivel: m.nivel, preparada: m.preparada })))
-        setCarregando(false)
-      })
-  }, [personagemId])
-
-  useEffect(() => { carregar() }, [carregar])
-
-  async function toggle(m: MagiaPreparavel) {
-    const novoValor = !m.preparada
-    setMagias(prev => prev.map(x => x.id === m.id ? { ...x, preparada: novoValor } : x))
-    const { error } = await createClient().from('magias_personagem').update({ preparada: novoValor }).eq('id', m.id)
-    if (error) {
-      toast.error('Erro ao atualizar magia preparada')
-      setMagias(prev => prev.map(x => x.id === m.id ? { ...x, preparada: m.preparada } : x))
-    }
-  }
-
+  const { carregando, magias: todas, alternarPreparada } = useMagiasPersonagem(personagemId)
+  const magias = todas.filter(m => m.nivel > 0)
   const totalPreparadas = magias.filter(m => m.preparada).length
 
   return createPortal(
@@ -83,7 +49,7 @@ export function ModalPrepararMagias({
                 <input
                   type="checkbox"
                   checked={m.preparada}
-                  onChange={() => toggle(m)}
+                  onChange={() => alternarPreparada(m)}
                   className="w-4 h-4 accent-[var(--gold)] flex-shrink-0"
                 />
                 <span className="text-[var(--text)] text-sm font-crimson truncate flex-1">{m.nome}</span>

@@ -35,6 +35,7 @@ import { StatusRodada } from './combate/StatusRodada'
 import { BarraAcoesSessao } from './sessao/BarraAcoesSessao'
 import { BarraParticipantesSessao } from './sessao/BarraParticipantesSessao'
 import { CartaoPersonagemSessao } from './sessao/CartaoPersonagemSessao'
+import { AbaMagias } from './magias/AbaMagias'
 import { ModalDescanso } from './sessao/ModalDescanso'
 import { ModalDistribuirTesouro } from './sessao/ModalDistribuirTesouro'
 import { ModalOuro } from './sessao/ModalOuro'
@@ -65,6 +66,7 @@ export function MesaCliente() {
   const { ehDM } = usePermissao()
   const online = useOnline()
   const abaAtiva = useMesaUi(s => s.abaAtiva)
+  const setAba = useMesaUi(s => s.setAba)
   // Abaixo de md, fora da aba Personagem a árvore fica só escondida (CSS), nunca desmontada.
   const classeArvore = cn('flex flex-col h-full overflow-hidden', abaAtiva !== 'personagem' && 'max-md:hidden')
 
@@ -658,7 +660,7 @@ export function MesaCliente() {
           podeAgir={false}
           temPersonagem
           ehDM={ehDM}
-          onConjurar={semOp} onPreparar={semOp} onItens={semOp} onOuro={semOp} onDistribuir={semOp}
+          onItens={semOp} onOuro={semOp} onDistribuir={semOp}
         />
         <div className={cn('flex flex-col h-full overflow-hidden md:hidden', abaAtiva !== 'personagem' && 'hidden')}>
           <div className="flex-shrink-0 py-1.5 text-center text-[var(--text3)] text-xs font-crimson">
@@ -698,13 +700,31 @@ export function MesaCliente() {
   const personagemCombate = combatenteOperado?.personagem_id
     ? personagensSessao.find(p => p.id === combatenteOperado.personagem_id) ?? null
     : null
+  // Aba Magias: no combate o "Conjurar" segue o fluxo com alvo/valor (que
+  // roda na aba Personagem), então volta para ela depois de escolher.
+  const personagemMagias = emModoSessao ? personagemOperadoSessao : personagemCombate
+  const abaMagias = personagemMagias ? (
+    <AbaMagias
+      key={personagemMagias.id}
+      personagem={personagemMagias}
+      espacosMagia={emModoSessao ? personagemMagias.slots_magia ?? {} : combatenteOperado?.espacos_magia ?? {}}
+      podeConjurar={emModoSessao ? !enviandoSessao && online : podeAgirOperado}
+      podeEditarEspacos={emModoSessao && !enviandoSessao && online}
+      onConjurar={emModoSessao ? conjurarMagiaSessao : escolha => { conjurarMagia(escolha); setAba('personagem') }}
+      onUsarEspaco={usarEspacoSessao}
+      onRecuperarEspaco={recuperarEspacoSessao}
+    />
+  ) : (
+    <p className="text-[var(--text3)] text-sm font-crimson text-center py-6">
+      {ehDM ? 'Nenhum PJ para operar.' : 'Você não tem um personagem nesta campanha.'}
+    </p>
+  )
   const painelAbas = (
     <PainelAbasMesa
       podeAgir={emModoSessao ? !enviandoSessao && online : podeAgirOperado}
       temPersonagem={emModoSessao ? !!personagemOperadoSessao : !!combatenteOperado?.personagem_id}
       ehDM={ehDM}
-      onConjurar={() => (emModoSessao ? setModalMagiaSessaoAberto(true) : setModalMagiaAberto(true))}
-      onPreparar={() => setModalPrepararSessaoAberto(true)}
+      abaMagias={abaMagias}
       onItens={() => (emModoSessao ? setModalItemSessaoAberto(true) : setModalItemAberto(true))}
       onOuro={() => setModalOuroAberto(true)}
       onDistribuir={() => setModalDistribuirAberto(true)}

@@ -98,3 +98,18 @@ export function calcularBonusProficiencia(nivel: number): number {
 export function formatarModificador(mod: number): string {
   return mod >= 0 ? `+${mod}` : `${mod}`
 }
+
+// Limite de magias preparadas (5e): nível + modificador do atributo de
+// conjuração (Clérigo/Druida: Sabedoria, Mago: Inteligência) ou metade do
+// nível + Carisma (Paladino). Mínimo 1. `null` = classe que não prepara.
+export function limiteMagiasPreparadas(
+  classe: string | null | undefined,
+  nivel: number,
+  atributos: { inteligencia: number; sabedoria: number; carisma: number }
+): number | null {
+  const chave = classe ? CLASSE_CONJURADORA_MAP[classe.trim().toLowerCase()] : undefined
+  if (chave === 'Cleric' || chave === 'Druid') return Math.max(1, nivel + calcularModificador(atributos.sabedoria))
+  if (chave === 'Wizard') return Math.max(1, nivel + calcularModificador(atributos.inteligencia))
+  if (chave === 'Paladin') return Math.max(1, Math.floor(nivel / 2) + calcularModificador(atributos.carisma))
+  return null
+}
