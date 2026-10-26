@@ -1,6 +1,7 @@
 import { Sidebar, BottomNav } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { BannerBatalhaAtiva } from '@/components/batalha/BannerBatalhaAtiva'
+import { BarraAbasMesa } from '@/components/mesa/BarraAbasMesa'
 import { FaixaOffline } from '@/components/layout/FaixaOffline'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
@@ -37,6 +38,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <FaixaOffline />
         <Header
           titulo="Dungeon Desk"
+          isAdmin={profile?.is_admin === true}
           usuario={profile ? { nome: profile.nome, email: profile.email, username: profile.username } : { nome: null, email: user.email ?? '' }}
         />
         <main className="flex-1 overflow-auto pb-16 md:pb-0">
@@ -44,6 +46,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </main>
       </div>
       <BottomNav isAdmin={profile?.is_admin === true} plano={profile?.plano} />
+      <BarraAbasMesa />
       <BannerBatalhaAtiva />
     </div>
   )
