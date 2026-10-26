@@ -340,6 +340,20 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
     return Object.fromEntries(seed.map((total, idx) => [idx + 1, total]))
   })
   const [modoAjuste, setModoAjuste] = useState(false)
+
+  // Semeadura única: ficha conjuradora com slots_magia vazio no banco recebe os
+  // totais da classe/nível, para a /mesa e a API (usar_espaco) enxergarem os espaços.
+  const semeouEspacos = useRef(false)
+  useEffect(() => {
+    if (semeouEspacos.current || !podeEditar) return
+    semeouEspacos.current = true
+    const temTotalSalvo = p.slots_magia && Object.values(p.slots_magia).some(v => (v?.total ?? 0) > 0)
+    if (temTotalSalvo) return
+    const seed = getEspacosMagiaPorClasse(p.classe, p.nivel)
+    if (!seed.some(total => total > 0)) return
+    salvarSlotsDb({}, Object.fromEntries(seed.map((total, idx) => [idx + 1, total])))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [magiaPopup, setMagiaPopup] = useState<Spell | null>(null)
 
   function atualizar<K extends keyof Personagem>(campo: K, valor: Personagem[K]) {
