@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { useMesaUi } from '@/store/mesa-ui'
+import { BotaoFichaCompleta } from './BotaoFichaCompleta'
 
 interface Botao {
   rotulo: string
@@ -22,7 +23,10 @@ const CLASSE_BOTAO = cn(
 export function PainelAbasMesa({
   podeAgir, temPersonagem, ehDM,
   onConjurar, onPreparar, onItens, onOuro, onDistribuir,
+  semSessao, personagemFichaId,
 }: {
+  semSessao?: boolean
+  personagemFichaId?: string | null
   podeAgir: boolean
   temPersonagem: boolean
   ehDM: boolean
@@ -52,7 +56,15 @@ export function PainelAbasMesa({
 
   return (
     <div className={cn('px-3 py-3', abaAtiva === 'personagem' ? 'hidden' : 'block md:hidden')}>
-      {abaAtiva !== 'personagem' && (
+      {abaAtiva !== 'personagem' && semSessao && (
+        <div className="flex flex-col gap-3 text-center">
+          <p className="text-[var(--text3)] text-sm font-crimson">
+            Sem sessão em andamento. Abra a ficha completa para editar.
+          </p>
+          {personagemFichaId && <BotaoFichaCompleta personagemId={personagemFichaId} rotulo="Abrir ficha completa" />}
+        </div>
+      )}
+      {abaAtiva !== 'personagem' && !semSessao && (
         <div className="grid grid-cols-1 gap-3">
           {paineis[abaAtiva].map(b => b.href ? (
             <Link key={b.rotulo} href={b.href} className={CLASSE_BOTAO}>
