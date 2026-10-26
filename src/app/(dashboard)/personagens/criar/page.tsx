@@ -9,6 +9,7 @@ import { usePlanoEfetivo } from '@/hooks/usePlanoEfetivo'
 import { ChevronLeft, ChevronRight, Check, Dices } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Alinhamento } from '@/types/dnd'
+import { getEspacosMagiaPorClasse } from '@/lib/dados-dnd/espacos-magia'
 
 // ─── Static D&D Data ──────────────────────────────────────────────────────────
 
@@ -237,6 +238,12 @@ export default function CriarPersonagemPage() {
       const periciasObj: Record<string, boolean> = {}
       personagem.pericias_selecionadas.forEach(p => { periciasObj[p] = true })
 
+      // Espaços de magia iniciais (nível 1) no mesmo formato de salvarSlotsDb
+      const seedEspacos = getEspacosMagiaPorClasse(personagem.classe, 1)
+      const slotsIniciais = seedEspacos.some(t => t > 0)
+        ? Object.fromEntries(Array.from({ length: 9 }, (_, i) => [String(i + 1), { total: seedEspacos[i] ?? 0, usados: 0 }]))
+        : undefined
+
       const novoPersonagem = {
         campanha_id: campanhaAtiva.id,
         user_id: userId,
@@ -275,6 +282,7 @@ export default function CriarPersonagemPage() {
         vinculos: personagem.vinculos || null,
         fraquezas: personagem.fraquezas || null,
         ativo: false,
+        slots_magia: slotsIniciais,
       }
 
       const { data: criado, error } = await supabase.from('personagens').insert(novoPersonagem).select('id').single()
