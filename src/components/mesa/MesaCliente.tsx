@@ -19,6 +19,7 @@ import { chamarAcaoInventario, chamarAcaoSessaoApi } from './api'
 import { useMesaUi } from '@/store/mesa-ui'
 import { cn } from '@/lib/utils'
 import { PainelAbasMesa } from './PainelAbasMesa'
+import { BotaoFichaCompleta } from './BotaoFichaCompleta'
 import { ModalItem } from './modais/ModalItem'
 import { ModalMagias } from './modais/ModalMagias'
 import { BandejaAlvos } from './combate/BandejaAlvos'
@@ -632,14 +633,62 @@ export function MesaCliente() {
   }
 
   if (!sessaoAtiva) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-2 p-8 text-center">
+    const semOp = () => {}
+    // Abaixo de md com personagem: ficha em somente leitura. Sem personagem
+    // (ou de md para cima) segue a mensagem de sempre.
+    const mensagemSemSessao = (
+      <div className={cn(
+        'h-full flex-col items-center justify-center gap-2 p-8 text-center',
+        personagemOperadoSessao ? 'hidden md:flex' : 'flex'
+      )}>
         <Swords className="w-10 h-10 text-[var(--border)]" />
         <p className="font-cinzel text-[var(--border)] text-lg">Nenhuma sessão em andamento</p>
         <p className="text-[var(--border)] text-sm font-crimson max-w-xs">
           Aguarde o mestre iniciar a sessão.
         </p>
       </div>
+    )
+    if (!personagemOperadoSessao) return mensagemSemSessao
+
+    return (
+      <>
+        <PainelAbasMesa
+          semSessao
+          personagemFichaId={personagemOperadoSessao.id}
+          podeAgir={false}
+          temPersonagem
+          ehDM={ehDM}
+          onConjurar={semOp} onPreparar={semOp} onItens={semOp} onOuro={semOp} onDistribuir={semOp}
+        />
+        <div className={cn('flex flex-col h-full overflow-hidden md:hidden', abaAtiva !== 'personagem' && 'hidden')}>
+          <div className="flex-shrink-0 py-1.5 text-center text-[var(--text3)] text-xs font-crimson">
+            Sem sessão em andamento
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden px-3 pb-2">
+            <CartaoPersonagemSessao
+              personagem={personagemOperadoSessao}
+              podeEditar={false}
+              enviando={false}
+              opcoesSelecao={ehDM ? personagensSessao : meusPersonagensSessao}
+              mostrarSeletorSempre={ehDM}
+              rotuloSeletor={ehDM ? '🎭 Operando' : undefined}
+              selecionadoId={personagemOperadoIdSessao}
+              onSelecionar={setPersonagemOperadoIdSessao}
+              onAjustarPV={semOp}
+              onDefinirPVTemp={semOp}
+              onAdicionarCondicao={semOp}
+              onRemoverCondicao={semOp}
+              onUsarInspiracao={semOp}
+              onUsarEspaco={semOp}
+              onRecuperarEspaco={semOp}
+            />
+          </div>
+          <div className="flex-shrink-0 px-3 pb-3">
+            <BotaoFichaCompleta personagemId={personagemOperadoSessao.id} rotulo="Abrir ficha completa" className="w-full" />
+          </div>
+        </div>
+        {mensagemSemSessao}
+      </>
     )
   }
 
@@ -709,6 +758,12 @@ export function MesaCliente() {
             </div>
           )}
         </div>
+
+        {personagemOperadoSessao && (
+          <div className="flex-shrink-0 px-3 pb-1.5 md:hidden">
+            <BotaoFichaCompleta personagemId={personagemOperadoSessao.id} className="w-full" />
+          </div>
+        )}
 
         {personagemOperadoSessao && (
           <BarraAcoesSessao
@@ -834,6 +889,12 @@ export function MesaCliente() {
           </div>
         )}
       </div>
+
+      {combatenteOperado?.personagem_id && (
+        <div className="flex-shrink-0 px-3 pb-1.5 md:hidden">
+          <BotaoFichaCompleta personagemId={combatenteOperado.personagem_id} className="w-full" />
+        </div>
+      )}
 
       {combatenteOperado && (
         <>
