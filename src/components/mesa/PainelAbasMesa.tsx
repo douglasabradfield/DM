@@ -22,29 +22,17 @@ const CLASSE_BOTAO = cn(
 // Painéis das abas do celular (abaixo de md). Fica sempre montado — a árvore
 // de sessão/combate é que se esconde por CSS quando a aba não é Personagem.
 export function PainelAbasMesa({
-  podeAgir, temPersonagem, ehDM,
-  abaMagias, onItens, onOuro, onDistribuir,
+  abaMagias, abaMochila,
   semSessao, personagemFichaId,
 }: {
   semSessao?: boolean
   personagemFichaId?: string | null
-  podeAgir: boolean
-  temPersonagem: boolean
-  ehDM: boolean
   abaMagias?: ReactNode
-  onItens: () => void
-  onOuro: () => void
-  onDistribuir: () => void
+  abaMochila?: ReactNode
 }) {
   const abaAtiva = useMesaUi(s => s.abaAtiva)
-  const usavel = podeAgir && temPersonagem
 
-  const paineis: Record<'mochila' | 'mapa', Botao[]> = {
-    mochila: [
-      { rotulo: '🎒 Itens', descricao: 'Inventário e uso de itens', onClick: onItens, desabilitado: !usavel },
-      { rotulo: '💰 Ouro', descricao: 'Moedas e transferências', onClick: onOuro, desabilitado: !usavel },
-      ...(ehDM ? [{ rotulo: '🎁 Distribuir tesouro', descricao: 'Dar itens e moedas ao grupo', onClick: onDistribuir, desabilitado: !podeAgir }] : []),
-    ],
+  const paineis: Record<'mapa', Botao[]> = {
     mapa: [
       { rotulo: '🗺️ Abrir mapas e imagens', descricao: 'Mapas e imagens da campanha', href: '/mapas' },
     ],
@@ -61,7 +49,8 @@ export function PainelAbasMesa({
         </div>
       )}
       {abaAtiva === 'magias' && !semSessao && abaMagias}
-      {abaAtiva !== 'personagem' && abaAtiva !== 'magias' && !semSessao && (
+      {abaAtiva === 'mochila' && !semSessao && abaMochila}
+      {abaAtiva === 'mapa' && !semSessao && (
         <div className="grid grid-cols-1 gap-3">
           {paineis[abaAtiva].map(b => b.href ? (
             <Link key={b.rotulo} href={b.href} className={CLASSE_BOTAO}>
