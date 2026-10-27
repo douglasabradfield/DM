@@ -1,15 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { createClient } from '@/lib/supabase/client'
-import toast from 'react-hot-toast'
 import { X } from 'lucide-react'
 import { ModalCompendioItens, type ItemCompendioEscolhido } from '@/components/personagem/ModalCompendioItens'
 import type { InventarioItemDb } from '@/types/dnd'
-import type { AcaoInventarioParams, ContextoAcao, Destinatario } from '../tipos'
+import type { ContextoAcao, Destinatario } from '../tipos'
 import { iconeItem } from '../helpers'
-import { chamarAcaoInventario } from '../api'
+import { useInventario } from '../inventario/useInventario'
 import { Avatar } from '../ui/Avatar'
 
 // 🎒 Item — lista do inventário. Fase 3: só registra o uso no log e aplica
@@ -26,90 +24,36 @@ export function ModalItem({
   destinatarios: Destinatario[]
   onFechar: () => void
 }) {
-  const [carregando, setCarregando] = useState(true)
-  const [itens, setItens] = useState<InventarioItemDb[]>([])
   const [itemEscolhido, setItemEscolhido] = useState<InventarioItemDb | null>(null)
   const [vista, setVista] = useState<'detalhe' | 'usar' | 'dar'>('detalhe')
   const [cura, setCura] = useState('')
-  const [enviando, setEnviando] = useState(false)
   const [compendioAberto, setCompendioAberto] = useState(false)
-
-  const carregarItens = useCallback(() => {
-    createClient()
-      .from('inventario_itens')
-      .select('*')
-      .eq('personagem_id', personagemId)
-      .order('nome')
-      .then(({ data }) => {
-        setItens((data as InventarioItemDb[]) ?? [])
-        setCarregando(false)
-      })
-  }, [personagemId])
-
-  useEffect(() => { carregarItens() }, [carregarItens])
-
-  // Realtime — reflete o que a API muda (inclusive itens recebidos por
-  // transferência de outro jogador enquanto o modal está aberto).
-  useEffect(() => {
-    const supabase = createClient()
-    const canal = supabase
-      .channel(`modal-item-${personagemId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'inventario_itens', filter: `personagem_id=eq.${personagemId}` },
-        carregarItens
-      )
-      .subscribe()
-    return () => { supabase.removeChannel(canal) }
-  }, [personagemId, carregarItens])
-
-  async function executar(payload: Omit<AcaoInventarioParams, 'sessaoId' | 'personagemId' | 'batalhaId' | 'combatenteId'>) {
-    if (enviando) return
-    setEnviando(true)
-    const resultado = await chamarAcaoInventario({
-      ...('sessaoId' in contexto ? { sessaoId: contexto.sessaoId, personagemId } : { batalhaId: contexto.batalhaId, combatenteId: contexto.combatenteId }),
-      ...payload,
-    })
-    setEnviando(false)
-    if (!resultado.ok) {
-      toast.error(resultado.erro ?? 'Erro ao registrar ação')
-      return false
-    }
-    if (resultado.descricao) toast.success(resultado.descricao)
-    return true
-  }
+  const inventario = useInventario({ personagemId, contexto })
+  const { carregando, itens, enviando } = inventario
 
   async function usar() {
     if (!itemEscolhido) return
-    const ok = await executar({ tipo: 'usar_item', itemId: itemEscolhido.id, valorCura: parseInt(cura) || 0 })
-    if (ok) { setItemEscolhido(null); carregarItens() }
+    if (await inventario.usar(itemEscolhido, parseInt(cura) || 0)) setItemEscolhido(null)
   }
 
   async function darPara(destino: Destinatario) {
     if (!itemEscolhido) return
-    const ok = await executar({ tipo: 'transferir_item', itemId: itemEscolhido.id, quantidade: 1, paraPersonagemId: destino.id })
-    if (ok) { setItemEscolhido(null); carregarItens() }
+    if (await inventario.passar(itemEscolhido, destino, 1)) setItemEscolhido(null)
   }
 
   async function equipar(equipado: boolean) {
     if (!itemEscolhido) return
-    const ok = await executar({ tipo: 'equipar_item', itemId: itemEscolhido.id, equipado })
-    if (ok) setItemEscolhido(prev => prev ? { ...prev, equipado } : prev)
+    if (await inventario.equipar(itemEscolhido, equipado)) setItemEscolhido(prev => prev ? { ...prev, equipado } : prev)
   }
 
   async function descartar() {
     if (!itemEscolhido) return
-    if (!window.confirm(`Descartar ${itemEscolhido.quantidade}x ${itemEscolhido.nome}?`)) return
-    const ok = await executar({ tipo: 'descartar_item', itemId: itemEscolhido.id, quantidade: itemEscolhido.quantidade })
-    if (ok) { setItemEscolhido(null); carregarItens() }
+    if (await inventario.descartar(itemEscolhido)) setItemEscolhido(null)
   }
 
-  // Item achado no meio da sessão — o mestre cria no compêndio (aba Itens)
-  // e o jogador põe na própria ficha daqui, sem sair da mesa.
   async function acrescentar(item: ItemCompendioEscolhido) {
     setCompendioAberto(false)
-    const ok = await executar({ tipo: 'adicionar_item', ...item, quantidade: 1 })
-    if (ok) carregarItens()
+    await inventario.acrescentar(item)
   }
 
   function abrirItem(item: InventarioItemDb) {

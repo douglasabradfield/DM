@@ -12,7 +12,7 @@ import type { Personagem, TipoDano } from '@/types/dnd'
 import { chamarAcaoApi } from '@/lib/batalha/acao-api'
 import { Swords } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { AcaoPendente, AlvoSelecionado, AtaqueDisponivel, ConjuracaoEscolhida, InfoPersonagem } from './tipos'
+import type { AcaoPendente, AlvoSelecionado, AtaqueDisponivel, ConjuracaoEscolhida, ContextoAcao, Destinatario, InfoPersonagem } from './tipos'
 import { OPCOES_REACAO } from './constantes'
 import { ataquesDoCombatente, classificarMagia, mensagemToast, ordenarPorNome } from './helpers'
 import { chamarAcaoInventario, chamarAcaoSessaoApi } from './api'
@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 import { PainelAbasMesa } from './PainelAbasMesa'
 import { BotaoFichaCompleta } from './BotaoFichaCompleta'
 import { ModalItem } from './modais/ModalItem'
+import { AbaMochila } from './inventario/AbaMochila'
 import { ModalMagias } from './modais/ModalMagias'
 import { BandejaAlvos } from './combate/BandejaAlvos'
 import { BarraAcoes } from './combate/BarraAcoes'
@@ -657,10 +658,6 @@ export function MesaCliente() {
         <PainelAbasMesa
           semSessao
           personagemFichaId={personagemOperadoSessao.id}
-          podeAgir={false}
-          temPersonagem
-          ehDM={ehDM}
-          onItens={semOp} onOuro={semOp} onDistribuir={semOp}
         />
         <div className={cn('flex flex-col h-full overflow-hidden md:hidden', abaAtiva !== 'personagem' && 'hidden')}>
           <div className="flex-shrink-0 py-1.5 text-center text-[var(--text3)] text-xs font-crimson">
@@ -719,17 +716,41 @@ export function MesaCliente() {
       {ehDM ? 'Nenhum PJ para operar.' : 'Você não tem um personagem nesta campanha.'}
     </p>
   )
-  const painelAbas = (
-    <PainelAbasMesa
-      podeAgir={emModoSessao ? !enviandoSessao && online : podeAgirOperado}
-      temPersonagem={emModoSessao ? !!personagemOperadoSessao : !!combatenteOperado?.personagem_id}
+  // Aba Mochila: passar item/ouro vale sempre (inclusive em combate); "Usar"
+  // segue a mesma regra da barra de ações (sessão: sempre; combate: quem pode agir).
+  const personagemMochila = emModoSessao ? personagemOperadoSessao : personagemCombate
+  const contextoMochila: ContextoAcao | null = emModoSessao
+    ? (sessaoAtiva ? { sessaoId: sessaoAtiva.id } : null)
+    : (batalhaId && combatenteOperado ? { batalhaId, combatenteId: combatenteOperado.id } : null)
+  // Mesmos destinatários que o ModalItem usa em cada modo.
+  const destinatariosMochila: Destinatario[] = !personagemMochila ? []
+    : emModoSessao
+      ? personagensPresentes
+          .filter(p => p.id !== personagemMochila.id)
+          .map(p => ({ id: p.id, nome: p.nome, imagemUrl: p.imagem_url }))
+      : combatentes
+          .filter((c): c is typeof c & { personagem_id: string } => !!c.personagem_id && c.personagem_id !== personagemMochila.id)
+          .map(c => ({ id: c.personagem_id, nome: c.nome, imagemUrl: infoPersonagens[c.personagem_id]?.imagem_url }))
+  const abaMochila = personagemMochila && contextoMochila ? (
+    <AbaMochila
+      key={personagemMochila.id}
+      personagemId={personagemMochila.id}
+      moedas={personagemMochila.moedas}
+      campanhaId={personagemMochila.campanha_id}
       ehDM={ehDM}
-      abaMagias={abaMagias}
-      onItens={() => (emModoSessao ? setModalItemSessaoAberto(true) : setModalItemAberto(true))}
-      onOuro={() => setModalOuroAberto(true)}
+      contexto={contextoMochila}
+      destinatarios={destinatariosMochila}
+      podeUsar={emModoSessao ? !enviandoSessao && online : podeAgirOperado}
+      podeMovimentar={!enviandoSessao && online}
+      onMovimentarOuro={() => setModalOuroAberto(true)}
       onDistribuir={() => setModalDistribuirAberto(true)}
     />
+  ) : (
+    <p className="text-[var(--text3)] text-sm font-crimson text-center py-6">
+      {ehDM ? 'Nenhum PJ para operar.' : 'Você não tem um personagem nesta campanha.'}
+    </p>
   )
+  const painelAbas = <PainelAbasMesa abaMagias={abaMagias} abaMochila={abaMochila} />
 
   // Modo sessão — sem batalha ativa: cartão editável do PJ, sem turno.
   if (emModoSessao) {
