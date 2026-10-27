@@ -14,7 +14,7 @@ import { useFogPincel } from '@/hooks/useFogPincel'
 import { FogToolbar } from './FogToolbar'
 import { ImagemComFog } from './ImagemComFog'
 
-interface ImagemGaleria {
+export interface ImagemGaleria {
   id: string
   campanha_id: string
   nome: string
@@ -653,12 +653,14 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
   )
 }
 
-function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRemover }: {
+export function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRemover, zIndex }: {
   imagem: ImagemGaleria
   ehJogador: boolean
   onClose: () => void
   onToggleVis: () => void
   onRemover: () => void
+  // Opcional: só a /mesa (celular) passa, para ficar abaixo dos modais críticos.
+  zIndex?: number
 }) {
   // "scale" é SEMPRE relativo ao pixel natural da imagem (1 = tamanho real),
   // nunca ao CSS de shrink-to-fit — foi exatamente essa dependência de
@@ -935,6 +937,7 @@ function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRem
   return createPortal(
     <div
       className="fixed inset-0 z-[9999] bg-black flex flex-col"
+      style={zIndex !== undefined ? { zIndex } : undefined}
       onClick={e => { if (e.target === e.currentTarget && !ampliado) onClose() }}
     >
       <div className="flex items-center justify-between gap-2 p-3 flex-shrink-0">
