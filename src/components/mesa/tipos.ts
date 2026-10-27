@@ -114,6 +114,9 @@ export interface MagiaExibida {
   curaDice: string | null
   concentracao: boolean
   saveAbility: string | null
+  tempoConjuracao?: string | null
+  alcance?: string | null
+  duracao?: string | null
 }
 
 export interface ConjuracaoEscolhida {
@@ -133,5 +136,5 @@ export type ContextoAcao = { sessaoId: string } | { batalhaId: string; combatent
 
 export type LinhaMagia = {
   id: string; preparada: boolean; nivel: number
-  spell: Pick<Spell, 'name_pt' | 'damage_dice' | 'damage_type_pt' | 'heal_dice' | 'concentration' | 'save_ability' | 'save_effect'> | null
+  spell: Pick<Spell, 'name_pt' | 'casting_time_pt' | 'range_pt' | 'duration_pt' | 'damage_dice' | 'damage_type_pt' | 'heal_dice' | 'concentration' | 'save_ability' | 'save_effect'> | null
 }
