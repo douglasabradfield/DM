@@ -1,13 +1,16 @@
 import type { Combatente } from '@/types/batalha'
 
 export function StatusRodada({
-  ativa, statusBatalha, rodadaAtual, combatenteDoTurno, ehMeuTurno,
+  ativa, statusBatalha, rodadaAtual, combatenteDoTurno, ehMeuTurno, ehDM, dmControlandoId, combatenteOperado,
 }: {
   ativa: boolean
   statusBatalha: string
   rodadaAtual: number
   combatenteDoTurno: Combatente | null
   ehMeuTurno: boolean
+  ehDM: boolean
+  dmControlandoId: string | null
+  combatenteOperado: Combatente | null
 }) {
   if (statusBatalha === 'pausada') {
     return (
@@ -32,6 +35,21 @@ export function StatusRodada({
       </div>
     )
   }
+  if (ehDM) {
+    const operado = combatenteOperado
+    if (!operado || (operado.id === combatenteDoTurno.id && operado.id === dmControlandoId)) {
+      return (
+        <div className="flex-shrink-0 py-1.5 text-center text-[var(--gold)] text-xs font-cinzel">
+          Vez de {combatenteDoTurno.nome} · Rodada {rodadaAtual}
+        </div>
+      )
+    }
+    return (
+      <div className="flex-shrink-0 py-1.5 px-3 text-center text-[var(--text2)] bg-[var(--surface)] border-y border-[var(--border)] text-xs font-crimson">
+        Você controla {operado.nome} (fora da vez) · Vez de {combatenteDoTurno.nome} · Rodada {rodadaAtual}
+      </div>
+    )
+  }
   if (ehMeuTurno) {
     return (
       <div className="flex-shrink-0 py-1.5 bg-[var(--gold)] text-[var(--bg)] text-center font-cinzel font-bold text-xs">
@@ -41,7 +59,7 @@ export function StatusRodada({
   }
   return (
     <div className="flex-shrink-0 py-1.5 text-center text-[var(--text3)] text-xs font-crimson">
-      Aguarde sua vez — quem age agora é {combatenteDoTurno.nome} · Rodada {rodadaAtual}
+      Aguarde sua vez, quem age agora é {combatenteDoTurno.nome} · Rodada {rodadaAtual}
     </div>
   )
 }

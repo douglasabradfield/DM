@@ -602,7 +602,13 @@ export function MesaCliente() {
   // não representa ninguém de verdade — tratar como "ninguém na vez", não
   // assumir esse índice silenciosamente.
   const combatenteDoTurno = ativa && turnoCombatenteId ? ativosOrdenados[turnoAtual] ?? null : null
-  const ehMeuTurno = !!combatenteDoTurno && meuCombatenteIds.has(combatenteDoTurno.id)
+  // O jogador só age quando o combatente OPERADO é exatamente o da vez e é
+  // dele — com 2 personagens, o que não é da vez não pode agir (o servidor
+  // recusa).
+  const ehMeuTurno =
+    !!combatenteDoTurno && !!combatenteOperado &&
+    combatenteOperado.id === combatenteDoTurno.id &&
+    meuCombatenteIds.has(combatenteOperado.id)
   // O DM não tem "vez" — pode agir por qualquer combatente que esteja
   // operando a qualquer momento (a API já trata isso na validação).
   const podeAgirOperado = (ehDM || ehMeuTurno) && online
@@ -906,9 +912,12 @@ export function MesaCliente() {
         rodadaAtual={rodadaAtual}
         combatenteDoTurno={combatenteDoTurno}
         ehMeuTurno={ehMeuTurno}
+        ehDM={ehDM}
+        dmControlandoId={dmControlandoId}
+        combatenteOperado={combatenteOperado}
       />
 
-      <div className="flex-1 min-h-0 overflow-hidden px-3 pb-2">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-2">
         {combatenteOperado ? (
           <CartaoPersonagem
             combatente={combatenteOperado}

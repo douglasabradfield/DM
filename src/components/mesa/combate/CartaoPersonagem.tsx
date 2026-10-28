@@ -11,8 +11,8 @@ import type { InfoPersonagem } from '../tipos'
 import { Avatar } from '../ui/Avatar'
 import { ModalCondicao } from '../ui/ModalCondicao'
 
-// Cartão central — único elemento que pode encolher. Sem scroll: quando o
-// conteúdo aperta, a densidade (fonte/espaçamento) cede, nunca overflow.
+// Cartão central — único elemento que pode encolher. Quando o conteúdo não
+// cabe (telas pequenas), o cartão rola por dentro; a barra de ações fica fixa.
 export function CartaoPersonagem({
   combatente: c, info, opcoesSelecao, mostrarSeletorSempre, rotuloSeletor, selecionadoId, onSelecionar, onEncerrarEfeito,
 }: {
@@ -31,7 +31,7 @@ export function CartaoPersonagem({
   const derivada = useMemo(() => vantagemDerivada(c.condicoes), [c.condicoes])
 
   return (
-    <div className="h-full flex flex-col gap-1.5 overflow-hidden rounded-xl bg-[var(--bg2)] border border-[var(--gold)]/40 shadow-lg p-3">
+    <div className="h-full flex flex-col gap-1.5 min-h-0 overflow-y-auto rounded-xl bg-[var(--bg2)] border border-[var(--gold)]/40 shadow-lg p-3 max-md:pb-[calc(1rem+env(safe-area-inset-bottom))]">
       {(mostrarSeletorSempre ? opcoesSelecao.length > 0 : opcoesSelecao.length > 1) && (
         <div className="flex-shrink-0">
           {rotuloSeletor && <p className="text-[var(--text3)] text-[9px] font-cinzel uppercase mb-0.5">{rotuloSeletor}</p>}
