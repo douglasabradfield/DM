@@ -1,5 +1,5 @@
-import { resolverTipoDanoSRD } from '@/lib/dados-dnd/tipos-dano'
-import type { Combatente, EntradaLog, EspacosMagiaBatalha } from '@/types/batalha'
+import { getTipoDano, resolverTipoDanoSRD } from '@/lib/dados-dnd/tipos-dano'
+import type { Combatente, EntradaLog, EspacosMagiaBatalha, TipoEntradaLog } from '@/types/batalha'
 import { MOEDAS, TAXA_PARA_PO } from './constantes'
 import type { AtaqueDisponivel, MagiaExibida } from './tipos'
 
@@ -48,9 +48,10 @@ export function ataquesDoCombatente(c: Combatente): AtaqueDisponivel[] {
   return []
 }
 
-export function mensagemToast(entrada: EntradaLog): string | null {
+export function mensagemToast(entrada: EntradaLog, opcoes?: { comTipoDano?: boolean }): string | null {
   if (entrada.tipo === 'dano' && entrada.valor != null) {
-    return `⚔️ ${entrada.origem} causou ${entrada.valor} em ${entrada.alvo}`
+    const tipo = opcoes?.comTipoDano && entrada.tipo_dano ? ` (${getTipoDano(entrada.tipo_dano).nome.toLowerCase()})` : ''
+    return `⚔️ ${entrada.origem} causou ${entrada.valor}${tipo} em ${entrada.alvo}`
   }
   if (entrada.tipo === 'cura' && entrada.valor != null) {
     return `💚 ${entrada.origem} curou ${entrada.valor} em ${entrada.alvo}`
@@ -59,6 +60,41 @@ export function mensagemToast(entrada: EntradaLog): string | null {
     return `💀 ${entrada.alvo} caiu!`
   }
   return null
+}
+
+const TIPOS_ULTIMO_EVENTO: TipoEntradaLog[] = [
+  'ataque', 'ataque_extra', 'acao_bonus_ataque', 'magia', 'acao_bonus_magia', 'dano', 'cura', 'cura_bonus',
+  'usar_item', 'condicao_aplicada', 'condicao_removida', 'morte',
+  'ataque_oportunidade', 'contra_magia', 'escudo', 'absorver_elementos', 'queda_controlada', 'outra_reacao',
+]
+
+// Frase do cartão "Último evento", montada só com origem/alvo/valor/tipo_dano —
+// nunca `descricao` (pode conter "PV a → b"). Alvo inimigo: sem "caiu!" nem
+// qualquer pista de estado de saúde. Devolve null se a entrada não serve.
+export function fraseUltimoEvento(entrada: EntradaLog, alvoEhInimigo: boolean): string | null {
+  if (entrada.resumo || !TIPOS_ULTIMO_EVENTO.includes(entrada.tipo)) return null
+  if (entrada.tipo === 'morte') return alvoEhInimigo ? null : mensagemToast(entrada)
+  if (entrada.tipo === 'dano' || entrada.tipo === 'cura') return mensagemToast(entrada, { comTipoDano: true })
+  if (entrada.tipo === 'cura_bonus') return mensagemToast({ ...entrada, tipo: 'cura' })
+
+  const sobre = entrada.alvo && entrada.alvo !== entrada.origem ? ` em ${entrada.alvo}` : ''
+  switch (entrada.tipo) {
+    case 'ataque':
+    case 'ataque_extra':
+    case 'acao_bonus_ataque':
+      return `⚔️ ${entrada.origem} atacou${entrada.alvo ? ` ${entrada.alvo}` : ''}`
+    case 'magia':
+    case 'acao_bonus_magia':
+      return `✨ ${entrada.origem} conjurou uma magia${sobre}`
+    case 'usar_item':
+      return `🎒 ${entrada.origem} usou um item${sobre}`
+    case 'condicao_aplicada':
+      return `🌀 ${entrada.origem} aplicou uma condição${sobre}`
+    case 'condicao_removida':
+      return `🌀 ${entrada.origem} removeu uma condição${sobre}`
+    default:
+      return `⚡ ${entrada.origem} usou uma reação`
+  }
 }
 
 // Degradação graciosa. Truques (nível 0) não têm preparação em D&D 5e —
