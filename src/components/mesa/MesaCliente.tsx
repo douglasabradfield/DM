@@ -27,6 +27,7 @@ import { BandejaAlvos } from './combate/BandejaAlvos'
 import { BarraAcoes } from './combate/BarraAcoes'
 import { BarraParticipantes } from './combate/BarraParticipantes'
 import { CartaoPersonagem } from './combate/CartaoPersonagem'
+import { CartaoUltimoEvento } from './combate/CartaoUltimoEvento'
 import { FaixaVantagem } from './combate/FaixaVantagem'
 import { ModalListaAtaques } from './combate/ModalListaAtaques'
 import { ModalReacao } from './combate/ModalReacao'
@@ -937,6 +938,9 @@ export function MesaCliente() {
                 : 'Você não está controlando nenhum personagem nesta batalha. Toque em um participante acima para ver detalhes.'}
             </p>
           </div>
+        )}
+        {combatenteOperado && ativa && !ehMeuTurno && (
+          <CartaoUltimoEvento log={log} combatentes={combatentes} />
         )}
       </div>
 
