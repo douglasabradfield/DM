@@ -1054,6 +1054,10 @@ export function MesaCliente() {
         <BandejaAlvos
           acao={acaoPendente}
           alvos={alvosSelecionados}
+          combatentes={combatentes}
+          infoPersonagens={infoPersonagens}
+          ehDM={ehDM}
+          onAlternarAlvo={alternarAlvo}
           enviando={enviando}
           onConfirmar={avancarComAlvos}
           onCancelar={cancelarAcao}
