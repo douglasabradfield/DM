@@ -233,7 +233,7 @@ export function AbaMapa() {
                 className="relative flex flex-col text-left rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden min-h-[44px]"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={f.url} alt={f.nome} loading="lazy" draggable={false} className="w-full h-28 object-cover bg-black/40" />
+                <img src={f.url} alt={f.nome} loading="lazy" decoding="async" draggable={false} className="w-full h-28 object-cover bg-black/40" />
                 <span className="px-2 py-2 text-[var(--text2)] font-crimson text-sm truncate">{f.nome}</span>
                 {!vistas.has(f.id) && (
                   <span className="absolute top-1.5 left-1.5 text-[10px] font-cinzel px-2 py-0.5 rounded-full bg-[var(--gold)] text-[var(--bg)]">

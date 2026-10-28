@@ -20,7 +20,12 @@ export function PainelAbasMesa({
   const abaAtiva = useMesaUi(s => s.abaAtiva)
 
   return (
-    <div className={cn('px-3 py-3', abaAtiva === 'personagem' ? 'hidden' : 'block md:hidden')}>
+    // Pai (mesa/page.tsx) é flex-col overflow-hidden: sem flex-1/min-h-0 o
+    // painel não encolhe e o conteúdo é cortado em vez de rolar.
+    <div className={cn(
+      'px-3 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] flex-1 min-h-0 overflow-y-auto',
+      abaAtiva === 'personagem' ? 'hidden' : 'block md:hidden'
+    )}>
       {abaAtiva !== 'personagem' && semSessao && (
         <div className="flex flex-col gap-3 text-center">
           <p className="text-[var(--text3)] text-sm font-crimson">
