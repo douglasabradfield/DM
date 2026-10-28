@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getCondicao } from '@/lib/dados-dnd/condicoes'
-import { pvVisivelParaJogador, ESTADO_VAGO_INFO, type ModoRevelacao } from '@/lib/batalha/visibilidade-pv'
 import type { Combatente, TipoCondicao } from '@/types/batalha'
 import type { InfoPersonagem } from '../tipos'
 import { Avatar } from '../ui/Avatar'
@@ -14,11 +13,10 @@ import { ModalCondicao } from '../ui/ModalCondicao'
 // Popup de combatente — substitui as antigas listas de Aliados/Inimigos.
 // Fase 2: só leitura. Fase 3 reaproveita este mesmo popup como seletor de alvo.
 export function PopupCombatente({
-  combatente: c, info, revelacaoPv, ehDM, selecionandoAlvo, alvoJaSelecionado, onSelecionarAlvo, onFechar,
+  combatente: c, info, ehDM, selecionandoAlvo, alvoJaSelecionado, onSelecionarAlvo, onFechar,
 }: {
   combatente: Combatente
   info: InfoPersonagem | undefined
-  revelacaoPv: ModoRevelacao
   ehDM: boolean
   selecionandoAlvo?: boolean
   alvoJaSelecionado?: boolean
@@ -27,7 +25,8 @@ export function PopupCombatente({
 }) {
   const [condicaoAberta, setCondicaoAberta] = useState<TipoCondicao | null>(null)
   const estaMorto = c.morto || c.pv_atual <= 0
-  const visibilidade = ehDM ? { modo: 'exato' as const } : pvVisivelParaJogador(c, revelacaoPv)
+  // Jogador nunca vê PV, CA nem estado de saúde de monstros/NPCs — só o DM e os PJs da mesa.
+  const mostrarSaude = ehDM || c.tipo === 'jogador'
 
   return createPortal(
     <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/60 p-3" onClick={onFechar}>
@@ -46,25 +45,12 @@ export function PopupCombatente({
           </button>
         </div>
 
-        <div className="flex items-center gap-3 mb-3">
-          {visibilidade.modo === 'exato' && (
-            <>
-              <span className="text-[var(--text2)] text-sm font-cinzel">PV {c.pv_atual}/{c.pv_maximo}</span>
-              <span className="text-[var(--text2)] text-sm font-cinzel">CA {c.ca}</span>
-            </>
-          )}
-          {visibilidade.modo === 'vago' && visibilidade.estado && (
-            <span
-              className="px-2 py-0.5 rounded border text-xs font-cinzel font-bold"
-              style={{ color: ESTADO_VAGO_INFO[visibilidade.estado].cor, borderColor: ESTADO_VAGO_INFO[visibilidade.estado].cor }}
-            >
-              {ESTADO_VAGO_INFO[visibilidade.estado].label}
-            </span>
-          )}
-          {visibilidade.modo === 'oculto' && (
-            <span className="text-[var(--text3)] text-xs font-crimson italic">PV desconhecido</span>
-          )}
-        </div>
+        {mostrarSaude && (
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-[var(--text2)] text-sm font-cinzel">PV {c.pv_atual}/{c.pv_maximo}</span>
+            <span className="text-[var(--text2)] text-sm font-cinzel">CA {c.ca}</span>
+          </div>
+        )}
 
         {c.condicoes.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">

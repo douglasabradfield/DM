@@ -61,7 +61,7 @@ import { ModalPrepararMagias } from './sessao/ModalPrepararMagias'
 export function MesaCliente() {
   const {
     combatentes, log, rodadaAtual, turnoAtual, turnoCombatenteId, ativa,
-    statusBatalha, batalhaId, revelacaoPv, carregarBatalhaAtiva, definirArmaEmpunhada,
+    statusBatalha, batalhaId, carregarBatalhaAtiva, definirArmaEmpunhada,
   } = useBatalha()
   const { campanhaAtiva, sessaoAtiva, sessaoCarregando } = useCampanha()
   const { ehDM } = usePermissao()
@@ -971,7 +971,6 @@ export function MesaCliente() {
         <PopupCombatente
           combatente={combatentePopup}
           info={combatentePopup.personagem_id ? infoPersonagens[combatentePopup.personagem_id] : undefined}
-          revelacaoPv={revelacaoPv}
           ehDM={ehDM}
           selecionandoAlvo={!!acaoPendente?.precisaAlvo}
           alvoJaSelecionado={alvosSelecionados.some(a => a.id === combatentePopup.id)}
