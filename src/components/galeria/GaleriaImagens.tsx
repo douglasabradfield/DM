@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { useCampanha } from '@/store/campanha'
-import { X, Upload, Search, Trash2, ExternalLink, Eye, EyeOff, Maximize2 } from 'lucide-react'
+import { X, Upload, Search, Trash2, ExternalLink, Eye, EyeOff, Maximize2, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
 import {
@@ -24,6 +24,7 @@ export interface ImagemGaleria {
   visivel_jogadores: boolean
   compartilhado: boolean
   criado_em: string
+  liberado_em?: string | null
 }
 
 interface GaleriaImagensProps {
@@ -213,6 +214,17 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
     }
     setVisualizando(prev => prev?.id === img.id ? { ...prev, visivel_jogadores: novoValor } : prev)
     toast.success(novoValor ? 'Visível para jogadores' : 'Oculto para jogadores')
+  }
+
+  async function renomear(img: ImagemGaleria) {
+    const novo = prompt(`Novo nome d${tipo === 'mapa' ? 'o mapa' : 'a imagem'}:`, img.nome)?.trim()
+    if (!novo || novo === img.nome) return
+    const { error } = await createClient().from('imagens').update({ nome: novo }).eq('id', img.id)
+    if (error) { toast.error('Erro ao renomear'); return }
+    setImagens(prev => prev.map(i => i.id === img.id ? { ...i, nome: novo } : i))
+    setSelecionada(prev => prev?.id === img.id ? { ...prev, nome: novo } : prev)
+    setVisualizando(prev => prev?.id === img.id ? { ...prev, nome: novo } : prev)
+    toast.success('Renomeado')
   }
 
   async function alternarFog(img: ImagemGaleria) {
@@ -495,6 +507,14 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
                 )}
                 {!ehJogador && (
                   <button
+                    onClick={() => renomear(selecionada)}
+                    className="flex items-center gap-1 px-3 py-1.5 border border-[var(--border)] text-[var(--text2)] rounded text-xs hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                  >
+                    <Pencil className="w-3 h-3" /> Renomear
+                  </button>
+                )}
+                {!ehJogador && (
+                  <button
                     onClick={() => remover(selecionada.id)}
                     className="flex items-center gap-1 px-3 py-1.5 border border-[var(--red2)] text-[var(--red2)] rounded text-xs hover:bg-[var(--red2)]/10 transition-colors"
                   >
@@ -646,6 +666,7 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
           ehJogador={ehJogador}
           onClose={() => setVisualizando(null)}
           onToggleVis={() => toggleVisibilidade(visualizando)}
+          onRenomear={() => renomear(visualizando)}
           onRemover={() => remover(visualizando.id)}
         />
       )}
@@ -653,11 +674,12 @@ export function GaleriaImagens({ tipo }: GaleriaImagensProps) {
   )
 }
 
-export function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRemover, zIndex }: {
+export function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis, onRenomear, onRemover, zIndex }: {
   imagem: ImagemGaleria
   ehJogador: boolean
   onClose: () => void
   onToggleVis: () => void
+  onRenomear?: () => void
   onRemover: () => void
   // Opcional: só a /mesa (celular) passa, para ficar abaixo dos modais críticos.
   zIndex?: number
@@ -940,14 +962,19 @@ export function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis
       style={zIndex !== undefined ? { zIndex } : undefined}
       onClick={e => { if (e.target === e.currentTarget && !ampliado) onClose() }}
     >
-      <div className="flex items-center justify-between gap-2 p-3 flex-shrink-0">
+      {/* viewportFit=cover: sem o env() o botão ficava sob o notch/barra de status. */}
+      <div
+        className="flex items-center justify-between gap-2 px-3 pb-3 flex-shrink-0"
+        style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+      >
         <p className="text-white/80 text-sm font-crimson truncate pr-2">{imagem.nome}</p>
         <button
           onClick={onClose}
-          className="flex-shrink-0 w-11 h-11 rounded-full bg-white/10 text-white flex items-center justify-center active:bg-white/20 transition-colors"
+          className="flex-shrink-0 h-11 min-w-11 px-3 md:px-0 rounded-full bg-white/10 text-white flex items-center justify-center gap-1.5 font-cinzel text-sm active:bg-white/20 transition-colors"
           aria-label="Fechar"
         >
           <X className="w-5 h-5" />
+          <span className="md:hidden">Fechar</span>
         </button>
       </div>
 
@@ -1061,6 +1088,14 @@ export function VisualizadorFullscreen({ imagem, ehJogador, onClose, onToggleVis
             {imagem.visivel_jogadores ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
             {imagem.visivel_jogadores ? 'Visível' : 'Oculto'}
           </button>
+          {onRenomear && (
+            <button
+              onClick={onRenomear}
+              className="flex items-center gap-1.5 px-3 min-h-[44px] rounded-full text-xs font-cinzel bg-white/10 text-white/70"
+            >
+              <Pencil className="w-4 h-4" /> Renomear
+            </button>
+          )}
           <a
             href={imagem.url}
             target="_blank"
