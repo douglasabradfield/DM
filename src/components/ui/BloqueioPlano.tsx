@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Lock } from 'lucide-react'
 import { MODO_MESA_LIVRE } from '@/lib/planos'
+import { ASSINATURA_VISIVEL, MSG_LIMITE_PLANO } from '@/lib/assinatura'
 
 interface BloqueioPlanoProps {
   recurso: string
@@ -20,17 +21,23 @@ export function BloqueioPlano({ recurso, planoNecessario, className = '', childr
       </div>
       <p className="font-cinzel text-[var(--text3)] text-lg mb-1">{recurso}</p>
       <p className="text-[var(--text3)] text-sm font-crimson mb-5 max-w-xs">
-        Disponível no plano{' '}
-        <span className="text-[var(--gold)] font-semibold">{planoNecessario}</span>{' '}
-        ou superior
+        {ASSINATURA_VISIVEL ? (
+          <>
+            Disponível no plano{' '}
+            <span className="text-[var(--gold)] font-semibold">{planoNecessario}</span>{' '}
+            ou superior
+          </>
+        ) : MSG_LIMITE_PLANO}
       </p>
       {children}
-      <Link
-        href="/conta"
-        className="px-5 py-2 bg-[var(--accent)] text-[var(--bg)] rounded-lg font-cinzel text-sm hover:opacity-90 transition-opacity"
-      >
-        Ver Planos
-      </Link>
+      {ASSINATURA_VISIVEL && (
+        <Link
+          href="/conta"
+          className="px-5 py-2 bg-[var(--accent)] text-[var(--bg)] rounded-lg font-cinzel text-sm hover:opacity-90 transition-opacity"
+        >
+          Ver Planos
+        </Link>
+      )}
     </div>
   )
 }

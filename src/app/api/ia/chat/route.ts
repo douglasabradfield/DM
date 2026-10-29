@@ -4,6 +4,7 @@ import { buildSystemPrompt } from '@/lib/claude/prompts'
 import { createClient } from '@/lib/supabase/server'
 import { LIMITES_IA, getLimiteIA } from '@/lib/ia/limites'
 import { ASSISTENTE_IA_ATIVO } from '@/lib/planos'
+import { ASSINATURA_VISIVEL, MSG_LIMITE_PLANO } from '@/lib/assinatura'
 
 export { LIMITES_IA }
 
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
 
   if (limite !== Infinity && totalAtual >= limite) {
     return Response.json(
-      { error: `Limite de ${limite} mensagens atingido. Faça upgrade do plano para continuar.` },
+      { error: ASSINATURA_VISIVEL ? `Limite de ${limite} mensagens atingido. Faça upgrade do plano para continuar.` : MSG_LIMITE_PLANO },
       { status: 429 }
     )
   }

@@ -12,6 +12,7 @@ import { BotaoImportarFicha } from '@/components/personagem/BotaoImportarFicha'
 import { Plus, RefreshCw, Users, Download, MoreVertical, X, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getPlano } from '@/lib/planos'
+import { ASSINATURA_VISIVEL, MSG_LIMITE_PLANO } from '@/lib/assinatura'
 import { usePlanoEfetivo } from '@/hooks/usePlanoEfetivo'
 import { useAcPersonagens } from '@/hooks/useAcPersonagens'
 import { getAcEfetivo } from '@/lib/dados-dnd/ca'
@@ -311,7 +312,7 @@ export default function PersonagensPage() {
     if (!campanhaAtiva?.id) { toast.error('Selecione uma campanha primeiro'); return }
     const limites = getPlano(plano).limites
     if (limites.personagens !== 'ilimitado' && personagens.length >= limites.personagens) {
-      toast.error(`Limite de ${limites.personagens} personagens atingido no plano ${getPlano(plano).nome}. Faça upgrade para continuar.`)
+      toast.error(ASSINATURA_VISIVEL ? `Limite de ${limites.personagens} personagens atingido no plano ${getPlano(plano).nome}. Faça upgrade para continuar.` : MSG_LIMITE_PLANO)
       return
     }
     try {

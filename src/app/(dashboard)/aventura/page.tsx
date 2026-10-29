@@ -10,6 +10,7 @@ import { DivisorOrnamentado } from '@/components/ui/DivisorOrnamentado'
 import { Upload, Copy, ScrollText, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getPlano } from '@/lib/planos'
+import { ASSINATURA_VISIVEL, MSG_LIMITE_PLANO } from '@/lib/assinatura'
 import { BloqueioPlano } from '@/components/ui/BloqueioPlano'
 import { AvisoDesktop } from '@/components/ui/AvisoDesktop'
 import type { Local, Capitulo, ConteudoAventura } from '@/types/database'
@@ -198,7 +199,7 @@ function AventuraPageConteudo() {
     if (!arquivo || !campanhaAtiva?.id) return
     const limiteAventura = getPlano(plano).limites.aventura
     if (limiteAventura === 'bloqueado') {
-      toast.error('Upload de aventura não está disponível no seu plano. Faça upgrade para continuar.')
+      toast.error(ASSINATURA_VISIVEL ? 'Upload de aventura não está disponível no seu plano. Faça upgrade para continuar.' : MSG_LIMITE_PLANO)
       return
     }
     const MAX_MB = 150

@@ -8,6 +8,7 @@ import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { cn } from '@/lib/utils'
 import { MODO_MESA_LIVRE } from '@/lib/planos'
+import { ASSINATURA_VISIVEL } from '@/lib/assinatura'
 import { AvisoDesktop } from '@/components/ui/AvisoDesktop'
 import { Plus, X, UserPlus, ChevronLeft, Link2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -625,9 +626,13 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
     <PainelGrimorio titulo="👥 Jogadores da Campanha" compacto>
       <div className="space-y-3">
         <p className="text-[var(--text3)] text-xs font-crimson">
-          Jogadores adicionados herdam o plano{' '}
-          <span className="text-[var(--accent2)]">{userPlano === 'guild_master' ? 'Guild Master' : userPlano === 'dm_supremo' ? 'DM Supremo' : 'Mesa Pro'}</span>{' '}
-          enquanto estiverem na campanha.
+          {ASSINATURA_VISIVEL ? (
+            <>
+              Jogadores adicionados herdam o plano{' '}
+              <span className="text-[var(--accent2)]">{userPlano === 'guild_master' ? 'Guild Master' : userPlano === 'dm_supremo' ? 'DM Supremo' : 'Mesa Pro'}</span>{' '}
+              enquanto estiverem na campanha.
+            </>
+          ) : 'Jogadores adicionados participam da campanha enquanto estiverem nela.'}
         </p>
 
         {/* Lista de membros */}
