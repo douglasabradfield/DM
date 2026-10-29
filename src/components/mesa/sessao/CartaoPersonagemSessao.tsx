@@ -54,7 +54,7 @@ export function CartaoPersonagemSessao({
   }
 
   return (
-    <div className="h-full flex flex-col gap-1.5 overflow-hidden rounded-xl bg-[var(--bg2)] border border-[var(--gold)]/40 shadow-lg p-3">
+    <div className="h-full min-h-0 flex flex-col gap-1.5 overflow-hidden xl:overflow-y-auto rounded-xl bg-[var(--bg2)] border border-[var(--gold)]/40 shadow-lg p-3">
       {(mostrarSeletorSempre ? opcoesSelecao.length > 0 : opcoesSelecao.length > 1) && (
         <div className="flex-shrink-0">
           {rotuloSeletor && <p className="text-[var(--text3)] text-[9px] font-cinzel uppercase mb-0.5">{rotuloSeletor}</p>}

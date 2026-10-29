@@ -10,7 +10,7 @@ import type { ImagensMesa } from '@/hooks/useImagensMesa'
 // Painéis das abas do celular (abaixo de md). Fica sempre montado — a árvore
 // de sessão/combate é que se esconde por CSS quando a aba não é Personagem.
 export function PainelAbasMesa({
-  abaMagias, abaMochila, imagensMesa,
+  abaMagias, abaMochila, imagensMesa, ocultarMapa,
   semSessao, personagemFichaId,
 }: {
   semSessao?: boolean
@@ -18,6 +18,8 @@ export function PainelAbasMesa({
   abaMagias?: ReactNode
   abaMochila?: ReactNode
   imagensMesa: ImagensMesa
+  // Em xl o mapa vive na coluna lateral da sessão: não monta uma 2ª instância aqui.
+  ocultarMapa?: boolean
 }) {
   const abaAtiva = useMesaUi(s => s.abaAtiva)
 
@@ -38,7 +40,7 @@ export function PainelAbasMesa({
       )}
       {abaAtiva === 'magias' && !semSessao && abaMagias}
       {abaAtiva === 'mochila' && !semSessao && abaMochila}
-      {abaAtiva === 'mapa' && !semSessao && <AbaMapa dados={imagensMesa} />}
+      {abaAtiva === 'mapa' && !semSessao && !ocultarMapa && <AbaMapa dados={imagensMesa} />}
     </div>
   )
 }

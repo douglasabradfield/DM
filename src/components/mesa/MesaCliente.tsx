@@ -20,6 +20,8 @@ import { OPCOES_REACAO } from './constantes'
 import { ataquesDoCombatente, classificarMagia, mensagemToast, ordenarPorNome } from './helpers'
 import { chamarAcaoInventario, chamarAcaoSessaoApi } from './api'
 import { useImagensMesa } from '@/hooks/useImagensMesa'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
+import { AbaMapa } from './AbaMapa'
 import { useMesaUi } from '@/store/mesa-ui'
 import { cn } from '@/lib/utils'
 import { PainelAbasMesa } from './PainelAbasMesa'
@@ -127,6 +129,9 @@ export function MesaCliente() {
   // Dados do painel Mapa e imagens: uma só vez aqui (acima dos return de sessão/
   // combate), para consulta e canal Realtime não refazerem na troca de modo/aba.
   const imagensMesa = useImagensMesa(userId)
+  // Notebook (xl): mapa fixo na lateral da sessão. Só monta em xl+ para nunca haver
+  // duas instâncias de ImagemComFog (celular x notebook).
+  const ehXl = useMediaQuery('(min-width: 1280px)')
 
   useEffect(() => {
     if (!campanhaAtiva?.id) { setCarregandoBatalha(false); return }
@@ -783,7 +788,7 @@ export function MesaCliente() {
       {ehDM ? 'Nenhum PJ para operar.' : 'Você não tem um personagem nesta campanha.'}
     </p>
   )
-  const painelAbas = <PainelAbasMesa abaMagias={abaMagias} abaMochila={abaMochila} imagensMesa={imagensMesa} />
+  const painelAbas = <PainelAbasMesa abaMagias={abaMagias} abaMochila={abaMochila} imagensMesa={imagensMesa} ocultarMapa={ehXl && emModoSessao} />
 
   // Modo sessão — sem batalha ativa: cartão editável do PJ, sem turno.
   if (emModoSessao) {
@@ -792,7 +797,9 @@ export function MesaCliente() {
     return (
       <>
         {painelAbas}
-        <div className={classeArvore}>
+        {/* Abaixo de xl o wrapper é display:contents (layout idêntico ao de antes); em xl vira o grid de duas colunas. */}
+        <div className="contents xl:grid xl:h-full xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_22rem] xl:grid-rows-[minmax(0,1fr)] xl:gap-3">
+        <div className={cn(classeArvore, 'xl:min-h-0')}>
         <BarraParticipantesSessao
           personagens={personagensPresentes}
           meuPersonagemIds={meusPersonagemIdsSessao}
@@ -913,6 +920,12 @@ export function MesaCliente() {
             personagens={personagensPresentes}
             onFechar={() => setModalDistribuirAberto(false)}
           />
+        )}
+        </div>
+        {ehXl && (
+          <div className="min-h-0 overflow-y-auto pr-3 pt-1">
+            <AbaMapa dados={imagensMesa} alturaMapa="min(60dvh, 520px)" semPaddingBarraAbas />
+          </div>
         )}
         </div>
       </>
