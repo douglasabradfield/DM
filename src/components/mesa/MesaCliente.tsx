@@ -19,6 +19,7 @@ import type { AcaoPendente, AlvoSelecionado, AtaqueDisponivel, ConjuracaoEscolhi
 import { OPCOES_REACAO } from './constantes'
 import { ataquesDoCombatente, classificarMagia, mensagemToast, ordenarPorNome } from './helpers'
 import { chamarAcaoInventario, chamarAcaoSessaoApi } from './api'
+import { useImagensMesa } from '@/hooks/useImagensMesa'
 import { useMesaUi } from '@/store/mesa-ui'
 import { cn } from '@/lib/utils'
 import { PainelAbasMesa } from './PainelAbasMesa'
@@ -122,6 +123,10 @@ export function MesaCliente() {
   useEffect(() => {
     createClient().auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null))
   }, [])
+
+  // Dados do painel Mapa e imagens: uma só vez aqui (acima dos return de sessão/
+  // combate), para consulta e canal Realtime não refazerem na troca de modo/aba.
+  const imagensMesa = useImagensMesa(userId)
 
   useEffect(() => {
     if (!campanhaAtiva?.id) { setCarregandoBatalha(false); return }
@@ -683,6 +688,7 @@ export function MesaCliente() {
       <>
         <PainelAbasMesa
           semSessao
+          imagensMesa={imagensMesa}
           personagemFichaId={personagemOperadoSessao.id}
         />
         <div className={cn('flex flex-col h-full overflow-hidden md:hidden', abaAtiva !== 'personagem' && 'hidden')}>
@@ -777,7 +783,7 @@ export function MesaCliente() {
       {ehDM ? 'Nenhum PJ para operar.' : 'Você não tem um personagem nesta campanha.'}
     </p>
   )
-  const painelAbas = <PainelAbasMesa abaMagias={abaMagias} abaMochila={abaMochila} />
+  const painelAbas = <PainelAbasMesa abaMagias={abaMagias} abaMochila={abaMochila} imagensMesa={imagensMesa} />
 
   // Modo sessão — sem batalha ativa: cartão editável do PJ, sem turno.
   if (emModoSessao) {
