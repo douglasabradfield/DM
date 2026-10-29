@@ -132,6 +132,8 @@ export function MesaCliente() {
   // Notebook (xl): mapa fixo na lateral da sessão. Só monta em xl+ para nunca haver
   // duas instâncias de ImagemComFog (celular x notebook).
   const ehXl = useMediaQuery('(min-width: 1280px)')
+  // Tablet/notebook (lg+): combate em duas colunas, mapa e último evento na lateral.
+  const ehLg = useMediaQuery('(min-width: 1024px)')
 
   useEffect(() => {
     if (!campanhaAtiva?.id) { setCarregandoBatalha(false); return }
@@ -788,7 +790,7 @@ export function MesaCliente() {
       {ehDM ? 'Nenhum PJ para operar.' : 'Você não tem um personagem nesta campanha.'}
     </p>
   )
-  const painelAbas = <PainelAbasMesa abaMagias={abaMagias} abaMochila={abaMochila} imagensMesa={imagensMesa} ocultarMapa={ehXl && emModoSessao} />
+  const painelAbas = <PainelAbasMesa abaMagias={abaMagias} abaMochila={abaMochila} imagensMesa={imagensMesa} ocultarMapa={emModoSessao ? ehXl : ehLg} />
 
   // Modo sessão — sem batalha ativa: cartão editável do PJ, sem turno.
   if (emModoSessao) {
@@ -935,7 +937,9 @@ export function MesaCliente() {
   return (
     <>
     {painelAbas}
-    <div className={classeArvore}>
+    {/* Abaixo de lg o wrapper é display:contents (layout idêntico ao de antes); em lg+ vira o grid de duas colunas. */}
+    <div className="contents lg:grid lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-3">
+    <div className={cn(classeArvore, 'lg:min-h-0')}>
       <BarraParticipantes
         aliados={aliadosBarra}
         inimigos={inimigosBarra}
@@ -1115,6 +1119,15 @@ export function MesaCliente() {
           onFechar={() => { if (acaoPendente.precisaAlvo) setModalValorAberto(false); else cancelarAcao() }}
         />
       )}
+    </div>
+    {ehLg && (
+      <div className="min-h-0 overflow-y-auto pr-3 pt-1 flex flex-col gap-3">
+        <AbaMapa dados={imagensMesa} alturaMapa="min(40dvh, 360px)" semPaddingBarraAbas />
+        {combatenteOperado && ativa && !ehMeuTurno && (
+          <CartaoUltimoEvento log={log} combatentes={combatentes} lateral />
+        )}
+      </div>
+    )}
     </div>
     </>
   )
