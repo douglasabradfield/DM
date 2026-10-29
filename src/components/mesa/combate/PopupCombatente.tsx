@@ -1,5 +1,6 @@
 'use client'
 
+import { useAcDoCombatente } from '@/components/batalha/AcCombatentesContext'
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
@@ -23,6 +24,7 @@ export function PopupCombatente({
   onSelecionarAlvo?: () => void
   onFechar: () => void
 }) {
+  const ac = useAcDoCombatente(c)
   const [condicaoAberta, setCondicaoAberta] = useState<TipoCondicao | null>(null)
   const estaMorto = c.morto || c.pv_atual <= 0
   // Jogador nunca vê PV, CA nem estado de saúde de monstros/NPCs — só o DM e os PJs da mesa.
@@ -48,7 +50,7 @@ export function PopupCombatente({
         {mostrarSaude && (
           <div className="flex items-center gap-3 mb-3">
             <span className="text-[var(--text2)] text-sm font-cinzel">PV {c.pv_atual}/{c.pv_maximo}</span>
-            <span className="text-[var(--text2)] text-sm font-cinzel">CA {c.ca}</span>
+            <span className="text-[var(--text2)] text-sm font-cinzel">CA {ac}</span>
           </div>
         )}
 

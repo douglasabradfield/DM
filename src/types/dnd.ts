@@ -361,7 +361,10 @@ export interface Personagem {
   inteligencia: number
   sabedoria: number
   carisma: number
+  // Legado: sem escrita nova. O AC vem de getAcEfetivo (lib/dados-dnd/ca.ts).
   ca: number
+  // Se preenchido, vence o AC calculado. null = usar o cálculo.
+  ac_manual: number | null
   iniciativa: number
   deslocamento: number
   pv_maximo: number
@@ -438,6 +441,16 @@ export interface InventarioItemDb {
   equipado: boolean
   notas: string | null
   criado_em?: string
+  // Campos mecânicos (AC automático) — todos opcionais; ver ItemMecanico em
+  // lib/dados-dnd/ca.ts.
+  categoria?: 'armadura' | 'escudo' | 'arma' | 'outro' | null
+  equipavel?: boolean
+  tipo_armadura?: 'leve' | 'media' | 'pesada' | null
+  ac_base?: number | null
+  max_des?: number | null
+  req_for?: number | null
+  desv_furtividade?: boolean
+  modificadores?: { alvo: string; valor: number; tipo?: 'soma' | 'base' }[]
 }
 
 export type ClasseConjuradora =

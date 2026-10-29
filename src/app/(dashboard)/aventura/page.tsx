@@ -120,7 +120,7 @@ function AventuraPageConteudo() {
       tracos_personalidade: npc.descricao || '',
       forca: 10, destreza: 10, constituicao: 10,
       inteligencia: 10, sabedoria: 10, carisma: 10,
-      nivel: 1, ca: 10, pv_maximo: 10, pv_atual: 10,
+      nivel: 1, pv_maximo: 10, pv_atual: 10,
       bonus_proficiencia: 2,
       deslocamento: '9 m',
       ativo: true,

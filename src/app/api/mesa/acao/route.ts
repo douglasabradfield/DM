@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { desequiparMesmoSlot, mecanicaDaLinha, mecanicaDoCatalogo, sanitizarMecanica } from '@/lib/inventario/mecanica'
 import { calcularDano, aplicarCura, consumirEspaco } from '@/lib/batalha/motor'
 import { normalizarTipoDano, MODIFICADOR_RESISTENCIA, MODIFICADOR_VULNERABILIDADE } from '@/lib/dados-dnd/tipos-dano'
 import { ehPactoArcano } from '@/lib/dados-dnd/espacos-magia'
@@ -96,6 +97,8 @@ interface AcaoInventarioPayload {
   tipoItem?: string | null
   raridade?: string | null
   descricaoItem?: string | null
+  // Campos mecânicos de item avulso/homebrew (sanitizados no servidor).
+  mecanica?: unknown
   quantidade?: number
   equipado?: boolean
   remover?: boolean
@@ -1488,7 +1491,9 @@ async function tratarAcaoInventario(
 
       const equipado = !!payload.equipado
       await admin.from('inventario_itens').update({ equipado }).eq('id', item.id)
+      const trocados = equipado ? await desequiparMesmoSlot(admin, personagemId, item) : []
       const descricao = `${personagemNome} ${equipado ? 'equipou' : 'desequipou'} ${item.nome}`
+        + (trocados.length ? ` (desequipou ${trocados.join(', ')})` : '')
       await registrarLog({ descricao })
       return Response.json({ ok: true, descricao })
     }
@@ -1520,22 +1525,26 @@ async function tratarAcaoInventario(
       if (quantidade <= 0) return Response.json({ erro: 'Quantidade inválida' }, { status: 400 })
 
       const { data: itensAtuais } = await admin.from('inventario_itens').select('*').eq('personagem_id', personagemId)
-      const alvo = { item_ref: payload.itemRef ?? null, nome: payload.nome, tipo: payload.tipoItem ?? null }
+      const itemRef = payload.itemRef || null // '' (item próprio) vira null
+      const alvo = { item_ref: itemRef, nome: payload.nome, tipo: payload.tipoItem ?? null }
       const existente = encontrarItemCorrespondente(itensAtuais ?? [], alvo)
 
       if (existente) {
         await admin.from('inventario_itens')
           .update({ quantidade: (existente.quantidade as number) + quantidade }).eq('id', existente.id)
       } else {
+        // Catálogo manda; item avulso/homebrew usa o que veio no payload.
+        const mecanica = (await mecanicaDoCatalogo(admin, itemRef)) ?? sanitizarMecanica(payload.mecanica)
         const { error } = await admin.from('inventario_itens').insert({
           personagem_id: personagemId,
-          item_ref: payload.itemRef ?? null,
+          item_ref: itemRef,
           nome: payload.nome,
           tipo: alvo.tipo,
           raridade: payload.raridade ?? null,
           descricao: payload.descricaoItem ?? null,
           quantidade,
           equipado: false,
+          ...mecanica,
         })
         if (error) {
           console.error('Erro ao adicionar item:', error)
@@ -1579,7 +1588,9 @@ async function tratarAcaoInventario(
       if (Object.keys(patch).length > 0) {
         await admin.from('inventario_itens').update(patch).eq('id', item.id)
       }
+      const trocados = payload.equipado ? await desequiparMesmoSlot(admin, personagemId, item) : []
       const descricao = `${personagemNome} atualizou ${item.nome}`
+        + (trocados.length ? ` (desequipou ${trocados.join(', ')})` : '')
       await registrarLog({ descricao })
       return Response.json({ ok: true, descricao })
     }
@@ -1711,6 +1722,7 @@ async function tratarTransferirItem(
       descricao: itemOrigem.descricao,
       quantidade,
       equipado: false,
+      ...mecanicaDaLinha(itemOrigem),
     })
     if (error) {
       console.error('Erro ao creditar item no destino:', error)
@@ -1909,6 +1921,7 @@ async function tratarDistribuir(
           descricao: item.descricao ?? null,
           quantidade: item.quantidade,
           equipado: false,
+          ...((await mecanicaDoCatalogo(admin, item.itemRef)) ?? sanitizarMecanica(null)),
         })
       }
     }

@@ -1,5 +1,6 @@
 'use client'
 
+import { useAcDoCombatente } from '@/components/batalha/AcCombatentesContext'
 import { useMemo, useState } from 'react'
 import { getCondicao } from '@/lib/dados-dnd/condicoes'
 import { vantagemDerivada } from '@/lib/batalha/vantagem-por-condicao'
@@ -25,6 +26,7 @@ export function CartaoPersonagem({
   onSelecionar: (id: string) => void
   onEncerrarEfeito?: (nome: string) => void
 }) {
+  const ac = useAcDoCombatente(c)
   const [condicaoAberta, setCondicaoAberta] = useState<TipoCondicao | null>(null)
   const estaMorto = c.morto || c.pv_atual <= 0
   const subtitulo = [info?.classe, info?.nivel ? `Nv${info.nivel}` : null].filter(Boolean).join(' · ')
@@ -62,7 +64,7 @@ export function CartaoPersonagem({
       <BarraVida atual={c.pv_atual} maximo={c.pv_maximo} temporarios={c.pv_temporarios} className="flex-shrink-0" />
 
       <div className="flex items-center gap-3 flex-shrink-0 text-xs font-cinzel text-[var(--text2)]">
-        <span>CA <b className="text-[var(--text)]">{c.ca}</b></span>
+        <span>CA <b className="text-[var(--text)]">{ac}</b></span>
         <span>Desloc. <b className="text-[var(--text)]">{info?.deslocamento ? `${info.deslocamento}m` : '—'}</b></span>
       </div>
 

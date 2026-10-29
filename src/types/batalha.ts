@@ -28,6 +28,9 @@ export interface Combatente {
   tipo: TipoCombatente
   iniciativa: number
   ca: number
+  // CA temporária desta batalha (só combatente com ficha); vence ac_manual e o
+  // cálculo, vive só na linha do combatente e nunca é gravada na ficha
+  ac_override?: number | null
   pv_maximo: number
   pv_atual: number
   pv_temporarios: number
@@ -175,6 +178,7 @@ export interface CombatenteDB {
   ordem: number
   iniciativa: number | null
   ca: number
+  ac_override: number | null
   pv_maximo: number
   pv_atual: number
   pv_temporarios: number
