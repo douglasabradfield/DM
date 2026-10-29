@@ -12,6 +12,7 @@ import { normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
 import type { ArmaEmpunhada, Combatente, TipoCondicao, EspacosMagiaBatalha } from '@/types/batalha'
 import type { Personagem, TipoDano } from '@/types/dnd'
 import { chamarAcaoApi } from '@/lib/batalha/acao-api'
+import { ROTULO_RECURSO_TURNO, type TipoRecursoTurno } from '@/lib/mesa/recursos-turno'
 import { Swords } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { AcaoPendente, AlvoSelecionado, AtaqueDisponivel, ConjuracaoEscolhida, ContextoAcao, Destinatario, InfoPersonagem } from './tipos'
@@ -113,6 +114,7 @@ export function MesaCliente() {
   const [alvosSelecionados, setAlvosSelecionados] = useState<AlvoSelecionado[]>([])
   const [modalValorAberto, setModalValorAberto] = useState(false)
   const [enviando, setEnviando] = useState(false)
+  const [enviandoRecurso, setEnviandoRecurso] = useState(false)
 
   const [vantagemEscolhida, setVantagemEscolhida] = useState<'vantagem' | 'desvantagem' | null>(null)
   const [enviandoVantagem, setEnviandoVantagem] = useState(false)
@@ -454,6 +456,17 @@ export function MesaCliente() {
       return
     }
     cancelarAcao()
+  }
+
+  // Canalizar Divindade / Inspiração heroica: o app só registra o uso, a mesa
+  // resolve o efeito. A ficha na tela atualiza pelos canais Realtime já abertos.
+  async function usarRecursoTurno(recurso: TipoRecursoTurno) {
+    if (!combatenteOperado || !batalhaId || enviandoRecurso) return
+    setEnviandoRecurso(true)
+    const resultado = await chamarAcaoApi({ tipo: 'usar_recurso', batalhaId, combatenteId: combatenteOperado.id, recurso })
+    setEnviandoRecurso(false)
+    if (!resultado.ok) { toast.error(resultado.erro ?? 'Erro ao usar o recurso'); return }
+    toast.success(`${ROTULO_RECURSO_TURNO[recurso]} usada`)
   }
 
   function iniciarAcao(pending: AcaoPendente) {
@@ -975,6 +988,8 @@ export function MesaCliente() {
             onAbrirMagia={() => setModalMagiaAberto(true)}
             onAbrirItem={() => setModalItemAberto(true)}
             onAbrirReacao={() => setModalReacaoAberto(true)}
+            onUsarRecurso={usarRecursoTurno}
+            enviandoRecurso={enviandoRecurso}
           />
         </>
       )}

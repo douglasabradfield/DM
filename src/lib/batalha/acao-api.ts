@@ -44,12 +44,20 @@ export interface PayloadAcaoEstado {
   motivo?: string
 }
 
+// Contrato de AcaoRecursoPayload — uso de recurso da vez (tipo 'usar_recurso').
+export interface PayloadAcaoRecurso {
+  tipo: 'usar_recurso'
+  batalhaId: string
+  combatenteId: string
+  recurso: 'canalizar_divindade' | 'inspiracao_heroica'
+}
+
 export interface ResultadoAcao {
   ok: boolean
   erro?: string
 }
 
-export async function chamarAcaoApi(payload: PayloadAcaoBatalha | PayloadAcaoEstado): Promise<ResultadoAcao> {
+export async function chamarAcaoApi(payload: PayloadAcaoBatalha | PayloadAcaoEstado | PayloadAcaoRecurso): Promise<ResultadoAcao> {
   try {
     const resp = await fetch('/api/mesa/acao', {
       method: 'POST',

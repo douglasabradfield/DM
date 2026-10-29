@@ -6,6 +6,10 @@ import { normalizarTipoDano, MODIFICADOR_RESISTENCIA, MODIFICADOR_VULNERABILIDAD
 import { ehPactoArcano } from '@/lib/dados-dnd/espacos-magia'
 import { TODAS_CONDICOES } from '@/lib/dados-dnd/condicoes'
 import { ORIGEM_AJUSTE } from '@/lib/batalha/acao-api'
+import {
+  ehCanalizarDivindade, ehTipoRecursoTurno, validarUsoRecurso, descontarInspiracao, descontarUsoRecurso,
+  descricaoEventoRecurso, type TipoRecursoTurno,
+} from '@/lib/mesa/recursos-turno'
 import type { TipoDano } from '@/types/dnd'
 import type { TipoCondicao, TipoEntradaLog, EspacosMagiaBatalha } from '@/types/batalha'
 
@@ -194,6 +198,9 @@ export async function POST(req: NextRequest) {
   }
   if (tipoRecebido && TIPOS_ESTADO.has(tipoRecebido)) {
     return tratarAcaoEstado(payload as PayloadBrutoEstado as Partial<AcaoEstadoPayload>, user.id, admin)
+  }
+  if (tipoRecebido === 'usar_recurso') {
+    return tratarUsoRecurso(payload as Partial<AcaoRecursoPayload>, user.id, admin)
   }
   if (payload.batalhaId) {
     return tratarAcaoBatalha(payload as AcaoBatalhaPayload, user.id, admin)
@@ -531,6 +538,125 @@ async function tratarAcaoBatalha(
     xpGanho,
     log: logInserido?.find(l => !l.resumo) ?? null,
   })
+}
+
+// =============================================================================
+// Recursos da vez — Canalizar Divindade e Inspiração heroica na barra de ações.
+// O app só registra o uso; o efeito é resolvido pela mesa. Regras puras em
+// src/lib/mesa/recursos-turno.ts.
+// =============================================================================
+
+interface AcaoRecursoPayload {
+  batalhaId: string
+  combatenteId: string
+  recurso: TipoRecursoTurno
+}
+
+async function tratarUsoRecurso(
+  payload: Partial<AcaoRecursoPayload>,
+  userId: string,
+  admin: ReturnType<typeof createAdminClient>
+) {
+  const { batalhaId, combatenteId, recurso } = payload
+  if (!batalhaId || !combatenteId || !ehTipoRecursoTurno(recurso)) {
+    return Response.json({ erro: 'Payload inválido' }, { status: 400 })
+  }
+
+  const { data: batalha } = await admin.from('batalhas').select('*').eq('id', batalhaId).maybeSingle()
+  if (!batalha) return Response.json({ erro: 'Batalha não encontrada' }, { status: 403 })
+  if (batalha.status !== 'ativa') {
+    return Response.json({ erro: 'A batalha não está ativa no momento.' }, { status: 403 })
+  }
+
+  const { data: campanha } = await admin.from('campanhas').select('dm_id').eq('id', batalha.campanha_id).maybeSingle()
+  const ehDM = !!campanha && campanha.dm_id === userId
+
+  const { data: ator } = await admin
+    .from('batalha_combatentes').select('*').eq('id', combatenteId).eq('batalha_id', batalhaId).maybeSingle()
+  if (!ator) return Response.json({ erro: 'Combatente não encontrado nesta batalha' }, { status: 403 })
+  if (!ator.personagem_id) {
+    return Response.json({ erro: 'Este combatente não tem ficha vinculada' }, { status: 400 })
+  }
+
+  const { data: personagem } = await admin
+    .from('personagens').select('id, user_id, inspiracao').eq('id', ator.personagem_id).maybeSingle()
+  if (!personagem) return Response.json({ erro: 'Personagem não encontrado' }, { status: 403 })
+
+  // Disponíveis agora: contador da ficha (inspiração) ou a linha de
+  // recursos_personagem (Canalizar Divindade: total - usados).
+  let disponiveis = 0
+  let linhaRecurso: { id: string; usados: number; total: number } | null = null
+  if (recurso === 'inspiracao_heroica') {
+    disponiveis = (personagem.inspiracao as number | null) ?? 0
+  } else {
+    const { data: linhas, error } = await admin
+      .from('recursos_personagem').select('id, recurso_id, usados, total').eq('personagem_id', personagem.id)
+    if (error) {
+      console.error('Erro ao ler recursos do personagem:', error)
+      return Response.json({ erro: 'Não foi possível ler os recursos — tente de novo' }, { status: 500 })
+    }
+    const achada = (linhas ?? []).find(l => ehCanalizarDivindade(l.recurso_id as string | null))
+    if (!achada) {
+      return Response.json({ erro: 'Este personagem não tem Canalizar Divindade na ficha' }, { status: 403 })
+    }
+    linhaRecurso = { id: achada.id as string, usados: achada.usados as number, total: achada.total as number }
+    disponiveis = linhaRecurso.total - linhaRecurso.usados
+  }
+
+  const validacao = validarUsoRecurso(recurso, {
+    ehDM,
+    controla: ator.controlado_por === userId || personagem.user_id === userId,
+    ehVezDoCombatente: batalha.turno_combatente_id === combatenteId,
+    disponiveis,
+  })
+  if (!validacao.ok) return Response.json({ erro: validacao.erro }, { status: validacao.status })
+
+  // Desconto atômico: UPDATE condicionado ao valor lido. Se outra escrita
+  // (outro clique, a ficha) mudou o contador no meio, nenhuma linha casa e o
+  // uso é recusado em vez de gastar duas vezes ou deixar o contador negativo.
+  const agora = new Date().toISOString()
+  let gravou = false
+  if (recurso === 'inspiracao_heroica') {
+    const atual = (personagem.inspiracao as number) ?? 0
+    const { data } = await admin.from('personagens')
+      .update({ inspiracao: descontarInspiracao(atual) })
+      .eq('id', personagem.id).eq('inspiracao', atual).gt('inspiracao', 0)
+      .select('id')
+    gravou = (data?.length ?? 0) > 0
+    // Espelho da linha da batalha: a mesa lê a inspiração do combatente.
+    if (gravou) {
+      await admin.from('batalha_combatentes').update({ inspiracao: descontarInspiracao(atual) }).eq('id', ator.id)
+    }
+  } else if (linhaRecurso) {
+    const { data } = await admin.from('recursos_personagem')
+      .update({ usados: descontarUsoRecurso(linhaRecurso.usados, linhaRecurso.total), atualizado_em: agora })
+      .eq('id', linhaRecurso.id).eq('usados', linhaRecurso.usados).lt('usados', linhaRecurso.total)
+      .select('id')
+    gravou = (data?.length ?? 0) > 0
+  }
+  if (!gravou) {
+    return Response.json({ erro: 'O recurso mudou enquanto você usava — confira e tente de novo.' }, { status: 409 })
+  }
+
+  // tipo 'outro': batalha_log tem CHECK em `tipo`, e a frase do "Último
+  // evento" reconhece esta entrada pelo texto fixo (sem PV nem número).
+  const { error: erroLog } = await admin.from('batalha_log').insert({
+    batalha_id: batalhaId,
+    rodada: batalha.rodada_atual,
+    turno: null,
+    tipo: 'outro',
+    autor_id: ator.id,
+    autor_nome: ator.nome,
+    alvo_id: null,
+    alvo_nome: null,
+    valor: null,
+    tipo_dano: null,
+    descricao: descricaoEventoRecurso(ator.nome as string, recurso),
+    resumo: false,
+  })
+  if (erroLog) console.error('Erro ao gravar log do uso de recurso (uso já descontado):', erroLog)
+
+  return Response.json({ ok: true })
 }
 
 // =============================================================================
