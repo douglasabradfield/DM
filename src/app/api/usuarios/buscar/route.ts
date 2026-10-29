@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { decidirAdicaoMembro } from '@/lib/campanha/membro'
 
 export async function POST(req: NextRequest) {
   const { username, campanhaId } = await req.json()
@@ -33,44 +34,59 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ encontrado: false })
   }
 
-  const { data: jaExiste } = await admin
-    .from('campanha_membros')
-    .select('id, status')
-    .eq('campanha_id', campanhaId)
-    .eq('user_id', perfil.id)
-    .maybeSingle()
+  // procura por user_id OU e-mail: o UNIQUE (campanha_id, email) também barra
+  // o insert quando existe linha removida com o mesmo e-mail e user_id nulo
+  const filtros = [`user_id.eq.${perfil.id}`]
+  if (perfil.email) filtros.push(`email.eq."${perfil.email.replace(/"/g, '')}"`)
 
-  if (jaExiste && jaExiste.status === 'ativo') {
+  const { data: linhas, error: erroBusca } = await admin
+    .from('campanha_membros')
+    .select('id, user_id, email, status')
+    .eq('campanha_id', campanhaId)
+    .or(filtros.join(','))
+
+  if (erroBusca) {
+    return NextResponse.json({ erro: 'Não foi possível verificar os membros da campanha. Tente novamente.' }, { status: 500 })
+  }
+
+  const decisao = decidirAdicaoMembro(linhas ?? [], perfil.id, perfil.email)
+
+  if (decisao.acao === 'ja_ativo') {
     return NextResponse.json({ encontrado: true, jaEra: true, perfil })
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const planoEfetivo = (campanha.dm as any)?.plano || 'guild_master'
+  const agora = new Date().toISOString()
 
-  if (jaExiste) {
-    await admin
-      .from('campanha_membros')
-      .update({ status: 'ativo', plano_efetivo: planoEfetivo, aceito_em: new Date().toISOString() })
-      .eq('id', jaExiste.id)
-  } else {
-    await admin.from('campanha_membros').insert({
-      campanha_id: campanhaId,
-      user_id: perfil.id,
-      email: perfil.email || '',
-      papel: 'jogador',
-      plano_efetivo: planoEfetivo,
-      status: 'ativo',
-      aceito_em: new Date().toISOString(),
-    })
+  const { error: erroGravar } = decisao.acao === 'reativar'
+    ? await admin
+        .from('campanha_membros')
+        .update({ user_id: perfil.id, status: 'ativo', papel: 'jogador', plano_efetivo: planoEfetivo, aceito_em: agora })
+        .eq('id', decisao.id)
+    : await admin.from('campanha_membros').insert({
+        campanha_id: campanhaId,
+        user_id: perfil.id,
+        email: perfil.email || '',
+        papel: 'jogador',
+        plano_efetivo: planoEfetivo,
+        status: 'ativo',
+        aceito_em: agora,
+      })
+
+  if (erroGravar) {
+    return NextResponse.json({ erro: 'Não foi possível adicionar o jogador à campanha. Tente novamente.' }, { status: 500 })
   }
 
-  await admin.from('notificacoes').insert({
+  // a notificação é secundária: falhar aqui não desfaz a entrada na campanha
+  const { error: erroNotif } = await admin.from('notificacoes').insert({
     user_id: perfil.id,
     tipo: 'adicionado_campanha',
     titulo: '🎲 Você foi adicionado a uma campanha!',
     mensagem: `Você foi adicionado à campanha "${campanha.nome}". Acesse agora!`,
     link: '/batalha',
   })
+  if (erroNotif) console.error('Erro ao notificar jogador adicionado:', erroNotif.message)
 
   return NextResponse.json({ encontrado: true, jaEra: false, perfil })
 }

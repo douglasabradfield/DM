@@ -556,6 +556,11 @@ function SecaoMembrosEfetivos({ campanhaId, userPlano }: { campanhaId: string; u
       })
       const resultado = await resp.json()
 
+      if (!resp.ok) {
+        toast.error(resultado.erro ?? 'Erro ao adicionar jogador')
+        return
+      }
+
       if (!resultado.encontrado) {
         toast.error(`Usuário @${username} não encontrado`)
         return

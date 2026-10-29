@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { randomBytes } from 'crypto'
+import { decidirAdicaoMembro } from '@/lib/campanha/membro'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -45,21 +46,47 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
 
   if (usuarioExistente) {
-    const { error } = await supabase
+    // upsert por e-mail não cobre linha existente só por user_id (UNIQUE campanha_id, user_id)
+    const { data: linhas, error: erroBusca } = await supabase
       .from('campanha_membros')
-      .upsert(
-        {
+      .select('id, user_id, email, status')
+      .eq('campanha_id', campanhaId)
+      .or(`user_id.eq.${usuarioExistente.id},email.eq."${emailNormalizado.replace(/"/g, '')}"`)
+
+    if (erroBusca) {
+      return NextResponse.json({ erro: 'Não foi possível verificar os membros da campanha. Tente novamente.' }, { status: 500 })
+    }
+
+    const decisao = decidirAdicaoMembro(linhas ?? [], usuarioExistente.id, emailNormalizado)
+
+    if (decisao.acao === 'ja_ativo') {
+      return NextResponse.json({ sucesso: true, jaTemConta: true })
+    }
+
+    const { error } = decisao.acao === 'reativar'
+      ? await supabase
+          .from('campanha_membros')
+          .update({
+            user_id: usuarioExistente.id,
+            status: 'ativo',
+            papel: 'jogador',
+            plano_efetivo: planoEfetivo,
+            aceito_em: new Date().toISOString(),
+          })
+          .eq('id', decisao.id)
+      : await supabase.from('campanha_membros').insert({
           campanha_id: campanhaId,
           email: emailNormalizado,
           papel: 'jogador',
           plano_efetivo: planoEfetivo,
           status: 'ativo',
           user_id: usuarioExistente.id,
-        },
-        { onConflict: 'campanha_id,email' }
-      )
+          aceito_em: new Date().toISOString(),
+        })
 
-    if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
+    if (error) {
+      return NextResponse.json({ erro: 'Não foi possível adicionar o jogador à campanha. Tente novamente.' }, { status: 500 })
+    }
 
     await supabase.from('notificacoes').insert({
       user_id: usuarioExistente.id,
