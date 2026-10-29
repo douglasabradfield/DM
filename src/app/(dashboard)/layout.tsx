@@ -3,6 +3,7 @@ import { Header } from '@/components/layout/Header'
 import { BannerBatalhaAtiva } from '@/components/batalha/BannerBatalhaAtiva'
 import { BarraAbasMesa } from '@/components/mesa/BarraAbasMesa'
 import { FaixaOffline } from '@/components/layout/FaixaOffline'
+import { ExigirUsername } from '@/components/layout/ExigirUsername'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { ASSISTENTE_IA_ATIVO } from '@/lib/planos'
@@ -48,6 +49,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <BottomNav isAdmin={profile?.is_admin === true} plano={profile?.plano} />
       <BarraAbasMesa />
       <BannerBatalhaAtiva />
+      {profile && !profile.username && <ExigirUsername userId={user.id} />}
     </div>
   )
 }

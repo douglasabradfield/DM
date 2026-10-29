@@ -9,6 +9,10 @@ import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { DivisorOrnamentado } from '@/components/ui/DivisorOrnamentado'
 import { Check, Crown, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
+import {
+  AVISO_TROCA_USERNAME, MSG_USERNAME_EM_USO, USERNAME_MAX, USERNAME_MIN,
+  erroUsernameEmUso, normalizarUsername, validarUsername,
+} from '@/lib/username'
 
 export default function ContaPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -52,25 +56,25 @@ export default function ContaPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      if (username.trim()) {
-        const { data: existente } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('username', username.trim())
-          .neq('id', user.id)
-          .maybeSingle()
-        if (existente) {
-          toast.error('Este username já está em uso. Escolha outro.')
-          return
-        }
+      const erroUsername = validarUsername(username)
+      if (erroUsername) {
+        toast.error(erroUsername)
+        return
       }
 
       const { error } = await supabase.from('profiles').update({
         nome: nome.trim() || null,
-        username: username.trim() || null,
+        username,
         telefone: telefone.trim() || null,
       }).eq('id', user.id)
-      if (error) throw error
+      if (error) {
+        if (erroUsernameEmUso(error)) {
+          toast.error(MSG_USERNAME_EM_USO)
+          return
+        }
+        throw error
+      }
+      setProfile(p => (p ? { ...p, username } : p))
       toast.success('Perfil atualizado!')
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
@@ -132,13 +136,18 @@ export default function ContaPage() {
               <input
                 type="text"
                 value={username}
-                onChange={e => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase())}
+                onChange={e => setUsername(normalizarUsername(e.target.value))}
                 className="w-full input-dd pl-7"
                 placeholder="seu_usuario"
-                maxLength={30}
+                required
+                minLength={USERNAME_MIN}
+                maxLength={USERNAME_MAX}
               />
             </div>
-            <p className="text-[var(--text3)] text-[10px] mt-1">Apenas letras, números e _</p>
+            <p className="text-[var(--text3)] text-[10px] mt-1">Apenas letras minúsculas, números e _ (sem espaços)</p>
+            {profile?.username && username !== profile.username && (
+              <p className="text-[var(--gold)] text-[11px] mt-1 font-crimson">{AVISO_TROCA_USERNAME}</p>
+            )}
           </div>
           <div>
             <label className="text-[var(--text3)] text-xs font-cinzel uppercase block mb-1">Telefone</label>
