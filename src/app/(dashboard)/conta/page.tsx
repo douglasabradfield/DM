@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { PLANOS, formatarPreco } from '@/lib/stripe/produtos'
+import { ASSINATURA_VISIVEL } from '@/lib/assinatura'
 import type { Profile } from '@/types/database'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { BotaoRunico } from '@/components/ui/BotaoRunico'
@@ -211,6 +212,7 @@ export default function ContaPage() {
         </form>
       </PainelGrimorio>
 
+      {ASSINATURA_VISIVEL && (<>
       <DivisorOrnamentado texto="Plano" />
 
       {/* Planos */}
@@ -267,6 +269,7 @@ export default function ContaPage() {
           )
         })}
       </div>
+      </>)}
 
       <DivisorOrnamentado />
 

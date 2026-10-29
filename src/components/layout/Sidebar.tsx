@@ -16,6 +16,7 @@ import {
 import toast from 'react-hot-toast'
 import { planoSuficiente, getPlano, ASSISTENTE_IA_ATIVO, type PlanoId } from '@/lib/planos'
 import { usePlanoEfetivo } from '@/hooks/usePlanoEfetivo'
+import { ASSINATURA_VISIVEL, MSG_LIMITE_PLANO } from '@/lib/assinatura'
 import { useControleSessao } from '@/hooks/useControleSessao'
 import { ModalIniciarSessao } from '@/components/campanha/ModalIniciarSessao'
 
@@ -264,7 +265,7 @@ export function Sidebar({ isAdmin, plano }: { isAdmin?: boolean; plano?: string 
               return (
                 <div
                   key={href}
-                  title={minimizada ? label : `Disponível no plano ${planoMinimo ? getPlano(planoMinimo).nome : ''} ou superior`}
+                  title={minimizada ? label : (ASSINATURA_VISIVEL ? `Disponível no plano ${planoMinimo ? getPlano(planoMinimo).nome : ''} ou superior` : MSG_LIMITE_PLANO)}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2 rounded text-base font-crimson opacity-40 cursor-not-allowed select-none",
                     minimizada && "justify-center"

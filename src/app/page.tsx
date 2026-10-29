@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Shield, Swords, Users, Bot, BookOpen, Star } from 'lucide-react'
 import { PLANOS, formatarPreco } from '@/lib/stripe/produtos'
+import { ASSINATURA_VISIVEL } from '@/lib/assinatura'
 
 export default function LandingPage() {
   return (
@@ -133,7 +134,7 @@ export default function LandingPage() {
       </div>
 
       {/* Preços */}
-      <section className="px-6 py-12">
+      {ASSINATURA_VISIVEL && <section className="px-6 py-12">
         <h2 className="font-cinzel text-center text-2xl text-[#d4a843] font-bold mb-2">Planos</h2>
         <p className="font-crimson text-center text-[#8870a8] mb-10">Comece grátis, evolua quando precisar</p>
 
@@ -174,7 +175,7 @@ export default function LandingPage() {
             </div>
           ))}
         </div>
-      </section>
+      </section>}
 
       {/* Footer */}
       <footer className="border-t border-[#4a3060] px-6 py-8 mt-8">

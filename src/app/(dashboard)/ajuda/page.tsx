@@ -102,7 +102,7 @@ const guias = [
     descricao: 'Seu parceiro de mesa inteligente.',
     topicos: [
       { titulo: 'O que ele sabe', texto: 'O assistente conhece sua campanha ativa: personagens, aventura carregada e contexto geral. Use para criar NPCs, gerar encontros, descrever ambientes ou tirar dúvidas de regras.' },
-      { titulo: 'Limite de mensagens', texto: 'Cada plano tem um número de mensagens mensais. O contador aparece no topo da aba. Ao atingir o limite, faça upgrade para continuar.' },
+      { titulo: 'Limite de mensagens', texto: 'Há um número de mensagens mensais. O contador aparece no topo da aba. Ao atingir o limite, fale com o administrador.' },
       { titulo: 'Dicas de uso', texto: 'Seja específico: "Crie um NPC taverneiro humano, carismático, que esconde um segredo sobre o desaparecimento do prefeito" gera resultados muito melhores que "crie um NPC".' },
     ],
   },
@@ -141,7 +141,7 @@ const faqs = [
   { p: 'O que acontece com minha campanha encerrada?', r: 'Ela fica salva no histórico. Em Configurações você pode ver campanhas encerradas e acessar a crônica gerada automaticamente.' },
   { p: 'Posso usar personagens de uma campanha em outra?', r: 'Sim! Na ficha do personagem, use o botão "Copiar para campanha" para criar uma cópia independente em outra campanha.' },
   { p: 'A IA pode errar na leitura da aventura?', r: 'Sim, principalmente em PDFs com layout complexo (duas colunas, tabelas). Recomendamos converter para .md antes para melhor resultado. Você pode editar qualquer campo após o processamento.' },
-  { p: 'Quanto custa usar o assistente IA?', r: 'O custo da IA já está incluído no seu plano. Cada plano tem um limite mensal de mensagens mostrado no topo da aba IA.' },
+  { p: 'Quanto custa usar o assistente IA?', r: 'O custo da IA já está incluído. Há um limite mensal de mensagens mostrado no topo da aba IA.' },
   { p: 'Posso jogar pelo celular?', r: 'O app funciona no navegador do celular, mas é otimizado para tela grande (computador ou tablet). A versão mobile está no roadmap.' },
   { p: 'Como reportar um erro em um monstro/magia/item?', r: 'Em Bestiário, Magias e Itens, há um botão "⚑ Reportar" em cada entrada. Você pode descrever o problema e sugerir a correção.' },
 ]

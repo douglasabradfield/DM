@@ -9,6 +9,7 @@ import { useCampanha } from '@/store/campanha'
 import { createClient } from '@/lib/supabase/client'
 import { getLimiteIA } from '@/lib/ia/limites'
 import { MODO_MESA_LIVRE, ASSISTENTE_IA_ATIVO } from '@/lib/planos'
+import { ASSINATURA_VISIVEL, MSG_LIMITE_PLANO } from '@/lib/assinatura'
 import { redirect } from 'next/navigation'
 import { AvisoDesktop } from '@/components/ui/AvisoDesktop'
 import { Bot, Send, RotateCcw } from 'lucide-react'
@@ -207,7 +208,7 @@ function IAPageConteudo() {
             </div>
           )}
           {iaBloqueada && (
-            <p className="text-[var(--red2)] text-[9px] mt-1 font-crimson">Plano gratuito sem acesso à IA</p>
+            <p className="text-[var(--red2)] text-[9px] mt-1 font-crimson">{ASSINATURA_VISIVEL ? 'Plano gratuito sem acesso à IA' : 'Sem acesso à IA'}</p>
           )}
         </div>
 
@@ -301,7 +302,7 @@ function IAPageConteudo() {
           </div>
           {iaBloqueada && (
             <p className="text-[var(--red2)] text-xs text-center mt-1 font-crimson">
-              Faça upgrade para acessar o Assistente IA
+              {ASSINATURA_VISIVEL ? 'Faça upgrade para acessar o Assistente IA' : MSG_LIMITE_PLANO}
             </p>
           )}
         </div>
