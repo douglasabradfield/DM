@@ -1,151 +1,43 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
-import { useCampanha } from '@/store/campanha'
-import { ehDmDaCampanha } from '@/lib/permissao-campanha'
-import { compararLiberacao } from '@/lib/imagens-ordem'
 import { percentualRevelado } from '@/lib/fog-of-war'
 import { cn } from '@/lib/utils'
+import { useCampanha } from '@/store/campanha'
 import { ImagemComFog } from '@/components/galeria/ImagemComFog'
 import { VisualizadorFullscreen, type ImagemGaleria } from '@/components/galeria/GaleriaImagens'
+import type { ImagensMesa } from '@/hooks/useImagensMesa'
 
 // Acima da barra de abas (z-50) e abaixo dos popovers/modais críticos da
 // mesa (9995 a 9999). Não altera o z-index de nenhum componente existente.
 const Z_VISUALIZADOR = 9990
 
-const COLUNAS = 'id, campanha_id, nome, url, storage_path, tipo, visivel_jogadores, compartilhado, criado_em, liberado_em'
-
-function chaveVistas(userId: string, campanhaId: string) {
-  return `dd-imagens-vistas:${userId}:${campanhaId}`
-}
-
-function lerVistas(chave: string | null): Set<string> {
-  if (!chave) return new Set()
-  try {
-    const bruto = localStorage.getItem(chave)
-    const lista = bruto ? JSON.parse(bruto) : []
-    return new Set(Array.isArray(lista) ? lista.filter((x): x is string => typeof x === 'string') : [])
-  } catch {
-    return new Set()
-  }
-}
-
-function gravarVistas(chave: string | null, vistas: Set<string>) {
-  if (!chave) return
-  try {
-    localStorage.setItem(chave, JSON.stringify([...vistas]))
-  } catch { /* sem localStorage: a tela segue funcionando */ }
-}
-
-// Aba Mapa do celular (abaixo de md). Somente leitura: sem edição de névoa,
-// upload ou liberação — isso continua em /mapas.
-export function AbaMapa() {
-  const campanhaAtiva = useCampanha(s => s.campanhaAtiva)
-  const campanhaId = campanhaAtiva?.id
+// Aba Mapa do celular (abaixo de md). Somente visual: os dados vêm do hook
+// useImagensMesa, chamado uma vez em MesaCliente. Somente leitura: sem edição
+// de névoa, upload ou liberação — isso continua em /mapas.
+export function AbaMapa({ dados, alturaMapa = 300 }: { dados: ImagensMesa; alturaMapa?: number }) {
+  const {
+    carregando, erro, ehDM, mapas, fotos, novas, vistas, mapaAtual,
+    selecionarMapa, marcarVista, recarregar, existe,
+  } = dados
   const fogPorImagem = useCampanha(s => s.fogPorImagem)
 
-  const [imagens, setImagens] = useState<ImagemGaleria[]>([])
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState(false)
   const [secao, setSecao] = useState<'mapa' | 'imagens'>('mapa')
-  const [mapaId, setMapaId] = useState<string | null>(null)
   const [aberta, setAberta] = useState<ImagemGaleria | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
-  const [vistas, setVistas] = useState<Set<string>>(new Set())
 
-  // Só o DM da campanha ativa vê tudo; admin/plano não conta (ver permissao-campanha).
-  const ehDM = ehDmDaCampanha(campanhaAtiva, userId)
+  // Recarrega ao abrir o painel (o hook também recarrega ao voltar o foco).
+  useEffect(() => { recarregar() }, [recarregar])
 
-  const chave = userId && campanhaId ? chaveVistas(userId, campanhaId) : null
-
-  useEffect(() => {
-    createClient().auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null))
-  }, [])
-
-  useEffect(() => { setVistas(lerVistas(chave)) }, [chave])
-
-  const carregar = useCallback(async () => {
-    if (!campanhaId) { setCarregando(false); return }
-    try {
-      let query = createClient()
-        .from('imagens')
-        .select(COLUNAS)
-        .eq('campanha_id', campanhaId)
-        .order('liberado_em', { ascending: false, nullsFirst: false })
-        .order('criado_em', { ascending: false })
-      if (!ehDM) query = query.eq('visivel_jogadores', true)
-      const { data, error } = await query
-      if (error) { console.error('Erro ao buscar imagens:', error); setErro(true); return }
-      setErro(false)
-      setImagens((data ?? []) as ImagemGaleria[])
-    } finally {
-      setCarregando(false)
-    }
-  }, [campanhaId, ehDM])
-
-  // Carrega ao abrir a aba e quando a janela volta ao foco.
-  useEffect(() => {
-    carregar()
-    const aoVoltar = () => { if (document.visibilityState === 'visible') carregar() }
-    document.addEventListener('visibilitychange', aoVoltar)
-    window.addEventListener('focus', aoVoltar)
-    return () => {
-      document.removeEventListener('visibilitychange', aoVoltar)
-      window.removeEventListener('focus', aoVoltar)
-    }
-  }, [carregar])
-
-  // Realtime no mesmo padrão da Galeria, em canal próprio (a Galeria não está
-  // montada na /mesa; o nome distinto evita colisão se estiver).
-  useEffect(() => {
-    if (!campanhaId) return
-    const supabase = createClient()
-    const canal = supabase
-      .channel(`mesa-imagens:${campanhaId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'imagens', filter: `campanha_id=eq.${campanhaId}` },
-        (payload) => {
-          if (payload.eventType === 'DELETE') {
-            const antiga = payload.old as { id?: string }
-            if (antiga.id) setImagens(prev => prev.filter(i => i.id !== antiga.id))
-            return
-          }
-          const linha = payload.new as ImagemGaleria
-          if (!linha?.id) return
-          if (!ehDM && !linha.visivel_jogadores) {
-            setImagens(prev => prev.filter(i => i.id !== linha.id))
-            return
-          }
-          setImagens(prev => {
-            const existe = prev.some(i => i.id === linha.id)
-            const proxima = existe ? prev.map(i => i.id === linha.id ? linha : i) : [linha, ...prev]
-            return proxima.slice().sort(compararLiberacao)
-          })
-        }
-      )
-      .subscribe()
-    return () => { supabase.removeChannel(canal) }
-  }, [campanhaId, ehDM])
-
-  const mapas = useMemo(() => imagens.filter(i => i.tipo === 'mapa'), [imagens])
-  const fotos = useMemo(() => imagens.filter(i => i.tipo === 'imagem'), [imagens])
-  const novas = fotos.filter(i => !vistas.has(i.id)).length
-  const mapaAtual = mapas.find(m => m.id === mapaId) ?? mapas[0] ?? null
   const fogMapa = mapaAtual ? fogPorImagem[mapaAtual.id] : undefined
 
   function abrir(imagem: ImagemGaleria) {
     setAberta(imagem)
-    if (vistas.has(imagem.id)) return
-    const proximas = new Set(vistas).add(imagem.id)
-    setVistas(proximas)
-    gravarVistas(chave, proximas)
+    marcarVista(imagem.id)
   }
 
   // Se a imagem aberta for removida/ocultada, o visualizador fecha.
-  const abertaViva = aberta && imagens.some(i => i.id === aberta.id) ? aberta : null
+  const abertaViva = aberta && existe(aberta.id) ? aberta : null
 
   return (
     <div className="flex flex-col gap-3 pb-24 safe-area-pb">
@@ -189,14 +81,17 @@ export function AbaMapa() {
             {mapas.length > 1 && (
               <select
                 value={mapaAtual.id}
-                onChange={e => setMapaId(e.target.value)}
+                onChange={e => selecionarMapa(e.target.value)}
                 aria-label="Escolher mapa"
                 className="min-h-[44px] rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text2)] font-crimson px-3"
               >
                 {mapas.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
               </select>
             )}
-            <div className="relative flex items-center justify-center h-[300px] rounded-xl border border-[var(--border)] bg-black/40 overflow-hidden">
+            <div
+              style={{ height: alturaMapa, ['--altura-mapa' as string]: `${alturaMapa}px` }}
+              className="relative flex items-center justify-center rounded-xl border border-[var(--border)] bg-black/40 overflow-hidden"
+            >
               <ImagemComFog
                 key={mapaAtual.id}
                 imagemId={mapaAtual.id}
@@ -204,7 +99,7 @@ export function AbaMapa() {
                 alt={mapaAtual.nome}
                 ehDM={false}
                 wrapperClassName="relative"
-                imgClassName="block max-w-full max-h-[300px] object-contain"
+                imgClassName="block max-w-full max-h-[var(--altura-mapa)] object-contain"
               />
               {fogMapa?.ativo && (
                 <span className="absolute left-2 bottom-2 text-[11px] font-cinzel px-2 py-1 rounded-full bg-black/60 text-white/80">
