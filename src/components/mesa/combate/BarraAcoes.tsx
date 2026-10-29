@@ -124,13 +124,13 @@ export function BarraAcoes({
           {combatente.personagem_id && (
             <button
               onClick={() => onUsarRecurso('inspiracao_heroica')}
-              disabled={!ehMeuTurno || !temInspiracao || enviandoRecurso}
+              disabled={!temInspiracao || enviandoRecurso}
               aria-label="Usar inspiração heroica"
-              title={!temInspiracao ? 'Sem inspiração heroica' : !ehMeuTurno ? 'Aguarde sua vez' : 'Usar inspiração heroica'}
+              title={temInspiracao ? 'Inspiração heroica — disponível dentro ou fora do turno' : 'Sem inspiração heroica'}
               className={cn(
                 'flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)]',
                 'text-[var(--text2)] font-cinzel text-[11px] min-h-[48px] transition-opacity active:scale-[0.98]',
-                (!ehMeuTurno || !temInspiracao || enviandoRecurso) && 'opacity-40 cursor-not-allowed'
+                (!temInspiracao || enviandoRecurso) && 'opacity-40 cursor-not-allowed'
               )}
             >
               <span className="text-base leading-none">⭐</span>

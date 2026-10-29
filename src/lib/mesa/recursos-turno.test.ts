@@ -23,6 +23,16 @@ describe('validarUsoRecurso', () => {
     const r = validarUsoRecurso('canalizar_divindade', { ...base, ehVezDoCombatente: false })
     expect(r).toMatchObject({ ok: false, status: 403 })
   })
+  it('inspiração é permitida fora da vez para o dono e para o DM', () => {
+    const fora = { ...base, ehVezDoCombatente: false }
+    expect(validarUsoRecurso('inspiracao_heroica', fora)).toEqual({ ok: true })
+    expect(validarUsoRecurso('inspiracao_heroica', { ...fora, ehDM: true, controla: false })).toEqual({ ok: true })
+  })
+  it('inspiração fora da vez continua negada a outro jogador e sem inspiração', () => {
+    const fora = { ...base, ehVezDoCombatente: false }
+    expect(validarUsoRecurso('inspiracao_heroica', { ...fora, controla: false }).ok).toBe(false)
+    expect(validarUsoRecurso('inspiracao_heroica', { ...fora, disponiveis: 0 }).ok).toBe(false)
+  })
   it('recusa jogador de outro personagem', () => {
     const r = validarUsoRecurso('inspiracao_heroica', { ...base, controla: false })
     expect(r).toMatchObject({ ok: false, status: 403 })

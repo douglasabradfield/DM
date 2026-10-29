@@ -33,12 +33,13 @@ export interface ContextoUsoRecurso {
 export type ResultadoValidacao = { ok: true } | { ok: false; erro: string; status: number }
 
 // DM age fora da vez (como nas demais ações da mesa); jogador só no próprio
-// personagem e na própria vez. O contador nunca fica negativo: sem uso, recusa.
+// personagem e, para Canalizar Divindade, na própria vez. O contador nunca fica negativo: sem uso, recusa.
 export function validarUsoRecurso(tipo: TipoRecursoTurno, ctx: ContextoUsoRecurso): ResultadoValidacao {
   if (!ctx.ehDM && !ctx.controla) {
     return { ok: false, erro: 'Você não controla este combatente — verifique se selecionou o personagem certo.', status: 403 }
   }
-  if (!ctx.ehDM && !ctx.ehVezDoCombatente) {
+  // Inspiração heroica pode ser usada a qualquer momento, como a Reação.
+  if (tipo !== 'inspiracao_heroica' && !ctx.ehDM && !ctx.ehVezDoCombatente) {
     return { ok: false, erro: 'Não é a sua vez — aguarde seu turno para agir.', status: 403 }
   }
   if (!(ctx.disponiveis > 0)) {
