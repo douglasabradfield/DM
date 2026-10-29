@@ -2,6 +2,8 @@ import { cn } from '@/lib/utils'
 import type { ArmaEmpunhada, Combatente } from '@/types/batalha'
 import { ataquesDoCombatente } from '../helpers'
 import { SlotArma } from './SlotArma'
+import { useRecursosPersonagem } from '@/components/personagem/RecursosClasse'
+import { ehCanalizarDivindade, type TipoRecursoTurno } from '@/lib/mesa/recursos-turno'
 
 // Rodapé fixo — alcance do polegar. Fase 2 reserva o espaço e valida a
 // ergonomia: Ataque, Magia e Item central desabilitam fora do turno; Reação
@@ -9,6 +11,7 @@ import { SlotArma } from './SlotArma'
 // Armas empunhadas continuam sendo a única escrita direta.
 export function BarraAcoes({
   combatente, ehMeuTurno, onDefinirArma, onAtacarComArma, onAbrirAtaque, onAbrirMagia, onAbrirItem, onAbrirReacao,
+  onUsarRecurso, enviandoRecurso,
 }: {
   combatente: Combatente
   ehMeuTurno: boolean
@@ -18,8 +21,16 @@ export function BarraAcoes({
   onAbrirMagia: () => void
   onAbrirItem: () => void
   onAbrirReacao: () => void
+  onUsarRecurso: (recurso: TipoRecursoTurno) => void
+  enviandoRecurso: boolean
 }) {
   const ataquesDisponiveis = ataquesDoCombatente(combatente)
+  // Recursos vêm da ficha (mesmo hook e canal Realtime da RecursosLeitura).
+  const { recursos } = useRecursosPersonagem(combatente.personagem_id)
+  const canalizar = recursos.find(r => ehCanalizarDivindade(r.recurso_id) && r.total > 0)
+  const usosCanalizar = canalizar ? canalizar.total - canalizar.usados : 0
+  // Inspiração: só aparece para quem tem o campo na ficha (combatente com ficha).
+  const temInspiracao = (combatente.inspiracao ?? 0) > 0
   const reacaoDisponivel = !combatente.reacao_usada
   // Magia e Item são conceitos de ficha (magias_personagem / inventário) —
   // não existem para monstros/NPCs sem personagem_id vinculado.
@@ -91,6 +102,43 @@ export function BarraAcoes({
           onAtacar={onAtacarComArma}
         />
       </div>
+
+      {(canalizar || combatente.personagem_id) && (
+        <div className="flex gap-1.5">
+          {canalizar && (
+            <button
+              onClick={() => onUsarRecurso('canalizar_divindade')}
+              disabled={!ehMeuTurno || usosCanalizar <= 0 || enviandoRecurso}
+              aria-label={`Canalizar Divindade, ${usosCanalizar} de ${canalizar.total} usos`}
+              title={!ehMeuTurno ? 'Aguarde sua vez' : usosCanalizar <= 0 ? 'Sem usos — espere um descanso' : 'Canalizar Divindade'}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)]',
+                'text-[var(--text2)] font-cinzel text-[11px] min-h-[48px] transition-opacity active:scale-[0.98]',
+                (!ehMeuTurno || usosCanalizar <= 0 || enviandoRecurso) && 'opacity-40 cursor-not-allowed'
+              )}
+            >
+              <span className="text-base leading-none">🙏</span>
+              Canalizar {usosCanalizar}/{canalizar.total}
+            </button>
+          )}
+          {combatente.personagem_id && (
+            <button
+              onClick={() => onUsarRecurso('inspiracao_heroica')}
+              disabled={!ehMeuTurno || !temInspiracao || enviandoRecurso}
+              aria-label="Usar inspiração heroica"
+              title={!temInspiracao ? 'Sem inspiração heroica' : !ehMeuTurno ? 'Aguarde sua vez' : 'Usar inspiração heroica'}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)]',
+                'text-[var(--text2)] font-cinzel text-[11px] min-h-[48px] transition-opacity active:scale-[0.98]',
+                (!ehMeuTurno || !temInspiracao || enviandoRecurso) && 'opacity-40 cursor-not-allowed'
+              )}
+            >
+              <span className="text-base leading-none">⭐</span>
+              Inspiração
+            </button>
+          )}
+        </div>
+      )}
 
       <button
         onClick={onAbrirReacao}

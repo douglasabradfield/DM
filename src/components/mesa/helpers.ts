@@ -1,5 +1,6 @@
 import { getTipoDano, resolverTipoDanoSRD } from '@/lib/dados-dnd/tipos-dano'
 import type { Combatente, EntradaLog, EspacosMagiaBatalha, TipoEntradaLog } from '@/types/batalha'
+import { reconhecerEventoRecurso, ROTULO_RECURSO_TURNO } from '@/lib/mesa/recursos-turno'
 import { MOEDAS, TAXA_PARA_PO } from './constantes'
 import type { AtaqueDisponivel, MagiaExibida } from './tipos'
 
@@ -66,6 +67,7 @@ const TIPOS_ULTIMO_EVENTO: TipoEntradaLog[] = [
   'ataque', 'ataque_extra', 'acao_bonus_ataque', 'magia', 'acao_bonus_magia', 'dano', 'cura', 'cura_bonus',
   'usar_item', 'condicao_aplicada', 'condicao_removida', 'morte',
   'ataque_oportunidade', 'contra_magia', 'escudo', 'absorver_elementos', 'queda_controlada', 'outra_reacao',
+  'outro',
 ]
 
 // Frase do cartão "Último evento", montada só com origem/alvo/valor/tipo_dano —
@@ -73,6 +75,12 @@ const TIPOS_ULTIMO_EVENTO: TipoEntradaLog[] = [
 // qualquer pista de estado de saúde. Devolve null se a entrada não serve.
 export function fraseUltimoEvento(entrada: EntradaLog, alvoEhInimigo: boolean): string | null {
   if (entrada.resumo || !TIPOS_ULTIMO_EVENTO.includes(entrada.tipo)) return null
+  // Uso de recurso (Canalizar Divindade / Inspiração heroica) é gravado como
+  // 'outro'; só entra se o texto bater exatamente — nunca outra `descricao`.
+  if (entrada.tipo === 'outro') {
+    const recurso = reconhecerEventoRecurso(entrada.origem, entrada.descricao)
+    return recurso ? `${recurso === 'canalizar_divindade' ? '🙏' : '⭐'} ${entrada.origem} usou ${ROTULO_RECURSO_TURNO[recurso]}` : null
+  }
   if (entrada.tipo === 'morte') return alvoEhInimigo ? null : mensagemToast(entrada)
   if (entrada.tipo === 'dano' || entrada.tipo === 'cura') return mensagemToast(entrada, { comTipoDano: true })
   if (entrada.tipo === 'cura_bonus') return mensagemToast({ ...entrada, tipo: 'cura' })
