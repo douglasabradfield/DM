@@ -8,6 +8,7 @@ import { BotaoRunico } from '@/components/ui/BotaoRunico'
 import { PainelGrimorio } from '@/components/ui/PainelGrimorio'
 import { Shield } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { MSG_USERNAME_EM_USO, normalizarUsername, validarUsername } from '@/lib/username'
 
 export default function CadastroPage() {
   const router = useRouter()
@@ -23,39 +24,29 @@ export default function CadastroPage() {
       toast.error('A senha deve ter pelo menos 6 caracteres')
       return
     }
-    if (username.length < 3) {
-      toast.error('O nome de usuário deve ter pelo menos 3 caracteres')
+    const erroUsername = validarUsername(username)
+    if (erroUsername) {
+      toast.error(erroUsername)
       return
     }
     setCarregando(true)
     try {
       const supabase = createClient()
 
-      const { data: usernameExiste } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('username', username)
-        .maybeSingle()
-      if (usernameExiste) {
-        toast.error('Este username já está em uso. Escolha outro.')
+      // O profile é criado pelo trigger handle_new_user a partir do metadata
+      // (o cliente ainda não tem sessão aqui, então não pode gravar em profiles).
+      const { data: disponivel } = await supabase.rpc('username_disponivel', { p_username: username })
+      if (disponivel === false) {
+        toast.error(MSG_USERNAME_EM_USO)
         return
       }
 
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email,
         password: senha,
-        options: { data: { nome } }
+        options: { data: { nome: nome.trim(), username } }
       })
       if (error) throw error
-
-      if (data.user) {
-        await supabase.from('profiles').upsert({
-          id: data.user.id,
-          email: email.toLowerCase().trim(),
-          nome: nome.trim(),
-          username: username.toLowerCase().trim(),
-        })
-      }
 
       toast.success('Conta criada! Verifique seu email.')
       router.push('/login')
@@ -101,7 +92,7 @@ export default function CadastroPage() {
                 <input
                   type="text"
                   value={username}
-                  onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                  onChange={e => setUsername(normalizarUsername(e.target.value))}
                   className="w-full input-dd pl-7"
                   placeholder="seu_usuario"
                   required
