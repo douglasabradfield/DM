@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { chaveDeIds, nomeCanalUnico } from '@/lib/realtime/canal'
 import { calcularAC, type FichaParaAC, type ItemMecanico, type ResultadoAC } from '@/lib/dados-dnd/ca'
 
 export const COLUNAS_ITEM_MECANICO =
@@ -46,7 +47,8 @@ export async function carregarAcPersonagens(supabase: Supabase, ids: string[]): 
 // AC (e detalhe) de vários personagens de uma vez, mantido fresco por
 // Realtime em personagens e inventario_itens.
 export function useAcPersonagens(ids: string[]) {
-  const chave = useMemo(() => Array.from(new Set(ids)).sort().join(','), [ids])
+  const chave = useMemo(() => chaveDeIds(ids), [ids])
+  const instancia = useId()
   const [dados, setDados] = useState<Record<string, AcPersonagem>>({})
 
   const recarregar = useCallback(async () => {
@@ -63,13 +65,22 @@ export function useAcPersonagens(ids: string[]) {
     atualizar()
 
     const filtroIds = `in.(${lista.join(',')})`
-    const canal = supabase
-      .channel(`ac-personagens-${chave.slice(0, 80)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventario_itens', filter: `personagem_id=${filtroIds}` }, atualizar)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'personagens', filter: `id=${filtroIds}` }, atualizar)
-      .subscribe()
-    return () => { ativo = false; supabase.removeChannel(canal) }
-  }, [chave, recarregar])
+    // Realtime é bônus: se falhar, o AC segue correto por leitura normal.
+    let canal: ReturnType<typeof supabase.channel> | null = null
+    try {
+      canal = supabase
+        .channel(nomeCanalUnico('ac-personagens', chave, instancia))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'inventario_itens', filter: `personagem_id=${filtroIds}` }, atualizar)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'personagens', filter: `id=${filtroIds}` }, atualizar)
+        .subscribe()
+    } catch (e) {
+      console.warn('Realtime do AC indisponível:', e)
+    }
+    return () => {
+      ativo = false
+      if (canal) void supabase.removeChannel(canal)
+    }
+  }, [chave, instancia, recarregar])
 
   return dados
 }

@@ -56,7 +56,7 @@ export function AbaMochila({
   onMovimentarOuro: () => void
   onDistribuir: () => void
 }) {
-  const inventario = useInventario({ personagemId, contexto, nomeCanal: `aba-mochila-${personagemId}` })
+  const inventario = useInventario({ personagemId, contexto, nomeCanal: 'aba-mochila' })
   const { carregando, itens, enviando } = inventario
   const [filtro, setFiltro] = useState<Filtro>('itens')
   const [compendioAberto, setCompendioAberto] = useState(false)

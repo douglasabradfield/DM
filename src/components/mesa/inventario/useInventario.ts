@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { nomeCanalUnico } from '@/lib/realtime/canal'
 import toast from 'react-hot-toast'
 import type { ItemCompendioEscolhido } from '@/components/personagem/ModalCompendioItens'
 import type { InventarioItemDb } from '@/types/dnd'
@@ -13,12 +14,13 @@ import { chamarAcaoInventario } from '../api'
 // (combate/desktop) e pela aba Mochila do celular — nenhuma regra de usar ou
 // passar item vive fora daqui.
 export function useInventario({
-  personagemId, contexto, nomeCanal = `modal-item-${personagemId}`,
+  personagemId, contexto, nomeCanal = 'modal-item',
 }: {
   personagemId: string
   contexto: ContextoAcao
   nomeCanal?: string
 }) {
+  const instancia = useId()
   const [carregando, setCarregando] = useState(true)
   const [itens, setItens] = useState<InventarioItemDb[]>([])
   const [enviando, setEnviando] = useState(false)
@@ -41,16 +43,21 @@ export function useInventario({
   // transferência de outro jogador enquanto a lista está aberta).
   useEffect(() => {
     const supabase = createClient()
-    const canal = supabase
-      .channel(nomeCanal)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'inventario_itens', filter: `personagem_id=eq.${personagemId}` },
-        carregarItens
-      )
-      .subscribe()
-    return () => { supabase.removeChannel(canal) }
-  }, [personagemId, nomeCanal, carregarItens])
+    let canal: ReturnType<typeof supabase.channel> | null = null
+    try {
+      canal = supabase
+        .channel(nomeCanalUnico(nomeCanal, personagemId, instancia))
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'inventario_itens', filter: `personagem_id=eq.${personagemId}` },
+          carregarItens
+        )
+        .subscribe()
+    } catch (e) {
+      console.warn('Realtime do inventário indisponível:', e)
+    }
+    return () => { if (canal) void supabase.removeChannel(canal) }
+  }, [personagemId, nomeCanal, instancia, carregarItens])
 
   async function executar(payload: Omit<AcaoInventarioParams, 'sessaoId' | 'personagemId' | 'batalhaId' | 'combatenteId'>) {
     if (enviando) return false
