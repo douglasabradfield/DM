@@ -37,7 +37,7 @@ export function BarraAcoes({
   const temFicha = !!combatente.personagem_id
 
   return (
-    <div className="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg2)] px-2 py-1.5 space-y-1">
+    <div className="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg2)] px-2 py-1.5 space-y-1 lg:w-full lg:max-w-3xl lg:mx-auto">
       <div className="flex items-stretch gap-1.5">
         <SlotArma
           arma={combatente.arma_esquerda}
