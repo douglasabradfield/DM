@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useCampanha } from '@/store/campanha'
-import { usePermissao } from '@/hooks/usePermissao'
+import { ehDmDaCampanha } from '@/lib/permissao-campanha'
+import { compararLiberacao } from '@/lib/imagens-ordem'
 import { percentualRevelado } from '@/lib/fog-of-war'
 import { cn } from '@/lib/utils'
 import { ImagemComFog } from '@/components/galeria/ImagemComFog'
@@ -14,7 +15,7 @@ import { VisualizadorFullscreen, type ImagemGaleria } from '@/components/galeria
 // mesa (9995 a 9999). Não altera o z-index de nenhum componente existente.
 const Z_VISUALIZADOR = 9990
 
-const COLUNAS = 'id, campanha_id, nome, url, storage_path, tipo, visivel_jogadores, compartilhado, criado_em'
+const COLUNAS = 'id, campanha_id, nome, url, storage_path, tipo, visivel_jogadores, compartilhado, criado_em, liberado_em'
 
 function chaveVistas(userId: string, campanhaId: string) {
   return `dd-imagens-vistas:${userId}:${campanhaId}`
@@ -41,9 +42,9 @@ function gravarVistas(chave: string | null, vistas: Set<string>) {
 // Aba Mapa do celular (abaixo de md). Somente leitura: sem edição de névoa,
 // upload ou liberação — isso continua em /mapas.
 export function AbaMapa() {
-  const campanhaId = useCampanha(s => s.campanhaAtiva?.id)
+  const campanhaAtiva = useCampanha(s => s.campanhaAtiva)
+  const campanhaId = campanhaAtiva?.id
   const fogPorImagem = useCampanha(s => s.fogPorImagem)
-  const { ehDM } = usePermissao()
 
   const [imagens, setImagens] = useState<ImagemGaleria[]>([])
   const [carregando, setCarregando] = useState(true)
@@ -53,6 +54,9 @@ export function AbaMapa() {
   const [aberta, setAberta] = useState<ImagemGaleria | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [vistas, setVistas] = useState<Set<string>>(new Set())
+
+  // Só o DM da campanha ativa vê tudo; admin/plano não conta (ver permissao-campanha).
+  const ehDM = ehDmDaCampanha(campanhaAtiva, userId)
 
   const chave = userId && campanhaId ? chaveVistas(userId, campanhaId) : null
 
@@ -69,6 +73,7 @@ export function AbaMapa() {
         .from('imagens')
         .select(COLUNAS)
         .eq('campanha_id', campanhaId)
+        .order('liberado_em', { ascending: false, nullsFirst: false })
         .order('criado_em', { ascending: false })
       if (!ehDM) query = query.eq('visivel_jogadores', true)
       const { data, error } = await query
@@ -117,7 +122,7 @@ export function AbaMapa() {
           setImagens(prev => {
             const existe = prev.some(i => i.id === linha.id)
             const proxima = existe ? prev.map(i => i.id === linha.id ? linha : i) : [linha, ...prev]
-            return proxima.slice().sort((a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime())
+            return proxima.slice().sort(compararLiberacao)
           })
         }
       )
