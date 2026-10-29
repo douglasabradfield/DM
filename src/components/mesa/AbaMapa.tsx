@@ -16,7 +16,16 @@ const Z_VISUALIZADOR = 9990
 // Aba Mapa do celular (abaixo de md). Somente visual: os dados vêm do hook
 // useImagensMesa, chamado uma vez em MesaCliente. Somente leitura: sem edição
 // de névoa, upload ou liberação — isso continua em /mapas.
-export function AbaMapa({ dados, alturaMapa = 300 }: { dados: ImagensMesa; alturaMapa?: number }) {
+export function AbaMapa({
+  dados, alturaMapa = 300, semPaddingBarraAbas = false,
+}: {
+  dados: ImagensMesa
+  // Número = px; string = qualquer valor CSS (ex.: 'min(60dvh, 520px)').
+  alturaMapa?: number | string
+  // Na coluna lateral de md+ não existe barra de abas: sem padding inferior nem rodapé do celular.
+  semPaddingBarraAbas?: boolean
+}) {
+  const alturaCss = typeof alturaMapa === 'number' ? `${alturaMapa}px` : alturaMapa
   const {
     carregando, erro, ehDM, mapas, fotos, novas, vistas, mapaAtual,
     selecionarMapa, marcarVista, recarregar, existe,
@@ -40,7 +49,7 @@ export function AbaMapa({ dados, alturaMapa = 300 }: { dados: ImagensMesa; altur
   const abertaViva = aberta && existe(aberta.id) ? aberta : null
 
   return (
-    <div className="flex flex-col gap-3 pb-24 safe-area-pb">
+    <div className={cn('flex flex-col gap-3', !semPaddingBarraAbas && 'pb-24 safe-area-pb')}>
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-cinzel text-[var(--gold)] text-base font-bold">Mapa e imagens</h2>
         <span className="text-[10px] font-cinzel px-2 py-1 rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text3)]">
@@ -89,7 +98,7 @@ export function AbaMapa({ dados, alturaMapa = 300 }: { dados: ImagensMesa; altur
               </select>
             )}
             <div
-              style={{ height: alturaMapa, ['--altura-mapa' as string]: `${alturaMapa}px` }}
+              style={{ height: alturaCss, ['--altura-mapa' as string]: alturaCss }}
               className="relative flex items-center justify-center rounded-xl border border-[var(--border)] bg-black/40 overflow-hidden"
             >
               <ImagemComFog
@@ -156,9 +165,11 @@ export function AbaMapa({ dados, alturaMapa = 300 }: { dados: ImagensMesa; altur
         </Link>
       )}
 
-      <p className="text-center text-[var(--text3)] text-xs font-crimson">
-        Abre quando você quiser. A ficha continua a um toque de distância.
-      </p>
+      {!semPaddingBarraAbas && (
+        <p className="text-center text-[var(--text3)] text-xs font-crimson">
+          Abre quando você quiser. A ficha continua a um toque de distância.
+        </p>
+      )}
 
       {abertaViva && (
         <VisualizadorFullscreen
