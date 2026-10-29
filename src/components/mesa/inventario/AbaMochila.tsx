@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { ModalCompendioItens, type ItemCompendioEscolhido } from '@/components/personagem/ModalCompendioItens'
 import { cn } from '@/lib/utils'
+import { itemEquipavel, semDadosDeCA } from '@/lib/dados-dnd/ca'
 import type { InventarioItemDb, Moedas } from '@/types/dnd'
 import type { ContextoAcao, Destinatario } from '../tipos'
 import { MOEDAS } from '../constantes'
@@ -19,6 +20,21 @@ const ROTULO_TIPO: Record<string, string> = {
 // armaduras não são usadas (só equipadas); o resto aceita "Usar".
 const ehUsavel = (item: InventarioItemDb) => item.tipo !== 'arma' && item.tipo !== 'armadura'
 const categoria = (item: InventarioItemDb) => item.equipado ? 'Equipado' : ROTULO_TIPO[item.tipo ?? ''] ?? 'Item'
+
+// Resumo mecânico de uma linha: "CA 14 · DES máx. 2", "+2 CA", "Furtividade ⚠"...
+function resumoMecanico(item: InventarioItemDb): string {
+  const partes: string[] = []
+  if (item.categoria === 'armadura' && item.ac_base != null) {
+    partes.push(`CA ${item.ac_base}`)
+    if (item.max_des != null) partes.push(item.max_des === 0 ? 'sem DES' : `DES máx. ${item.max_des}`)
+  }
+  for (const m of item.modificadores ?? []) {
+    if (m.alvo === 'ac' && m.tipo !== 'base') partes.push(`${m.valor >= 0 ? '+' : ''}${m.valor} CA`)
+  }
+  if (item.desv_furtividade) partes.push('Furtividade ⚠')
+  if (semDadosDeCA(item)) partes.push('sem dados de CA')
+  return partes.join(' · ')
+}
 
 const CLASSE_BOTAO_ACAO = 'min-h-[44px] px-3 rounded-lg font-cinzel text-sm disabled:opacity-40'
 
@@ -245,8 +261,26 @@ export function AbaMochila({
               <span className="w-8 flex-shrink-0 text-[var(--text2)] font-cinzel text-sm">{item.quantidade}×</span>
               <div className="min-w-0 flex-1">
                 <p className="text-[var(--text)] font-crimson font-bold text-base truncate">{item.nome}</p>
-                <p className="text-[var(--text3)] font-crimson text-xs">{categoria(item)}</p>
+                <p className="text-[var(--text3)] font-crimson text-xs">
+                  {categoria(item)}{resumoMecanico(item) && ` · ${resumoMecanico(item)}`}
+                </p>
               </div>
+              {itemEquipavel(item) && (
+                <button
+                  type="button"
+                  onClick={() => inventario.equipar(item, !item.equipado)}
+                  disabled={enviando}
+                  aria-pressed={item.equipado}
+                  className={cn(
+                    'min-h-[48px] min-w-[84px] px-3 rounded-lg font-cinzel text-sm font-bold disabled:opacity-40',
+                    item.equipado
+                      ? 'bg-[var(--accent2)] text-[var(--bg)]'
+                      : 'border border-[var(--accent2)] text-[var(--accent2)]'
+                  )}
+                >
+                  {item.equipado ? 'Equipado' : 'Equipar'}
+                </button>
+              )}
               {ehUsavel(item) && (
                 <button
                   type="button"

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -13,6 +13,8 @@ import { Plus, RefreshCw, Users, Download, MoreVertical, X, Eye, EyeOff } from '
 import toast from 'react-hot-toast'
 import { getPlano } from '@/lib/planos'
 import { usePlanoEfetivo } from '@/hooks/usePlanoEfetivo'
+import { useAcPersonagens } from '@/hooks/useAcPersonagens'
+import { getAcEfetivo } from '@/lib/dados-dnd/ca'
 
 type FiltroTipo = 'todos' | 'jogador' | 'npc' | 'monstro'
 type Ordenacao = 'nome' | 'nivel' | 'xp' | 'ca' | 'pv'
@@ -58,11 +60,13 @@ interface CardPersonagemProps {
   jogadoresCampanha?: JogadorCampanha[]
   onAlterarVisibilidade?: (id: string, visibilidade: string, jogadorId?: string) => void
   podeEditar?: boolean
+  // CA derivada dos itens equipados (getAcEfetivo)
+  ac: number
 }
 
 function CardPersonagem({
   p, isDm, menuAberto, onToggleMenu, onInativar, onDeletar,
-  inativo, onReativar, jogadoresCampanha, onAlterarVisibilidade, podeEditar = true,
+  inativo, onReativar, jogadoresCampanha, onAlterarVisibilidade, podeEditar = true, ac,
 }: CardPersonagemProps) {
   const estilo = estiloTipo(p.tipo_personagem)
   const pct = p.pv_maximo > 0 ? (p.pv_atual / p.pv_maximo) * 100 : 0
@@ -88,7 +92,7 @@ function CardPersonagem({
             </div>
             <div className="text-right ml-3 flex-shrink-0 pr-11">
               <p className="text-[var(--text3)] text-xs font-cinzel">CA</p>
-              <p className={`font-cinzel font-bold text-xl leading-none ${estilo.texto}`}>{p.ca || 10}</p>
+              <p className={`font-cinzel font-bold text-xl leading-none ${estilo.texto}`}>{ac}</p>
             </div>
           </div>
 
@@ -214,6 +218,10 @@ export default function PersonagensPage() {
   const { campanhaAtiva, papelPorCampanha } = useCampanha()
   const [personagens, setPersonagens] = useState<Personagem[]>([])
   const [personagensInativos, setPersonagensInativos] = useState<Personagem[]>([])
+  // Uma leva só (2 queries com in) para a CA de todos os cards.
+  const idsAc = useMemo(() => [...personagens, ...personagensInativos].map(x => x.id), [personagens, personagensInativos])
+  const acPorId = useAcPersonagens(idsAc)
+  const acDe = (x: Personagem) => acPorId[x.id]?.resultado.efetivo ?? getAcEfetivo(x, [])
   const [jogadoresCampanha, setJogadoresCampanha] = useState<JogadorCampanha[]>([])
   const [carregando, setCarregando] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
@@ -316,7 +324,7 @@ export default function PersonagensPage() {
         nivel: 1,
         forca: 10, destreza: 10, constituicao: 10,
         inteligencia: 10, sabedoria: 10, carisma: 10,
-        ca: 10, pv_maximo: 10, pv_atual: 10,
+        pv_maximo: 10, pv_atual: 10,
         bonus_proficiencia: 2,
         ataques: [],
         salvaguardas: {},
@@ -403,7 +411,7 @@ export default function PersonagensPage() {
     switch (ordenacao) {
       case 'nivel': return ((b.nivel || 1) - (a.nivel || 1))
       case 'xp': return ((b.pontos_experiencia || 0) - (a.pontos_experiencia || 0))
-      case 'ca': return ((b.ca || 10) - (a.ca || 10))
+      case 'ca': return acDe(b) - acDe(a)
       case 'pv': return ((b.pv_maximo || 10) - (a.pv_maximo || 10))
       default: return a.nome.localeCompare(b.nome, 'pt-BR')
     }
@@ -600,6 +608,7 @@ export default function PersonagensPage() {
               jogadoresCampanha={jogadoresCampanha}
               onAlterarVisibilidade={alterarVisibilidade}
               podeEditar={!ehJogador || p.user_id === userId}
+              ac={acDe(p)}
             />
           ))}
         </div>
@@ -623,6 +632,7 @@ export default function PersonagensPage() {
                 onDeletar={() => setConfirmarDeletar(p.id)}
                 inativo
                 onReativar={() => reativarPersonagem(p.id)}
+                ac={acDe(p)}
               />
             ))}
           </div>

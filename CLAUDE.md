@@ -74,6 +74,14 @@ Campaign selection persisted to `localStorage` via `src/store/campanha.ts` (key 
 - `src/types/batalha.ts` — Combatente, LogEntry, BatalhaState
 - `src/types/dnd.ts` — Condicao, Monster, Spell, and other D&D system types
 
+### CA automática (AC)
+
+- `src/lib/dados-dnd/ca.ts` — `calcularAC(ficha, itensEquipados)` (puro, testado em `ca.test.ts`; rode `npm test`) e `getAcEfetivo()`. **Toda leitura de CA de personagem passa por `getAcEfetivo`.** Nunca grave a CA calculada.
+- `personagens.ac_manual` (null = automático) vence o cálculo e é onde a ficha grava. `personagens.ca` é legado: sem escrita nova, não ler.
+- Itens: campos mecânicos opcionais em `inventario_itens` (`categoria, equipavel, tipo_armadura, ac_base, max_des, req_for, desv_furtividade, modificadores`), copiados do catálogo (`equipment_armor`/`magic_items`) por `item_ref` em `/api/mesa/acao` (`src/lib/inventario/mecanica.ts`). Equipar uma 2ª armadura/escudo desequipa a anterior.
+- Na batalha, `batalha_combatentes.ac_override` (nullable) é CA temporária definida pelo mestre ao clicar na CA do combatente com ficha: precedência `ac_override ?? ac_manual ?? calculado` (`getAcEfetivo(..., acOverride)` / `aplicarOverrideAc`). Vive só na linha do combatente; nunca grava na ficha.
+- Em lote: `useAcPersonagens(ids)` / `carregarAcPersonagens` (2 queries com `in(...)`). Na batalha, `AcCombatentesProvider` + `useAcDoCombatente(c)`; monstros seguem com `c.ca`.
+
 ---
 
 ## Key Database Tables

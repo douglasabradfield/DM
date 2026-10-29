@@ -67,6 +67,7 @@ export interface AcaoInventarioParams {
   tipoItem?: string | null
   raridade?: string | null
   descricaoItem?: string | null
+  mecanica?: Record<string, unknown>
   quantidade?: number
   equipado?: boolean
   remover?: boolean

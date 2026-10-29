@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useCampanha } from '@/store/campanha'
@@ -19,6 +19,7 @@ import { useOnline } from '@/hooks/useOnline'
 import { TIPOS_DANO, normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
 import { getEspacosMagiaPorClasse, ehPactoArcano, calcularModificador } from '@/lib/dados-dnd/espacos-magia'
 import { getNivelPorXP, getProgressoXP } from '@/lib/dados-dnd/xp-niveis'
+import { calcularAC, armaduraPesadaDemais, temDesvantagemFurtividade, itemEquipavel, PENALIDADE_DESLOCAMENTO_FOR_M } from '@/lib/dados-dnd/ca'
 import type { TipoDano } from '@/types/dnd'
 import { Search, X, MoreVertical } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -43,6 +44,13 @@ const PERICIAS = [
   { nome: 'Religião', atributo: 'inteligencia' },
   { nome: 'Sobrevivência', atributo: 'sabedoria' },
 ] as const
+
+// Campo vazio / inválido = sem AC manual (usa o calculado).
+function valorAcManual(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null
+  const n = parseInt(String(v))
+  return Number.isFinite(n) ? n : null
+}
 
 const ATRIBUTOS = [
   { key: 'forca', label: 'Força', abrev: 'FOR' },
@@ -250,6 +258,19 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
   const [buscaInventario, setBuscaInventario] = useState('')
   const [modalCompendio, setModalCompendio] = useState(false)
 
+  // CA derivada dos itens equipados (ac_manual, se preenchido, vence). Nada
+  // disso é gravado: recalculado a cada render a partir de dados + inventário.
+  const [acAberto, setAcAberto] = useState(false)
+  const equipados = useMemo(() => inventario.filter(i => i.equipado), [inventario])
+  const fichaAC = {
+    forca: Number(dados.forca), destreza: Number(dados.destreza),
+    constituicao: Number(dados.constituicao), sabedoria: Number(dados.sabedoria),
+    classe: dados.classe, ac_manual: dados.ac_manual ?? null,
+  }
+  const resultadoAC = calcularAC(fichaAC, equipados)
+  const armaduraPesada = armaduraPesadaDemais(fichaAC, equipados)
+  const desvFurtividade = temDesvantagemFurtividade(equipados)
+
   const carregarInventario = useCallback(() => {
     createClient()
       .from('inventario_itens')
@@ -287,6 +308,10 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       if (!resp.ok) {
         toast.error(dados?.erro ?? 'Erro ao atualizar inventário')
         return false
+      }
+      // Equipar um segundo item do mesmo slot desequipa o anterior: avisa.
+      if (typeof dados?.descricao === 'string' && dados.descricao.includes('(desequipou')) {
+        toast(dados.descricao, { icon: '⚠️' })
       }
       return true
     } catch {
@@ -382,7 +407,8 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       // feitos depois. inventario (jsonb legado) não é mais gravado por
       // aqui — itens agora vivem em inventario_itens, via API árbitro
       // (chamarInventarioApi) — a coluna fica congelada como estava.
-      const { slots_magia: _ignorado, inventario: _inventarioLegado, ...dadosParaSalvar } = dados
+      // ca é legado (sem escrita nova): o AC digitado vai para ac_manual.
+      const { slots_magia: _ignorado, inventario: _inventarioLegado, ca: _caLegado, ...dadosParaSalvar } = dados
       // Mesma regra da API (/api/mesa/acao, definir_pv_maximo): máximo >= 1 e
       // PV atual cortado ao novo máximo, no mesmo update.
       const pvMaximo = Math.max(1, parseInt(String(dados.pv_maximo)) || 1)
@@ -403,7 +429,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
         nivel: parseInt(String(dados.nivel)) || 1,
         bonus_proficiencia: parseInt(String(dados.bonus_proficiencia)) || 2,
         pontos_experiencia: parseInt(String(dados.pontos_experiencia)) || 0,
-        ca: parseInt(String(dados.ca)) || 10,
+        ac_manual: valorAcManual(dados.ac_manual),
         pv_maximo: pvMaximo,
         imagem_url: dados.imagem_url ?? null,
         moedas: dados.moedas ? {
@@ -466,7 +492,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
       }
       // Sincroniza com a batalha se o personagem estiver em combate
       atualizarCombatentePorPersonagem(p.id, {
-        ca: parseInt(String(dados.ca)) || 10,
+        ca: resultadoAC.efetivo,
         pv_maximo: pvMaximo,
         ...(emCombate ? {} : {
           pv_atual: pvAtual,
@@ -1098,7 +1124,7 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                           <div key={nome} className="flex items-center gap-1 py-0.5">
                             <input type="checkbox" checked={temProf} onChange={e => atualizar('pericias', { ...dados.pericias, [nome]: e.target.checked })} className="w-3 h-3 accent-[var(--accent)] flex-shrink-0" />
                             <span className="text-[var(--gold)] text-xs font-cinzel font-bold w-6 text-right flex-shrink-0">{valorFinal >= 0 ? `+${valorFinal}` : `${valorFinal}`}</span>
-                            <span className="text-[var(--text2)] text-xs flex-1 font-crimson truncate">{nome}</span>
+                            <span className="text-[var(--text2)] text-xs flex-1 font-crimson truncate">{nome}{nome === 'Furtividade' && desvFurtividade && <span title="Armadura equipada impõe desvantagem" className="text-[#f39c12] ml-1">⚠ desv.</span>}</span>
                             <span className="text-[var(--text3)] text-[8px] font-cinzel flex-shrink-0">{atributo.slice(0,3).toUpperCase()}</span>
                             <button onClick={() => ajustarPericia(nome, -1)} className="w-4 h-4 text-[10px] bg-[var(--bg3)] rounded hover:bg-[var(--surface)] text-[var(--text2)] leading-none flex items-center justify-center flex-shrink-0">−</button>
                             <span className="text-[8px] text-[var(--text3)] w-5 text-center flex-shrink-0">{ajuste !== 0 ? (ajuste > 0 ? `+${ajuste}` : `${ajuste}`) : '±0'}</span>
@@ -1151,8 +1177,16 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
               {/* CA / Iniciativa / Deslocamento */}
               <div className="grid grid-cols-3 gap-1">
                 <div>
-                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">CA</label>
-                  <input type="number" inputMode="numeric" value={dados.ca} onChange={e => atualizar('ca', parseInt(e.target.value) || 10)} className="w-full input-dd text-center" disabled={!podeEditar} />
+                  <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">CA{resultadoAC.manual !== null && ' (manual)'}</label>
+                  <button
+                    type="button"
+                    onClick={() => setAcAberto(a => !a)}
+                    aria-expanded={acAberto}
+                    title="Ver como a CA foi calculada"
+                    className="w-full input-dd text-center min-h-[40px] font-cinzel font-bold"
+                  >
+                    {resultadoAC.efetivo}
+                  </button>
                 </div>
                 <div>
                   <label className="text-[var(--text3)] text-[9px] font-cinzel uppercase">Iniciativa</label>
@@ -1163,6 +1197,40 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                   <input type="number" inputMode="numeric" value={dados.deslocamento} onChange={e => atualizar('deslocamento', parseInt(e.target.value) || 9)} className="w-full input-dd text-center" disabled={!podeEditar} />
                 </div>
               </div>
+
+              {acAberto && (
+                <div className="rounded border border-[var(--border)] bg-[var(--bg3)] p-2 space-y-1.5">
+                  <p className="text-[var(--text2)] text-xs font-crimson">{resultadoAC.detalhe}</p>
+                  {resultadoAC.manual !== null && (
+                    <p className="text-[var(--text3)] text-[10px] font-crimson">
+                      CA manual {resultadoAC.manual} em uso (calculada: {resultadoAC.calculado}).
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <label className="text-[var(--text3)] text-[10px] font-cinzel uppercase flex-shrink-0" htmlFor="ac-manual">CA manual</label>
+                    <input
+                      id="ac-manual"
+                      type="number"
+                      inputMode="numeric"
+                      value={dados.ac_manual ?? ''}
+                      onChange={e => atualizar('ac_manual', valorAcManual(e.target.value))}
+                      placeholder={`auto (${resultadoAC.calculado})`}
+                      className="input-dd text-center min-h-[40px] w-full"
+                      disabled={!podeEditar}
+                    />
+                    {dados.ac_manual != null && podeEditar && (
+                      <button type="button" onClick={() => atualizar('ac_manual', null)} className="min-h-[40px] px-2 text-[var(--accent)] text-xs font-cinzel flex-shrink-0">
+                        Usar auto
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {armaduraPesada && (
+                <p className="text-[#f39c12] text-[11px] font-crimson leading-tight">
+                  ⚠️ {armaduraPesada.nome} exige FOR {armaduraPesada.req_for}: deslocamento −{PENALIDADE_DESLOCAMENTO_FOR_M} m.
+                </p>
+              )}
 
               {/* Pontos de Vida */}
               <div className="grid grid-cols-3 gap-1">
@@ -1302,6 +1370,16 @@ export function FichaPersonagem({ personagem: p, onAtualizar }: FichaPersonagemP
                             </span>
                             {item.raridade && <span className="text-[var(--text3)] text-[10px] font-cinzel">{item.raridade}</span>}
                           </button>
+                          {itemEquipavel(item) && podeEditar && (
+                            <button
+                              type="button"
+                              onClick={() => equiparItem(item, !item.equipado)}
+                              aria-pressed={item.equipado}
+                              className={`min-h-[32px] px-2 rounded text-[10px] font-cinzel flex-shrink-0 ${item.equipado ? 'bg-[var(--accent2)] text-[var(--bg)] font-bold' : 'border border-[var(--accent2)] text-[var(--accent2)]'}`}
+                            >
+                              {item.equipado ? 'Equipado' : 'Equipar'}
+                            </button>
+                          )}
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <button onClick={() => alterarQuantidade(item, -1)} className="w-5 h-5 text-xs bg-[var(--surface)] rounded hover:bg-[var(--surface2)] text-[var(--text2)] leading-none flex items-center justify-center">−</button>
                             <span className="text-[var(--text)] text-xs w-5 text-center font-cinzel">{item.quantidade}</span>

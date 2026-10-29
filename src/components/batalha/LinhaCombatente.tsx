@@ -1,5 +1,6 @@
 'use client'
 
+import { useAcBatalha } from '@/components/batalha/AcCombatentesContext'
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
@@ -20,6 +21,22 @@ import { normalizarTipoDano } from '@/lib/dados-dnd/tipos-dano'
 import { Trash2, Plus, GripVertical, X, Pencil, Eye, RotateCw } from 'lucide-react'
 import type { TipoDano, Ataque } from '@/types/dnd'
 
+// Salva a CA digitada. Combatente com ficha: vira CA temporária da batalha
+// (ac_override) — nunca escreve na ficha; digitar o valor da ficha limpa o
+// override. Monstro/NPC sem ficha: edita c.ca direto, como sempre.
+function salvarCaCombatente(
+  c: Combatente,
+  texto: string,
+  acAtual: number,
+  acBase: number,
+  atualizarCombatente: (id: string, dados: Partial<Combatente>) => void,
+) {
+  const n = parseInt(texto)
+  if (Number.isNaN(n) || n === acAtual) return
+  if (c.personagem_id) atualizarCombatente(c.id, { ac_override: n === acBase ? null : n })
+  else atualizarCombatente(c.id, { ca: n })
+}
+
 interface LinhaCombatenteProps {
   combatente: Combatente
   ativo: boolean
@@ -28,6 +45,7 @@ interface LinhaCombatenteProps {
 }
 
 export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponiveis }: LinhaCombatenteProps) {
+  const { efetivo: ac, override: acOverride, base: acBase } = useAcBatalha(c)
   const router = useRouter()
   const {
     removerCombatente,
@@ -42,6 +60,10 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: c.id })
 
   const [editandoCA, setEditandoCA] = useState(false)
+  const salvarCA = (texto: string) => {
+    setEditandoCA(false)
+    salvarCaCombatente(c, texto, ac, acBase, atualizarCombatente)
+  }
   const [editandoPV, setEditandoPV] = useState(false)
   const [editandoPVMax, setEditandoPVMax] = useState(false)
   const [mostraCondicoes, setMostraCondicoes] = useState(false)
@@ -97,12 +119,13 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
     try {
       const { data: p, error } = await createClient()
         .from('personagens')
-        .select('nivel, classe, ca, ataques, resistencias, imunidades, vulnerabilidades')
+        .select('nivel, classe, ac_manual, ataques, resistencias, imunidades, vulnerabilidades')
         .eq('id', c.personagem_id)
         .single()
       if (error || !p) { toast.error('Erro ao buscar a ficha'); return }
       atualizarCombatente(c.id, {
-        ca: p.ca,
+        // Placeholder: a CA exibida de personagem com ficha vem de getAcEfetivo (AcCombatentesContext).
+        ca: p.ac_manual ?? c.ca,
         resistencias: p.resistencias ?? [],
         imunidades: p.imunidades ?? [],
         vulnerabilidades: p.vulnerabilidades ?? [],
@@ -261,22 +284,43 @@ export function LinhaCombatente({ combatente: c, ativo, indice, condicoesDisponi
       </td>
 
       {/* CA */}
-      <td className="px-1 py-1 w-12 text-center">
+      <td className={cn('px-1 py-1 text-center', acOverride !== null ? 'w-16' : 'w-12')}>
         {editandoCA ? (
           <input
             type="number"
-            defaultValue={c.ca}
+            defaultValue={ac}
             autoFocus
-            onBlur={e => { atualizarCombatente(c.id, { ca: parseInt(e.target.value) || c.ca }); setEditandoCA(false) }}
+            onBlur={e => salvarCA(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
             className="w-12 input-dd text-center text-sm"
           />
         ) : (
-          <span
-            onClick={() => setEditandoCA(true)}
-            className="text-[var(--text2)] text-base cursor-pointer hover:text-[var(--gold)]"
-          >
-            {c.ca}
+          <span className="inline-flex items-center justify-center gap-0.5">
+            <span
+              onClick={() => setEditandoCA(true)}
+              title={c.personagem_id
+                ? (acOverride !== null
+                    ? `CA temporária desta batalha (ficha: ${acBase}). Clique para editar.`
+                    : 'CA da ficha. Clique para definir uma CA temporária nesta batalha (a ficha não muda).')
+                : undefined}
+              className={cn(
+                'text-base cursor-pointer hover:text-[var(--gold)]',
+                acOverride !== null ? 'text-[var(--gold)] font-bold' : 'text-[var(--text2)]'
+              )}
+            >
+              {ac}
+            </span>
+            {acOverride !== null && (
+              <button
+                type="button"
+                onClick={() => atualizarCombatente(c.id, { ac_override: null })}
+                title={`Limpar CA temporária e voltar para ${acBase} (da ficha)`}
+                aria-label="Limpar CA temporária"
+                className="text-[var(--gold)] hover:text-[var(--red2)] p-0.5"
+              >
+                <X size={12} />
+              </button>
+            )}
           </span>
         )}
       </td>
@@ -519,7 +563,9 @@ export function CartaoCombatenteMobile({ combatente: c, ativo, condicoesDisponiv
   ativo: boolean
   condicoesDisponiveis: string[]
 }) {
-  const { editarEstado, setarTipoDano, togglePvRevelado } = useBatalha()
+  const { efetivo: ac, override: acOverride, base: acBase } = useAcBatalha(c)
+  const [editandoCA, setEditandoCA] = useState(false)
+  const { editarEstado, setarTipoDano, togglePvRevelado, atualizarCombatente } = useBatalha()
   const adicionarCondicao = (condicao: TipoCondicao) =>
     editarEstado({ tipo: 'aplicar_condicao', alvos: [{ combatenteId: c.id, condicao }] })
   const removerCondicao = (condicao: TipoCondicao) =>
@@ -575,7 +621,39 @@ export function CartaoCombatenteMobile({ combatente: c, ativo, condicoesDisponiv
 
       {/* Linha 2: CA · iniciativa · condições */}
       <div className="flex items-center gap-2 flex-wrap mb-2 text-xs">
-        <span className="text-[var(--text3)]">CA <span className="text-[var(--text2)] font-bold">{c.ca}</span></span>
+        {editandoCA ? (
+          <input
+            type="number"
+            inputMode="numeric"
+            defaultValue={ac}
+            autoFocus
+            onBlur={e => { setEditandoCA(false); salvarCaCombatente(c, e.target.value, ac, acBase, atualizarCombatente) }}
+            onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+            aria-label="CA"
+            className="w-14 input-dd text-center text-sm min-h-[32px]"
+          />
+        ) : (
+          <span className="text-[var(--text3)] inline-flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setEditandoCA(true)}
+              title={c.personagem_id ? 'Definir CA temporária nesta batalha (a ficha não muda)' : 'Editar CA'}
+              className="min-h-[32px] inline-flex items-center gap-1"
+            >
+              CA <span className={cn('font-bold', acOverride !== null ? 'text-[var(--gold)]' : 'text-[var(--text2)]')}>{ac}</span>
+            </button>
+            {acOverride !== null && (
+              <button
+                type="button"
+                onClick={() => atualizarCombatente(c.id, { ac_override: null })}
+                aria-label={`Limpar CA temporária e voltar para ${acBase}`}
+                className="min-h-[32px] px-1.5 rounded border border-[var(--gold)] text-[var(--gold)] text-[10px] font-cinzel"
+              >
+                temp. · limpar
+              </button>
+            )}
+          </span>
+        )}
         <span className="text-[var(--text3)]">Init <span className="text-[var(--text2)] font-bold">{c.iniciativa}</span></span>
         {c.condicoes.map(cond => (
           <PopupCondicao key={cond} condicao={cond} onRemover={() => removerCondicao(cond)} />

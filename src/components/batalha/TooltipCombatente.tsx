@@ -1,5 +1,6 @@
 'use client'
 
+import { useAcDoCombatente } from '@/components/batalha/AcCombatentesContext'
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Combatente } from '@/types/batalha'
@@ -34,6 +35,7 @@ const TOOLTIP_H = 440
 const OFFSET = 16
 
 export function TooltipCombatente({ combatente: c, children }: Props) {
+  const ac = useAcDoCombatente(c)
   const [visivel, setVisivel] = useState(false)
   const [pos, setPos] = useState({ x: 0, y: 0 })
 
@@ -113,7 +115,7 @@ export function TooltipCombatente({ combatente: c, children }: Props) {
             <div className="grid grid-cols-3 gap-1 text-center mb-2">
               <div className="bg-[var(--surface)] rounded p-1">
                 <div className="text-[var(--text3)] text-[9px] uppercase font-cinzel">CA</div>
-                <div className="text-[var(--text)] text-sm font-bold">{c.ca}</div>
+                <div className="text-[var(--text)] text-sm font-bold">{ac}</div>
               </div>
               <div className="bg-[var(--surface)] rounded p-1">
                 <div className="text-[var(--text3)] text-[9px] uppercase font-cinzel">PV</div>

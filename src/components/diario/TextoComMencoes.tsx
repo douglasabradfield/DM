@@ -1,5 +1,6 @@
 'use client'
 
+import { carregarAcPersonagens } from '@/hooks/useAcPersonagens'
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
@@ -16,7 +17,7 @@ interface PersonagemDetalhes {
   raca: string | null
   classe: string | null
   nivel: number | null
-  ca: number | null
+  ca: number | null // AC efetivo (getAcEfetivo), preenchido após a leitura
   pv_atual: number | null
   pv_maximo: number | null
 }
@@ -67,11 +68,12 @@ export function TextoComMencoes({ texto, className }: TextoComMencoesProps) {
     setCarregando(true)
     createClient()
       .from('personagens')
-      .select('id, nome, tipo_personagem, raca, classe, nivel, ca, pv_atual, pv_maximo')
+      .select('id, nome, tipo_personagem, raca, classe, nivel, pv_atual, pv_maximo')
       .eq('id', popupId)
       .single()
-      .then(({ data }) => {
-        setPersonagem(data as PersonagemDetalhes | null)
+      .then(async ({ data }) => {
+        const ac = (await carregarAcPersonagens(createClient(), [popupId]))[popupId]
+        setPersonagem(data ? ({ ...data, ca: ac ? ac.resultado.efetivo : null } as PersonagemDetalhes) : null)
         setCarregando(false)
       })
   }, [popupId])

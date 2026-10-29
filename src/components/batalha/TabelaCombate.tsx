@@ -1044,7 +1044,8 @@ function ModalCarregarPersonagens({ campanhaId, onFechar }: { campanhaId: string
         nome: p.nome,
         tipo: (p.tipo_personagem ?? 'jogador') as 'jogador' | 'npc' | 'monstro',
         iniciativa: 0,
-        ca: p.ca,
+        // Placeholder: a CA exibida de personagem com ficha vem de getAcEfetivo (AcCombatentesContext).
+        ca: p.ac_manual ?? 10,
         pv_maximo: p.pv_maximo,
         pv_atual: p.pv_atual,
         pv_temporarios: p.pv_temporarios,

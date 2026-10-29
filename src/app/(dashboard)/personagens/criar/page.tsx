@@ -261,7 +261,7 @@ export default function CriarPersonagemPage() {
         inteligencia: calcAtributoFinal('inteligencia'),
         sabedoria: calcAtributoFinal('sabedoria'),
         carisma: calcAtributoFinal('carisma'),
-        ca: calcCA(),
+        // ca (legado) não é mais gravada: a CA é derivada dos itens equipados.
         pv_maximo: calcPV(),
         pv_atual: calcPV(),
         pv_temporarios: 0,

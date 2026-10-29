@@ -79,7 +79,8 @@ export function BotaoImportarFicha({ jogadoresCampanha = [] }: { jogadoresCampan
         inteligencia: dados.inteligencia || 10,
         sabedoria: dados.sabedoria || 10,
         carisma: dados.carisma || 10,
-        ca: dados.ca || 10,
+        // CA lida da ficha importada vale como CA manual (os itens não são importados).
+        ac_manual: dados.ca > 0 ? dados.ca : null,
         iniciativa: dados.iniciativa || 0,
         deslocamento: dados.deslocamento || 9,
         pv_maximo: dados.pv_maximo || 8,

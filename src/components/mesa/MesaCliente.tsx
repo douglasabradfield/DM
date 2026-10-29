@@ -1,5 +1,7 @@
 'use client'
 
+import { useAcPersonagens } from '@/hooks/useAcPersonagens'
+import { getAcEfetivo } from '@/lib/dados-dnd/ca'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBatalha } from '@/store/batalha'
 import { useCampanha } from '@/store/campanha'
@@ -81,6 +83,10 @@ export function MesaCliente() {
   // Modo sessão (fora de combate) — lista de PJs da campanha, independente
   // de batalha_combatentes (que só existe durante uma batalha).
   const [personagensSessao, setPersonagensSessao] = useState<Personagem[]>([])
+  // CA dos personagens da sessão: uma leva só (2 queries com in), derivada dos itens equipados.
+  const idsSessaoAc = useMemo(() => personagensSessao.map(x => x.id), [personagensSessao])
+  const acSessao = useAcPersonagens(idsSessaoAc)
+  const acDoPersonagem = (x: Personagem) => acSessao[x.id]?.resultado.efetivo ?? getAcEfetivo(x, [])
   const [personagemOperadoIdSessao, setPersonagemOperadoIdSessao] = useState<string | null>(null)
   const [enviandoSessao, setEnviandoSessao] = useState(false)
   const [modalMagiaSessaoAberto, setModalMagiaSessaoAberto] = useState(false)
@@ -673,6 +679,7 @@ export function MesaCliente() {
           <div className="flex-1 min-h-0 overflow-hidden px-3 pb-2">
             <CartaoPersonagemSessao
               personagem={personagemOperadoSessao}
+              ac={acDoPersonagem(personagemOperadoSessao)}
               podeEditar={false}
               enviando={false}
               opcoesSelecao={ehDM ? personagensSessao : meusPersonagensSessao}
@@ -781,6 +788,7 @@ export function MesaCliente() {
           {personagemOperadoSessao ? (
             <CartaoPersonagemSessao
               personagem={personagemOperadoSessao}
+              ac={acDoPersonagem(personagemOperadoSessao)}
               podeEditar
               enviando={enviandoSessao}
               opcoesSelecao={ehDM ? personagensSessao : meusPersonagensSessao}

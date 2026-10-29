@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { Search, X } from 'lucide-react'
+import { FormItemProprio } from './FormItemProprio'
 
-type AbaCompendio = 'magicos' | 'armas' | 'armaduras' | 'gear'
+type AbaCompendio = 'magicos' | 'armas' | 'armaduras' | 'gear' | 'proprio'
 
 // Já no formato do payload de adicionar_item da API árbitro (/api/mesa/acao).
 export interface ItemCompendioEscolhido {
@@ -14,16 +15,19 @@ export interface ItemCompendioEscolhido {
   tipoItem: string
   raridade: string | null
   descricaoItem: string
+  // Campos mecânicos de item próprio (homebrew); itens do compêndio são
+  // resolvidos pelo servidor a partir do itemRef.
+  mecanica?: Record<string, unknown>
 }
 
-const TABELAS: Record<AbaCompendio, { tabela: string; campos: string }> = {
+const TABELAS: Record<Exclude<AbaCompendio, 'proprio'>, { tabela: string; campos: string }> = {
   magicos:   { tabela: 'magic_items',      campos: 'slug,name_pt,name_en,category,rarity,description_pt' },
   armas:     { tabela: 'equipment_weapons', campos: 'slug,name_pt,name_en,damage_dice,damage_type_pt,properties_pt,weight_lb,cost_cp' },
   armaduras: { tabela: 'equipment_armor',   campos: 'slug,name_pt,name_en,base_ac_formula_pt,stealth_disadvantage,strength_requirement,weight_lb,cost_cp,category_pt' },
   gear:      { tabela: 'equipment_gear',    campos: 'slug,name_pt,name_en,category_pt,cost_gp,weight_lb,description_pt' },
 }
 
-function paraItemEscolhido(item: Record<string, unknown>, aba: AbaCompendio): ItemCompendioEscolhido {
+function paraItemEscolhido(item: Record<string, unknown>, aba: Exclude<AbaCompendio, 'proprio'>): ItemCompendioEscolhido {
   const base = { itemRef: item.slug as string, nome: item.name_pt as string }
   if (aba === 'magicos') {
     return { ...base, tipoItem: 'magico', raridade: (item.rarity as string) ?? null, descricaoItem: (item.description_pt as string) || '' }
@@ -58,7 +62,7 @@ export function ModalCompendioItens({ campanhaId, ehDM, onEscolher, onFechar }: 
   const [buscando, setBuscando] = useState(false)
 
   const buscar = useCallback(async (termo: string, abaAtual: AbaCompendio) => {
-    if (!termo.trim()) { setItens([]); return }
+    if (!termo.trim() || abaAtual === 'proprio') { setItens([]); return }
     setBuscando(true)
     try {
       const { tabela, campos } = TABELAS[abaAtual]
@@ -102,6 +106,7 @@ export function ModalCompendioItens({ campanhaId, ehDM, onEscolher, onFechar }: 
             { id: 'armas',     label: '⚔️ Armas' },
             { id: 'armaduras', label: '🛡️ Armadura' },
             { id: 'magicos',   label: '✨ Mágicos' },
+            { id: 'proprio',   label: '✏️ Próprio' },
           ] as const).map(a => (
             <button
               key={a.id}
@@ -112,6 +117,9 @@ export function ModalCompendioItens({ campanhaId, ehDM, onEscolher, onFechar }: 
             </button>
           ))}
         </div>
+        {aba === 'proprio' ? (
+          <div className="flex-1 overflow-y-auto"><FormItemProprio onEscolher={onEscolher} /></div>
+        ) : (<>
         <div className="p-3 border-b border-[var(--border)]">
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text3)] pointer-events-none">
@@ -140,7 +148,7 @@ export function ModalCompendioItens({ campanhaId, ehDM, onEscolher, onFechar }: 
           {itens.map(item => (
             <button
               key={item.slug as string}
-              onClick={() => onEscolher(paraItemEscolhido(item, aba))}
+              onClick={() => onEscolher(paraItemEscolhido(item, aba as Exclude<AbaCompendio, 'proprio'>))}
               className="w-full text-left p-3 mb-1 border border-[var(--border)] rounded-lg hover:border-[var(--gold)] hover:bg-[var(--surface)] transition-all"
             >
               <div className="flex items-start justify-between gap-2">
@@ -178,6 +186,7 @@ export function ModalCompendioItens({ campanhaId, ehDM, onEscolher, onFechar }: 
             </button>
           ))}
         </div>
+        </>)}
       </div>
     </div>,
     document.body

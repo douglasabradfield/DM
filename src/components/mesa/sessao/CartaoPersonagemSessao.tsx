@@ -12,12 +12,14 @@ import { ModalCondicao } from '../ui/ModalCondicao'
 import { EspacosMagiaSessao } from './EspacosMagiaSessao'
 
 export function CartaoPersonagemSessao({
-  personagem, podeEditar, enviando,
+  personagem, ac, podeEditar, enviando,
   opcoesSelecao, mostrarSeletorSempre, rotuloSeletor, selecionadoId, onSelecionar,
   onAjustarPV, onDefinirPVTemp, onAdicionarCondicao, onRemoverCondicao, onUsarInspiracao,
   onUsarEspaco, onRecuperarEspaco,
 }: {
   personagem: Personagem
+  // CA derivada dos itens equipados (getAcEfetivo), calculada em lote pela mesa.
+  ac: number
   podeEditar: boolean
   enviando: boolean
   opcoesSelecao: Personagem[]
@@ -145,7 +147,7 @@ export function CartaoPersonagemSessao({
       )}
 
       <div className="flex items-center gap-3 flex-shrink-0 text-xs font-cinzel text-[var(--text2)]">
-        <span>CA <b className="text-[var(--text)]">{personagem.ca}</b></span>
+        <span>CA <b className="text-[var(--text)]">{ac}</b></span>
         <span>Desloc. <b className="text-[var(--text)]">{personagem.deslocamento ? `${personagem.deslocamento}m` : '—'}</b></span>
         {typeof personagem.inspiracao === 'number' && personagem.inspiracao > 0 && (
           <button
